@@ -3,8 +3,9 @@ use std::{env, ffi::OsStr, io, path::Path};
 use anyhow::{anyhow, bail};
 
 use crossterm::{
-    ExecutableCommand,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use scopeguard::defer;
 use tokio::process::Command;
@@ -58,10 +59,17 @@ pub async fn open_editor(file_path: &Path, settings: &Settings) -> anyhow::Resul
 
     args.push(file_path.as_os_str());
 
-    io::stdout().execute(LeaveAlternateScreen)?;
+    execute!(io::stdout(), DisableMouseCapture)?;
     defer! {
-        io::stdout().execute(EnterAlternateScreen).unwrap();
+        if let Err(err) = enable_raw_mode() {
+            log::error!("Restoring terminal raw mode after external editor failed: {err}");
+        }
+        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture) {
+            log::error!("Restoring terminal display after external editor failed: {err}");
+        }
     }
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    disable_raw_mode()?;
 
     Command::new(editor_cmd.clone())
         .args(args)

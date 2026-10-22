@@ -6,14 +6,80 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 const STATE_FILE_NAME: &str = "state.json";
+pub const DEFAULT_ENTRIES_LIST_PERCENTAGE: u16 = 30;
+pub const MIN_ENTRIES_LIST_PERCENTAGE: u16 = 10;
+pub const MAX_ENTRIES_LIST_PERCENTAGE: u16 = 60;
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+fn default_entries_list_percentage() -> u16 {
+    DEFAULT_ENTRIES_LIST_PERCENTAGE
+}
+
+fn deserialize_entries_list_percentage<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct PercentageVisitor;
+
+    impl serde::de::Visitor<'_> for PercentageVisitor {
+        type Value = u16;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an integer pane percentage")
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<u16, E> {
+            Ok(value.clamp(
+                MIN_ENTRIES_LIST_PERCENTAGE.into(),
+                MAX_ENTRIES_LIST_PERCENTAGE.into(),
+            ) as u16)
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<u16, E> {
+            Ok(value.clamp(
+                MIN_ENTRIES_LIST_PERCENTAGE.into(),
+                MAX_ENTRIES_LIST_PERCENTAGE.into(),
+            ) as u16)
+        }
+    }
+
+    deserializer.deserialize_any(PercentageVisitor)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     pub sorter: Sorter,
     pub full_screen: bool,
+    #[serde(
+        default = "default_entries_list_percentage",
+        deserialize_with = "deserialize_entries_list_percentage"
+    )]
+    entries_list_percentage: u16,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            sorter: Sorter::default(),
+            full_screen: false,
+            entries_list_percentage: DEFAULT_ENTRIES_LIST_PERCENTAGE,
+        }
+    }
 }
 
 impl AppState {
+    pub fn entries_list_percentage(&self) -> u16 {
+        self.entries_list_percentage
+    }
+
+    pub fn set_entries_list_percentage(&mut self, percentage: u16) -> bool {
+        let percentage = percentage.clamp(MIN_ENTRIES_LIST_PERCENTAGE, MAX_ENTRIES_LIST_PERCENTAGE);
+        if self.entries_list_percentage == percentage {
+            return false;
+        }
+        self.entries_list_percentage = percentage;
+        true
+    }
+
     pub fn load(settings: &Settings) -> anyhow::Result<Self> {
         // Move state file from legacy data directory to the new state directory
         // to avoid breaking changes on users.
@@ -189,12 +255,14 @@ mod tests {
         let state = AppState {
             sorter,
             full_screen: true,
+            entries_list_percentage: 45,
         };
 
         state.save(&settings).unwrap();
         let loaded = AppState::load(&settings).unwrap();
 
         assert!(loaded.full_screen);
+        assert_eq!(loaded.entries_list_percentage(), 45);
         assert_eq!(loaded.sorter.get_criteria(), &[SortCriteria::Title]);
         assert!(matches!(loaded.sorter.order, SortOrder::Ascending));
     }
@@ -209,5 +277,26 @@ mod tests {
         let state_path = AppState::get_persist_path(&settings).unwrap();
 
         assert_eq!(state_path, PathBuf::from("/tmp/custom-state/state.json"));
+    }
+
+    #[test]
+    fn legacy_state_keeps_default_pane_size() {
+        let mut value = serde_json::to_value(AppState::default()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("entries_list_percentage");
+        let state: AppState = serde_json::from_value(value).unwrap();
+        assert_eq!(state.entries_list_percentage(), 30);
+    }
+
+    #[test]
+    fn stored_extreme_pane_sizes_are_clamped() {
+        for (input, expected) in [(-500_i64, 10), (0, 10), (45, 45), (100_000, 60)] {
+            let mut value = serde_json::to_value(AppState::default()).unwrap();
+            value["entries_list_percentage"] = input.into();
+            let state: AppState = serde_json::from_value(value).unwrap();
+            assert_eq!(state.entries_list_percentage(), expected);
+        }
     }
 }

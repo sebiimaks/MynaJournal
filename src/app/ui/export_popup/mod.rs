@@ -115,11 +115,13 @@ impl ExportPopup<'_> {
     }
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+        let bounds = area;
         let mut area = centered_rect_exact_height(70, 11, area);
 
         if area.width < FOOTER_TEXT.len() as u16 + FOOTER_MARGINE {
             area.height += 1;
         }
+        area = area.intersection(bounds);
 
         let title = if self.is_multi_select_mode() {
             "Export journals"

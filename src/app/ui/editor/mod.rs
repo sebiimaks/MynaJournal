@@ -18,6 +18,12 @@ use tui_textarea::{CursorMove, Scrolling, TextArea};
 use super::Styles;
 use super::commands::ClipboardOperation;
 
+mod layout;
+mod wrapped;
+#[cfg(test)]
+mod wrapped_tests;
+use wrapped::WrappedView;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorMode {
     Normal,
@@ -31,6 +37,8 @@ pub struct Editor<'a> {
     is_active: bool,
     is_dirty: bool,
     has_unsaved: bool,
+    word_wrap: bool,
+    wrapped: WrappedView,
 }
 
 /// Direction of a single-line vertical cursor movement.
@@ -61,6 +69,8 @@ impl<'a> Editor<'a> {
             is_active: false,
             is_dirty: false,
             has_unsaved: false,
+            word_wrap: true,
+            wrapped: WrappedView::default(),
         }
     }
 
@@ -84,7 +94,7 @@ impl<'a> Editor<'a> {
             Some(id) => {
                 if let Some(entry) = app.get_entry(id) {
                     self.is_dirty = false;
-                    let lines = entry.content.lines().map(|line| line.to_owned()).collect();
+                    let lines = entry.content.split('\n').map(str::to_owned).collect();
                     let mut text_area = TextArea::new(lines);
                     text_area.move_cursor(tui_textarea::CursorMove::Bottom);
                     text_area.move_cursor(tui_textarea::CursorMove::End);
@@ -97,6 +107,7 @@ impl<'a> Editor<'a> {
         };
 
         self.text_area = text_area;
+        self.wrapped = WrappedView::default();
 
         self.refresh_has_unsaved(app);
     }
@@ -107,6 +118,9 @@ impl<'a> Editor<'a> {
         app: &App<D>,
     ) -> anyhow::Result<HandleInputReturnType> {
         if self.is_insert_mode() {
+            if self.handle_wrapped_navigation(input) {
+                return Ok(HandleInputReturnType::Handled);
+            }
             // We must handle clipboard operation separately if sync with system clipboard is
             // activated
             if app.settings.sync_os_clipboard {
@@ -142,8 +156,10 @@ impl<'a> Editor<'a> {
             let key_event = KeyEvent::from(input);
             if self.text_area.input(key_event) {
                 self.is_dirty = true;
+                self.wrapped.invalidate();
                 self.refresh_has_unsaved(app);
             }
+            self.wrapped.clear_goal();
 
             return Ok(HandleInputReturnType::Handled);
         }
@@ -164,16 +180,32 @@ impl<'a> Editor<'a> {
 
         let sync_os_clipboard = app.settings.sync_os_clipboard;
 
-        if let Some(dir) = vertical_arrow_dir(input) {
+        if self.handle_wrapped_navigation(input) {
+            return Ok(HandleInputReturnType::Handled);
+        }
+        let is_vertical = vertical_arrow_dir(input).is_some()
+            || (input.modifiers.is_empty() && matches!(input.key_code, KeyCode::Char('j' | 'k')));
+        if !is_vertical {
+            self.wrapped.clear_goal();
+            // Invalidate before mutation so a clipboard error cannot leave stale rows.
+            self.wrapped.invalidate();
+        }
+        let result = if let Some(dir) = vertical_arrow_dir(input) {
             self.move_cursor_vertical(dir, self.should_extend_selection(input));
+            Ok(())
         } else if is_default_navigation(input) {
             let key_event = KeyEvent::from(input);
             self.text_area.input(key_event);
-        } else if !self.is_visual_mode()
-            || !self.handle_input_visual_only(input, sync_os_clipboard)?
-        {
-            self.handle_vim_motions(input, sync_os_clipboard)?;
-        }
+            Ok(())
+        } else if self.is_visual_mode() {
+            match self.handle_input_visual_only(input, sync_os_clipboard) {
+                Ok(true) => Ok(()),
+                Ok(false) => self.handle_vim_motions(input, sync_os_clipboard),
+                Err(err) => Err(err),
+            }
+        } else {
+            self.handle_vim_motions(input, sync_os_clipboard)
+        };
 
         // Check if the input led the editor to leave the visual mode and make the corresponding UI changes
         if !self.text_area.is_selecting() && self.is_visual_mode() {
@@ -182,6 +214,7 @@ impl<'a> Editor<'a> {
 
         self.is_dirty = true;
         self.refresh_has_unsaved(app);
+        result?;
 
         Ok(HandleInputReturnType::Handled)
     }
@@ -232,7 +265,9 @@ impl<'a> Editor<'a> {
 
         match (input.key_code, has_control) {
             (KeyCode::Char('h'), false) => {
-                self.text_area.move_cursor(CursorMove::Back);
+                if !self.move_wrapped_horizontal(false, self.is_visual_mode()) {
+                    self.text_area.move_cursor(CursorMove::Back);
+                }
             }
             (KeyCode::Char('j'), false) => {
                 self.move_cursor_down(self.is_visual_mode());
@@ -241,7 +276,9 @@ impl<'a> Editor<'a> {
                 self.move_cursor_up(self.is_visual_mode());
             }
             (KeyCode::Char('l'), false) => {
-                self.text_area.move_cursor(CursorMove::Forward);
+                if !self.move_wrapped_horizontal(true, self.is_visual_mode()) {
+                    self.text_area.move_cursor(CursorMove::Forward);
+                }
             }
             (KeyCode::Char('w'), false) | (KeyCode::Char('e'), false) => {
                 self.text_area.move_cursor(CursorMove::WordForward);
@@ -341,6 +378,10 @@ impl<'a> Editor<'a> {
     /// selection state, the snap-to-edge decision, and the move itself so callers
     /// never fall back to the underlying text area's default navigation.
     fn move_cursor_vertical(&mut self, dir: VerticalDir, select: bool) {
+        if self.word_wrap && self.wrapped.width > 0 {
+            self.move_wrapped_vertical(dir, 1, select);
+            return;
+        }
         let Some(cursor_move) = self.resolve_vertical_move(dir) else {
             return;
         };
@@ -393,6 +434,9 @@ impl<'a> Editor<'a> {
     }
 
     pub fn set_editor_mode(&mut self, mode: EditorMode) {
+        if self.mode != mode {
+            self.wrapped.clear_goal();
+        }
         match (self.mode, mode) {
             (EditorMode::Normal, EditorMode::Visual) => {
                 self.text_area.start_selection();
@@ -407,6 +451,14 @@ impl<'a> Editor<'a> {
     }
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+        if self.word_wrap {
+            self.render_wrapped(frame, area, styles);
+            return;
+        }
+        if area.width < 3 || area.height < 3 {
+            frame.render_widget(Block::default().borders(Borders::ALL), area);
+            return;
+        }
         let mut title = "Content".to_owned();
         if self.is_active {
             let mode_caption = match self.mode {
@@ -457,6 +509,23 @@ impl<'a> Editor<'a> {
 
         frame.render_widget(&self.text_area, area);
 
+        // TextArea retains source controls in its cells; never emit them to the terminal.
+        let content_area = area.inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        });
+        let buffer = frame.buffer_mut();
+        for y in content_area.y..content_area.bottom() {
+            for x in content_area.x..content_area.right() {
+                let cell = &mut buffer[(x, y)];
+                if cell.symbol() == "\r" {
+                    cell.set_symbol(" ");
+                } else if cell.symbol().chars().any(char::is_control) {
+                    cell.set_symbol("�");
+                }
+            }
+        }
+
         self.render_vertical_scrollbar(frame, area);
         self.render_horizontal_scrollbar(frame, area);
     }
@@ -464,7 +533,7 @@ impl<'a> Editor<'a> {
     pub fn render_vertical_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
         let lines_count = self.text_area.lines().len();
 
-        if lines_count as u16 <= area.height - 2 {
+        if lines_count <= area.height.saturating_sub(2) as usize {
             return;
         }
 
@@ -497,7 +566,7 @@ impl<'a> Editor<'a> {
             .max()
             .unwrap_or_default();
 
-        if max_width as u16 <= area.width - 2 {
+        if max_width <= area.width.saturating_sub(2) as usize {
             return;
         }
 
@@ -554,12 +623,13 @@ impl<'a> Editor<'a> {
 
     pub fn set_entry_content<D: DataProvider>(&mut self, entry_content: &str, app: &App<D>) {
         self.is_dirty = true;
-        let lines = entry_content.lines().map(|line| line.to_owned()).collect();
+        let lines = entry_content.split('\n').map(str::to_owned).collect();
         let mut text_area = TextArea::new(lines);
         text_area.move_cursor(tui_textarea::CursorMove::Bottom);
         text_area.move_cursor(tui_textarea::CursorMove::End);
 
         self.text_area = text_area;
+        self.wrapped = WrappedView::default();
 
         self.refresh_has_unsaved(app);
     }
@@ -569,6 +639,8 @@ impl<'a> Editor<'a> {
         operation: ClipboardOperation,
     ) -> anyhow::Result<HandleInputReturnType> {
         let mut clipboard = Clipboard::new().map_err(map_clipboard_error)?;
+        self.wrapped.invalidate();
+        self.wrapped.clear_goal();
 
         match operation {
             ClipboardOperation::Copy => {

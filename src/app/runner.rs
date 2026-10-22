@@ -193,15 +193,19 @@ async fn handle_input<D: DataProvider>(
     app: &mut App<D>,
     ui_components: &mut UIComponents<'_>,
 ) -> Result<HandleInputReturnType> {
-    if let Event::Key(key) = event {
-        match key.kind {
+    match event {
+        Event::Key(key) => match key.kind {
             KeyEventKind::Press => {
                 let input = Input::from(&key);
                 ui_components.handle_input(&input, app).await
             }
             KeyEventKind::Repeat | KeyEventKind::Release => Ok(HandleInputReturnType::Ignore),
+        },
+        Event::Mouse(mouse) => Ok(ui_components.handle_mouse_input(mouse, app)),
+        Event::Resize(_, _) => {
+            ui_components.cancel_divider_drag();
+            Ok(HandleInputReturnType::NotFound)
         }
-    } else {
-        Ok(HandleInputReturnType::NotFound)
+        _ => Ok(HandleInputReturnType::NotFound),
     }
 }

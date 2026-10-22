@@ -137,13 +137,15 @@ impl EntryPopup<'_> {
     }
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+        let bounds = area;
         let mut area = centered_rect_exact_height(70, 17, area);
 
         const FOOTER_LEN: u16 = FOOTER_TEXT.len() as u16 + FOOTER_MARGIN;
 
-        if area.width < FOOTER_LEN {
+        if area.width > 0 && area.width < FOOTER_LEN {
             area.height += FOOTER_LEN / area.width;
         }
+        area = area.intersection(bounds);
 
         let block = Block::default()
             .borders(Borders::ALL)

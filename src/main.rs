@@ -3,10 +3,6 @@ use std::io;
 use anyhow::{Context, Result};
 use app::ui::Styles;
 use clap::Parser;
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use settings::Settings;
 
@@ -14,6 +10,7 @@ mod app;
 mod cli;
 mod logging;
 mod settings;
+mod terminal_session;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -32,24 +29,16 @@ async fn main() -> Result<()> {
 
     let styles =
         Styles::load(custom_config.as_ref()).context("Error while retrieving app styles")?;
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
     chain_panic_hook();
+    let _terminal_session = terminal_session::TerminalSession::enter()?;
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend)?;
 
     app::run(&mut terminal, settings, styles, pending_cmd)
         .await
         .inspect_err(|err| {
             log::error!("[PANIC] {err:?}");
         })?;
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
 
     Ok(())
 }
@@ -59,8 +48,7 @@ fn chain_panic_hook() {
     let original_hook = std::panic::take_hook();
 
     std::panic::set_hook(Box::new(move |panic| {
-        disable_raw_mode().unwrap();
-        execute!(io::stdout(), LeaveAlternateScreen).unwrap();
+        terminal_session::restore_terminal();
         original_hook(panic);
     }));
 }

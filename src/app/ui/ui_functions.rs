@@ -31,7 +31,7 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 pub fn centered_rect_exact_height(percent_x: u16, height: u16, r: Rect) -> Rect {
-    let height_percentage = ((height as f32 / r.height as f32) * 100f32) as u16;
+    let height_percentage = (((height as f32 / r.height as f32) * 100f32) as u16).min(100);
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
@@ -58,8 +58,8 @@ pub fn centered_rect_exact_height(percent_x: u16, height: u16, r: Rect) -> Rect 
 }
 
 pub fn centered_rect_exact_dimensions(width: u16, height: u16, r: Rect) -> Rect {
-    let height_percentage = ((height as f32 / r.height as f32) * 100f32) as u16;
-    let width_percentage = ((width as f32 / r.width as f32) * 100f32) as u16;
+    let height_percentage = (((height as f32 / r.height as f32) * 100f32) as u16).min(100);
+    let width_percentage = (((width as f32 / r.width as f32) * 100f32) as u16).min(100);
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints(

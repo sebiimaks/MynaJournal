@@ -62,6 +62,8 @@ pub struct Settings {
     pub scroll_per_page: Option<usize>,
     #[serde(default)]
     pub sync_os_clipboard: bool,
+    #[serde(default = "default_editor_word_wrap")]
+    pub editor_word_wrap: bool,
     #[serde(default = "default_history_limit")]
     /// Set the maximum size of the history stacks (undo & redo) size.
     pub history_limit: usize,
@@ -90,6 +92,7 @@ impl Default for Settings {
             auto_title: Default::default(),
             scroll_per_page: Default::default(),
             sync_os_clipboard: Default::default(),
+            editor_word_wrap: default_editor_word_wrap(),
             history_limit: default_history_limit(),
             colored_tags: default_colored_tags(),
             datum_visibility: Default::default(),
@@ -127,6 +130,10 @@ pub enum BackendType {
 
 const fn default_history_limit() -> usize {
     10
+}
+
+const fn default_editor_word_wrap() -> bool {
+    true
 }
 
 const fn default_colored_tags() -> bool {
@@ -194,6 +201,7 @@ impl Settings {
             auto_title: _,
             scroll_per_page: _,
             sync_os_clipboard: _,
+            editor_word_wrap: _,
             history_limit: _,
             colored_tags: _,
             datum_visibility: _,
@@ -433,6 +441,14 @@ kind = "date"
     }
 
     #[test]
+    fn editor_word_wrap_defaults_on_and_can_be_disabled() {
+        assert!(Settings::default().editor_word_wrap);
+        assert!(toml::from_str::<Settings>("").unwrap().editor_word_wrap);
+        let settings: Settings = toml::from_str("editor_word_wrap = false").unwrap();
+        assert!(!settings.editor_word_wrap);
+    }
+
+    #[test]
     fn complete_missing_preserves_values() {
         let app_state_dir = PathBuf::from("/tmp/app-state");
         #[cfg(feature = "json")]
@@ -487,5 +503,6 @@ kind = "date"
         assert!(text.contains("scroll_per_page = 5"));
         assert!(text.contains("history_limit = 10"));
         assert!(text.contains("colored_tags = true"));
+        assert!(text.contains("editor_word_wrap = true"));
     }
 }

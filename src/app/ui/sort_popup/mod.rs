@@ -88,13 +88,14 @@ impl SortPopup {
 
         let footer_text = self.get_footer_text();
 
-        let footer_height = textwrap::fill(&footer_text, (area.width as usize) - FOOTER_MARGIN)
-            .lines()
-            .count() as u16;
+        let footer_width = (area.width as usize).saturating_sub(FOOTER_MARGIN).max(1);
+        let footer_height = textwrap::fill(&footer_text, footer_width).lines().count() as u16;
 
         let horizontal_margin = 4;
 
-        let lists_height = area.height - 3 - horizontal_margin - footer_height;
+        let lists_height = area
+            .height
+            .saturating_sub(3 + horizontal_margin + footer_height);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)

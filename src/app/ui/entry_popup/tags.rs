@@ -63,8 +63,8 @@ impl TagsPopup {
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
         let mut area = centered_rect(70, 100, area);
-        area.y += 1;
-        area.height -= 2;
+        area.y += area.height.min(1);
+        area.height = area.height.saturating_sub(2);
 
         let block = Block::default()
             .borders(Borders::ALL)

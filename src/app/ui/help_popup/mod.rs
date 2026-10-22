@@ -214,9 +214,9 @@ fn render_keybindings<T: KeybindingsTable>(frame: &mut Frame, area: Rect, table:
         } = command.get_info();
 
         // Text wrapping
-        let keys_width = (area.width - MARGIN) * KEY_PERC / 100;
+        let keys_width = area.width.saturating_sub(MARGIN) * KEY_PERC / 100;
         let name_width = area.width * NAME_PERC / 100;
-        let description_width = (area.width - MARGIN) * DESCRIPTION_PERC / 100;
+        let description_width = area.width.saturating_sub(MARGIN) * DESCRIPTION_PERC / 100;
 
         keys_text = textwrap::fill(keys_text.as_str(), keys_width as usize);
         name = textwrap::fill(name.as_str(), name_width as usize);

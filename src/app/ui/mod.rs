@@ -29,9 +29,12 @@ use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
+    style::Color,
+    widgets::Paragraph,
 };
 
 mod commands;
+mod divider;
 mod editor;
 mod entries_list;
 mod entry_popup;
@@ -82,6 +85,8 @@ pub struct UIComponents<'a> {
     popup_stack: Vec<Popup<'a>>,
     pub active_control: ControlType,
     pending_command: Option<UICommand>,
+    pane_split: Option<divider::PaneSplit>,
+    divider_drag: Option<divider::DividerDrag>,
 }
 
 impl UIComponents<'_> {
@@ -107,6 +112,8 @@ impl UIComponents<'_> {
             popup_stack: Vec::new(),
             active_control,
             pending_command: None,
+            pane_split: None,
+            divider_drag: None,
         }
     }
 
@@ -128,7 +135,14 @@ impl UIComponents<'_> {
     where
         D: DataProvider,
     {
-        let footer_height = get_footer_height(f.area().width, self, app);
+        self.editor.set_word_wrap(app.settings.editor_word_wrap);
+        self.pane_split = None;
+        if f.area().width < divider::MIN_SPLIT_WIDTH || f.area().height < 4 {
+            self.cancel_divider_drag();
+            f.render_widget(Paragraph::new("Terminal too small"), f.area());
+            return;
+        }
+        let footer_height = get_footer_height(f.area().width, self, app).min(f.area().height - 3);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -137,6 +151,7 @@ impl UIComponents<'_> {
 
         render_footer(f, chunks[1], self, app);
         if app.state.full_screen {
+            self.cancel_divider_drag();
             match self.active_control {
                 ControlType::EntriesList => {
                     self.entries_list.render_widget(
@@ -152,19 +167,28 @@ impl UIComponents<'_> {
                 }
             }
         } else {
-            let entries_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
-                .split(chunks[0]);
+            let split = divider::PaneSplit::new(chunks[0], app.state.entries_list_percentage())
+                .expect("render area has room for both panes");
+            if !self.has_popup() {
+                self.pane_split = Some(split);
+            } else {
+                self.cancel_divider_drag();
+            }
             self.entries_list.render_widget(
                 f,
-                entries_chunks[0],
+                split.list,
                 app,
                 &self.entries_list_keymaps,
                 &self.styles,
             );
-            self.editor
-                .render_widget(f, entries_chunks[1], &self.styles);
+            self.editor.render_widget(f, split.editor, &self.styles);
+            if self.divider_drag.is_some() {
+                for y in split.area.y..split.area.bottom() {
+                    for x in [split.list.right() - 1, split.editor.x] {
+                        f.buffer_mut()[(x, y)].set_fg(Color::Yellow);
+                    }
+                }
+            }
         }
 
         self.render_popup(f);
@@ -195,6 +219,17 @@ impl UIComponents<'_> {
     ) -> Result<HandleInputReturnType> {
         if self.has_popup() {
             return self.handle_popup_input(input, app).await;
+        }
+
+        if let Some(command) = self.global_keymaps.iter().find_map(|keymap| {
+            (keymap.key == *input
+                && matches!(
+                    keymap.command,
+                    UICommand::ShrinkEntriesPane | UICommand::GrowEntriesPane
+                ))
+            .then_some(keymap.command)
+        }) {
+            return command.execute(self, app).await;
         }
 
         if self.editor.is_prioritized() {

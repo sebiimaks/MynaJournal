@@ -267,6 +267,17 @@ Options:
   -V, --version                       Print version
 ```
 
+Journal content soft-wraps while editing. Up/Down and Page Up/Page Down follow displayed
+rows; selecting, copying, saving, and undoing still use the original text. Wrapping
+does not insert line breaks. Set `editor_word_wrap = false` to use horizontal scrolling.
+
+Use **Alt+,** to narrow the journals list and **Alt+.** to widen it, or drag the border
+between the list and the editor with the left mouse button. The list starts at 30%
+of the window and adjusts between 10% and 60%, with minimum pane widths on small
+terminals. The divider position is remembered on exit. These controls also work
+while editing, without moving the cursor or changing a draft. In terminals that
+support it, hold Shift to use the terminal's own mouse selection instead of dragging.
+
 ## Configuration
 
 The configuration for TUI-Journal can be found in the `config.toml` file located in the configuration folder within the TUI-Journal directory.
@@ -288,6 +299,8 @@ auto_title = { kind = "date" } # Pre-populates the title field when creating a n
 scroll_per_page = 5  # Sets how many journals will be scrolled when using page up/down commands
 
 sync_os_clipboard = false  # Syncs editor clipboard actions with operating system clipboard
+
+editor_word_wrap = true  # Soft-wrap the editable journal content to the pane width without changing saved text.
 
 history_limit = 10  # Sets the maximum changes limit for the undo & redo stacks. Use 0 to disable it.
 
