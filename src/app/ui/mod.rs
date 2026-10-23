@@ -82,6 +82,7 @@ pub enum PopupReturn<T> {
 
 pub struct UIComponents<'a> {
     styles: Styles,
+    active_theme_id: Option<String>,
     global_keymaps: Vec<Keymap>,
     entries_list_keymaps: Vec<Keymap>,
     editor_keymaps: Vec<Keymap>,
@@ -109,6 +110,7 @@ impl UIComponents<'_> {
 
         Self {
             styles,
+            active_theme_id: Some("tui".into()),
             global_keymaps,
             entries_list_keymaps,
             editor_keymaps,
@@ -125,6 +127,10 @@ impl UIComponents<'_> {
 
     pub fn has_popup(&self) -> bool {
         !self.popup_stack.is_empty()
+    }
+
+    pub fn set_active_theme(&mut self, id: Option<String>) {
+        self.active_theme_id = id;
     }
 
     pub fn set_current_entry<D: DataProvider>(&mut self, entry_id: Option<u32>, app: &mut App<D>) {

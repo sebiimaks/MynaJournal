@@ -75,6 +75,35 @@ impl ConfigDocument {
         self.document.to_string()
     }
 
+    pub fn replace_text(&mut self, text: &str) -> Result<()> {
+        let document = text.parse::<DocumentMut>()?;
+        self.document = document;
+        Ok(())
+    }
+
+    /// Persist one preference without committing unrelated edits in this document.
+    pub fn save_field_preserving_draft(
+        &mut self,
+        path: &[&str],
+        value: Option<toml::Value>,
+    ) -> Result<()> {
+        self.verify_unchanged()?;
+        let mut saved = self.clone();
+        saved.document = self
+            .baseline
+            .source
+            .as_deref()
+            .unwrap_or_default()
+            .parse()?;
+        saved.set(path, value.clone())?;
+        let mut draft = self.clone();
+        draft.set(path, value)?;
+        saved.save()?;
+        draft.baseline = saved.baseline;
+        *self = draft;
+        Ok(())
+    }
+
     pub fn value(&self, path: &[&str]) -> Option<toml::Value> {
         let mut document = self.document.clone();
         normalize_alias(&mut document, path);
@@ -102,7 +131,7 @@ impl ConfigDocument {
     }
 
     pub fn save(&mut self) -> Result<()> {
-        self.check_unchanged()?;
+        self.verify_unchanged()?;
         if !self.is_dirty() {
             return Ok(());
         }
@@ -134,7 +163,7 @@ impl ConfigDocument {
             .sync_all()
             .context("Flushing configuration failed")?;
         let identity = FileIdentity::from_metadata(&temporary.as_file().metadata()?);
-        self.check_unchanged()?;
+        self.verify_unchanged()?;
         if self.baseline.source.is_some() {
             temporary.persist(&self.baseline.target)
         } else {
@@ -146,7 +175,7 @@ impl ConfigDocument {
         Ok(())
     }
 
-    fn check_unchanged(&self) -> Result<()> {
+    pub fn verify_unchanged(&self) -> Result<()> {
         let current = Snapshot::read(&self.path).with_context(|| {
             format!(
                 "Configuration changed or became inaccessible; reopen it before saving: {}",
@@ -383,6 +412,90 @@ mod tests {
         fs::write(&path, source).unwrap();
         let document = ConfigDocument::load(path).unwrap();
         (dir, document)
+    }
+
+    #[test]
+    fn saving_one_preference_preserves_other_drafts_and_updates_the_baseline() {
+        let (dir, mut document) = fixture(
+            "# Keep my settings\ntheme = 'tui' # preferred theme\neditor_word_wrap = true\nfuture = 'keep'\n",
+        );
+        document
+            .set(&["editor_word_wrap"], Some(false.into()))
+            .unwrap();
+        document
+            .save_field_preserving_draft(&["theme"], Some("night".into()))
+            .unwrap();
+
+        let saved = ConfigDocument::load(dir.path().join("config.toml")).unwrap();
+        assert_eq!(saved.value(&["theme"]), Some("night".into()));
+        assert_eq!(saved.value(&["editor_word_wrap"]), Some(true.into()));
+        assert!(saved.text().contains("# preferred theme"));
+        assert!(saved.text().contains("future = 'keep'"));
+        assert_eq!(document.value(&["editor_word_wrap"]), Some(false.into()));
+        assert!(document.is_dirty());
+
+        document.save().unwrap();
+        let saved = ConfigDocument::load(dir.path().join("config.toml")).unwrap();
+        assert_eq!(saved.value(&["theme"]), Some("night".into()));
+        assert_eq!(saved.value(&["editor_word_wrap"]), Some(false.into()));
+        assert!(!document.is_dirty());
+    }
+
+    #[test]
+    fn saving_one_preference_to_a_missing_file_does_not_write_other_drafts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut document = ConfigDocument::load(path.clone()).unwrap();
+        document
+            .set(&["auto_title"], Some("Draft title".into()))
+            .unwrap();
+        document
+            .save_field_preserving_draft(&["theme"], Some("night".into()))
+            .unwrap();
+        let saved: toml::Value = toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(saved["theme"].as_str(), Some("night"));
+        assert!(saved.get("auto_title").is_none());
+        assert_eq!(document.value(&["auto_title"]), Some("Draft title".into()));
+        assert!(document.is_dirty());
+    }
+
+    #[test]
+    fn saving_one_preference_rejects_external_changes_without_losing_drafts() {
+        let (_dir, mut document) = fixture("theme = 'tui'\neditor_word_wrap = true\n");
+        document
+            .set(&["editor_word_wrap"], Some(false.into()))
+            .unwrap();
+        let draft = document.text();
+        fs::write(document.path(), "theme = 'external'\n").unwrap();
+        assert!(
+            document
+                .save_field_preserving_draft(&["theme"], Some("night".into()))
+                .is_err()
+        );
+        assert_eq!(document.text(), draft);
+        assert_eq!(
+            fs::read_to_string(document.path()).unwrap(),
+            "theme = 'external'\n"
+        );
+    }
+
+    #[test]
+    fn invalid_partial_edit_cannot_change_the_file_or_draft() {
+        let (_dir, mut document) = fixture("theme = 'tui'\n");
+        document
+            .set(&["auto_title"], Some("Draft title".into()))
+            .unwrap();
+        let draft = document.text();
+        assert!(
+            document
+                .save_field_preserving_draft(&["theme", "name"], Some("night".into()))
+                .is_err()
+        );
+        assert_eq!(document.text(), draft);
+        assert_eq!(
+            fs::read_to_string(document.path()).unwrap(),
+            "theme = 'tui'\n"
+        );
     }
 
     #[test]

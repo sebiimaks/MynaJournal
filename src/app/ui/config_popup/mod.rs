@@ -1,4 +1,5 @@
 mod fields;
+mod theme_browser;
 
 use anyhow::{Result, bail, ensure};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -17,7 +18,10 @@ use crate::{
     settings::{Settings, document::ConfigDocument},
 };
 
-use super::{themes::Styles, ui_functions::centered_rect};
+use super::{
+    themes::{Styles, ThemeDocument, ThemeInfo, ThemeStore},
+    ui_functions::centered_rect,
+};
 use fields::{Field, Kind, Tab};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,19 +30,26 @@ pub enum ConfigAction {
     Close,
     SaveSettings,
     SaveAppearance,
+    ActivateTheme,
     SaveLayout(u16),
 }
 
 #[derive(Debug)]
 pub struct ConfigPopup {
     settings_document: ConfigDocument,
-    themes_document: ConfigDocument,
+    themes_document: Option<ThemeDocument>,
+    theme_store: ThemeStore,
+    theme_catalog: Vec<ThemeInfo>,
+    theme_selected: usize,
+    active_theme_id: Option<String>,
+    saved_themes: Value,
+    creating_theme: bool,
+    confirm_theme_close: bool,
     settings: Value,
     themes: Value,
     raw_settings: Value,
     raw_themes: Value,
     active_settings: Value,
-    active_themes: Value,
     default_settings: Value,
     default_themes: Value,
     fields: Vec<Field>,
@@ -59,26 +70,51 @@ pub struct ConfigPopup {
 impl ConfigPopup {
     pub fn new(
         settings_document: ConfigDocument,
-        themes_document: ConfigDocument,
+        theme_store: ThemeStore,
         active_settings: &Settings,
         active_styles: &Styles,
+        active_theme_id: Option<&str>,
         divider: u16,
     ) -> Result<Self> {
         let settings = settings_value(&toml::from_str(&settings_document.text())?)?;
-        let themes = Value::try_from(Styles::deserialize(&themes_document.text())?)?;
+        let themes = Value::try_from(active_styles)?;
         let default_themes = Value::try_from(Styles::default())?;
         let fields = fields::fields(&default_themes);
         let raw_settings = toml::from_str(&settings_document.text())?;
-        let raw_themes = toml::from_str(&themes_document.text())?;
+        let raw_themes = Value::Table(Default::default());
+        let (theme_catalog, catalog_error) = match theme_store.list() {
+            Ok(themes) => (themes, None),
+            Err(error) => {
+                let message = format!("Could not list themes: {error:#}");
+                (
+                    vec![ThemeInfo {
+                        id: "tui".into(),
+                        label: "Tui (default)".into(),
+                        error: Some(message.clone()),
+                    }],
+                    Some(message),
+                )
+            }
+        };
+        let theme_selected = theme_catalog
+            .iter()
+            .position(|theme| Some(theme.id.as_str()) == active_theme_id)
+            .unwrap_or(0);
         Ok(Self {
             settings_document,
-            themes_document,
+            themes_document: None,
+            theme_store,
+            theme_catalog,
+            theme_selected,
+            active_theme_id: active_theme_id.map(str::to_owned),
+            saved_themes: themes.clone(),
+            creating_theme: false,
+            confirm_theme_close: false,
             settings,
             themes,
             raw_settings,
             raw_themes,
             active_settings: settings_value(active_settings)?,
-            active_themes: Value::try_from(active_styles)?,
             default_settings: settings_value(&Settings::default())?,
             default_themes,
             fields,
@@ -89,8 +125,8 @@ impl ConfigPopup {
             divider,
             saved_divider: divider,
             confirm_close: false,
-            status: String::new(),
-            error: false,
+            error: catalog_error.is_some(),
+            status: catalog_error.unwrap_or_default(),
             launch_details: Vec::new(),
             page_size: 5,
             context_scroll: 0,
@@ -99,10 +135,6 @@ impl ConfigPopup {
 
     pub fn settings_document_mut(&mut self) -> &mut ConfigDocument {
         &mut self.settings_document
-    }
-
-    pub fn themes_document_mut(&mut self) -> &mut ConfigDocument {
-        &mut self.themes_document
     }
 
     pub fn set_launch_details(&mut self, details: Vec<String>) {
@@ -140,18 +172,6 @@ impl ConfigPopup {
             "Settings saved."
         }
         .into();
-        self.error = false;
-    }
-
-    pub fn mark_appearance_saved(&mut self, active: &Styles) {
-        if let Ok(value) = Value::try_from(active) {
-            self.active_themes = value.clone();
-            self.themes = value;
-        }
-        if let Ok(value) = toml::from_str(&self.themes_document.text()) {
-            self.raw_themes = value;
-        }
-        self.status = "Appearance saved and applied.".into();
         self.error = false;
     }
 
@@ -200,7 +220,7 @@ impl ConfigPopup {
             field_value(
                 field,
                 if field.tab == Tab::Appearance {
-                    &self.active_themes
+                    &self.saved_themes
                 } else {
                     &self.active_settings
                 },
@@ -250,12 +270,20 @@ impl ConfigPopup {
 
     fn is_dirty(&self) -> bool {
         self.settings_document.is_dirty()
-            || self.themes_document.is_dirty()
+            || self.theme_dirty()
             || self.divider != self.saved_divider
     }
 
     pub fn handle_input(&mut self, input: &Input) -> ConfigAction {
         let ctrl = input.modifiers.contains(KeyModifiers::CONTROL);
+        if self.confirm_theme_close {
+            match input.key_code {
+                KeyCode::Char('y' | 'Y') => self.leave_theme_editor(),
+                KeyCode::Esc | KeyCode::Char('n' | 'N') => self.confirm_theme_close = false,
+                _ => {}
+            }
+            return ConfigAction::Keep;
+        }
         if self.confirm_close {
             return match input.key_code {
                 KeyCode::Char('y' | 'Y') => ConfigAction::Close,
@@ -292,12 +320,38 @@ impl ConfigPopup {
             return self.save_action();
         }
         if input.key_code == KeyCode::Esc || (ctrl && input.key_code == KeyCode::Char('c')) {
+            if self.current_tab() == Tab::Appearance && self.themes_document.is_some() {
+                if self.theme_dirty() {
+                    self.confirm_theme_close = true;
+                } else {
+                    self.leave_theme_editor();
+                }
+                return ConfigAction::Keep;
+            }
             return self.request_close();
         }
         if input
             .modifiers
             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
         {
+            return ConfigAction::Keep;
+        }
+        if self.current_tab() == Tab::Appearance && self.themes_document.is_none() {
+            match input.key_code {
+                KeyCode::Enter | KeyCode::Char('a') => return ConfigAction::ActivateTheme,
+                KeyCode::Char('e') => self.edit_selected_theme(),
+                KeyCode::Char('n') => self.begin_new_theme(),
+                KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
+                KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
+                KeyCode::PageDown => self.move_selection(self.page_size as isize),
+                KeyCode::PageUp => self.move_selection(-(self.page_size as isize)),
+                KeyCode::Home => self.theme_selected = 0,
+                KeyCode::End => self.theme_selected = self.theme_catalog.len().saturating_sub(1),
+                KeyCode::Tab | KeyCode::Right => self.change_tab(1),
+                KeyCode::BackTab | KeyCode::Left => self.change_tab(-1),
+                KeyCode::Char('q' | '!') => return self.request_close(),
+                _ => {}
+            }
             return ConfigAction::Keep;
         }
         match input.key_code {
@@ -331,7 +385,8 @@ impl ConfigPopup {
 
     fn save_action(&self) -> ConfigAction {
         match self.current_tab() {
-            Tab::Appearance => ConfigAction::SaveAppearance,
+            Tab::Appearance if self.themes_document.is_some() => ConfigAction::SaveAppearance,
+            Tab::Appearance => ConfigAction::Keep,
             Tab::Layout => ConfigAction::SaveLayout(self.divider),
             Tab::Context => ConfigAction::Keep,
             _ => ConfigAction::SaveSettings,
@@ -346,7 +401,7 @@ impl ConfigPopup {
             .iter()
             .map(|tab| {
                 let dirty = match tab {
-                    Tab::Appearance => self.themes_document.is_dirty(),
+                    Tab::Appearance => self.theme_dirty(),
                     Tab::Layout => self.divider != self.saved_divider,
                     Tab::Context => false,
                     _ => self.settings_document.is_dirty(),
@@ -396,6 +451,15 @@ impl ConfigPopup {
     fn move_selection(&mut self, delta: isize) {
         if self.current_tab() == Tab::Context {
             self.context_scroll = self.context_scroll.saturating_add_signed(delta);
+            return;
+        }
+        if self.current_tab() == Tab::Appearance && self.themes_document.is_none() {
+            self.theme_selected = self
+                .theme_selected
+                .saturating_add_signed(delta)
+                .min(self.theme_catalog.len().saturating_sub(1));
+            self.status.clear();
+            self.error = false;
             return;
         }
         let max = self.tab_fields().count().saturating_sub(1);
@@ -456,7 +520,13 @@ impl ConfigPopup {
 
     fn cancel_edit(&mut self) {
         self.editor = None;
-        self.status = "Field edit cancelled; other draft changes are kept.".into();
+        self.status = if self.creating_theme {
+            "New theme cancelled; other draft changes are kept."
+        } else {
+            "Field edit cancelled; other draft changes are kept."
+        }
+        .into();
+        self.creating_theme = false;
         self.error = false;
     }
 
@@ -465,6 +535,27 @@ impl ConfigPopup {
             return true;
         };
         let input = editor.lines().join("\n");
+        if self.creating_theme {
+            let result = self
+                .theme_catalog
+                .get(self.theme_selected)
+                .ok_or_else(|| anyhow::anyhow!("Select a theme first."))
+                .and_then(|theme| self.theme_store.load(&theme.id))
+                .and_then(|source| self.theme_store.create(&input, &source.text()))
+                .and_then(|document| self.open_theme(document));
+            return match result {
+                Ok(()) => {
+                    self.editor = None;
+                    self.creating_theme = false;
+                    self.status = "New theme staged. Ctrl-S saves it without activating it.".into();
+                    true
+                }
+                Err(error) => {
+                    self.show_error(error.to_string());
+                    false
+                }
+            };
+        }
         let field = self.current_field().clone();
         match parse_input(&field.kind, &input).and_then(|value| self.apply_value(&field, value)) {
             Ok(()) => {
@@ -509,7 +600,10 @@ impl ConfigPopup {
             );
             self.divider = divider;
         } else if field.tab == Tab::Appearance {
-            let mut document = self.themes_document.clone();
+            let mut document = self
+                .themes_document
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Open a theme for editing first."))?;
             if field.path.len() == 3 {
                 let parent = &field.keys()[..2];
                 if document.value(parent).is_none()
@@ -533,7 +627,7 @@ impl ConfigPopup {
             document.set(&field.keys(), value)?;
             let themes = Value::try_from(Styles::deserialize(&document.text())?)?;
             self.raw_themes = toml::from_str(&document.text())?;
-            self.themes_document = document;
+            self.themes_document = Some(document);
             self.themes = themes;
         } else {
             let mut document = self.settings_document.clone();
@@ -568,22 +662,33 @@ impl ConfigPopup {
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
         let area = centered_rect(90, 80, area);
         frame.render_widget(Clear, area);
+        let title = if self.current_tab() == Tab::Appearance {
+            self.themes_document
+                .as_ref()
+                .map(|document| format!("Configuration · {}", safe_text(document.label())))
+        } else {
+            None
+        }
+        .unwrap_or_else(|| "Configuration".into());
         let block = Block::default()
-            .title(if self.is_dirty() {
-                "Configuration *"
-            } else {
-                "Configuration"
-            })
+            .title(format!(
+                "{title}{}",
+                if self.is_dirty() { " *" } else { "" }
+            ))
             .borders(Borders::ALL);
         let inner = block.inner(area).inner(Margin::new(1, 0));
         frame.render_widget(block, area);
         if inner.width < 18 || inner.height < 8 {
-            let message = if self.confirm_close {
+            let message = if self.confirm_close || self.confirm_theme_close {
                 "Discard changes? y/n"
             } else {
                 "Enlarge terminal. Esc closes."
             };
             frame.render_widget(Paragraph::new(message).wrap(Wrap { trim: false }), inner);
+            return;
+        }
+        if self.current_tab() == Tab::Appearance && self.themes_document.is_none() {
+            self.render_theme_list(frame, inner, styles);
             return;
         }
         if self.current_tab() == Tab::Context {
@@ -619,7 +724,11 @@ impl ConfigPopup {
         .split(inner);
         self.render_tabs(frame, chunks[0]);
         let destination = match self.current_tab() {
-            Tab::Appearance => format!("Theme file: {}", self.themes_document.path().display()),
+            Tab::Appearance => self
+                .themes_document
+                .as_ref()
+                .map(|document| format!("{} · {}", document.label(), document.path().display()))
+                .unwrap_or_default(),
             Tab::Layout => "App state (saved separately from configuration and themes)".into(),
             _ => format!("Settings file: {}", self.settings_document.path().display()),
         };
@@ -671,8 +780,13 @@ impl ConfigPopup {
         );
         let field = self.current_field();
         let mut details = format!(
-            "{}\nActive: {}  |  Default: {}\n{}",
+            "{}\n{}: {}  |  Default: {}\n{}",
             field.label,
+            if field.tab == Tab::Appearance {
+                "Saved"
+            } else {
+                "Active"
+            },
             display_value(self.active_value(field).as_ref()),
             display_value(self.default_value(field).as_ref()),
             field.hint
@@ -699,7 +813,11 @@ impl ConfigPopup {
             editor.set_cursor_style(Style::from(styles.general.input_cursor_active));
             frame.render_widget(&*editor, chunks[4]);
         }
-        let status = if self.confirm_close && (compact || inner.width < 60) {
+        let status = if self.confirm_theme_close && (compact || inner.width < 30) {
+            "Discard? y/n"
+        } else if self.confirm_theme_close {
+            "Discard theme edits? y/n"
+        } else if self.confirm_close && (compact || inner.width < 60) {
             "Discard? y/n"
         } else if self.confirm_close {
             "Discard all unsaved settings, appearance and layout changes? y = discard / n = continue"
@@ -716,7 +834,15 @@ impl ConfigPopup {
                 .wrap(Wrap { trim: false }),
             chunks[5],
         );
-        let footer = if compact && self.editor.is_some() {
+        let footer = if self.current_tab() == Tab::Appearance && self.editor.is_none() {
+            if compact && inner.width < 30 {
+                "^S Save Esc Back"
+            } else if compact || inner.width < 60 {
+                "Enter Edit  ^S Save  Esc Back"
+            } else {
+                "↑↓/PgUp/PgDn: fields  Tab/←→: sections  Enter/Space: edit\nd: use default  Ctrl-S: save theme  Esc: theme list  q: close"
+            }
+        } else if compact && self.editor.is_some() {
             "Save ^S Cancel Esc"
         } else if compact && inner.width < 30 {
             "Save ^S Close Esc"
@@ -744,11 +870,11 @@ impl ConfigPopup {
         self.render_tabs(frame, chunks[0]);
         let mut content = vec![
             format!("Settings file: {}", self.settings_document.path().display()),
-            format!("Themes file: {}", self.themes_document.path().display()),
+            format!("Themes directory: {}", self.theme_store.directory().display()),
             String::new(),
             "The Draft column shows the file's next-launch value, including defaults. Active shows the current session's value. CLI overrides are not written into these documents.".into(),
             "Restart-required storage, state-directory and history changes keep their active values for this session.".into(),
-            "Ctrl-S saves one document: General/Entries/Editor/Storage share config.toml; Appearance saves themes; Layout saves app state separately.".into(),
+            "Ctrl-S saves one document: General/Entries/Editor/Storage share config.toml; Appearance lists themes; edit a theme and Ctrl-S saves it; Layout saves app state separately.".into(),
             "Theme 'inherit' leaves a color unspecified; Reset uses the terminal's default color; d restores the property's built-in preset.".into(),
             String::new(),
             "Launch context:".into(),

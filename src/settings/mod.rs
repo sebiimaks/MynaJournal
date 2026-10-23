@@ -44,6 +44,8 @@ mod external_editor;
 pub struct ConfigContext {
     pub settings_path: PathBuf,
     pub themes_path: PathBuf,
+    pub active_theme_id: Option<String>,
+    pub theme_warning: Option<String>,
     pub launch_details: Vec<String>,
 }
 
@@ -51,6 +53,8 @@ const DEFAULT_SCROLL_PER_PAGE: usize = 5;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
     #[serde(default)]
     pub export: ExportSettings,
     #[serde(default)]
@@ -94,6 +98,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            theme: None,
             export: Default::default(),
             backend_type: Default::default(),
             external_editor: Default::default(),
@@ -218,6 +223,7 @@ impl Settings {
         // This check is to ensure that all added fields to settings struct are considered here
         #[cfg(debug_assertions)]
         let Settings {
+            theme: _,
             backend_type: _,
             #[cfg(feature = "json")]
                 json_backend: _,

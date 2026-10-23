@@ -333,9 +333,17 @@ shown for reference.
 Use `Tab` / `Shift-Tab` to change tabs, the arrow keys to select an option, and
 `Enter` to edit it. Press `d` outside a text field to restore that option's default.
 `Ctrl-S` saves the current configuration document: General, Entries, Editor and
-Storage share `config.toml`; Appearance saves `themes.toml`; Layout saves the
-divider to the existing app-state file. `Esc` cancels a field edit or closes the
-popup, with a discard prompt when configuration edits remain unsaved.
+Storage share `config.toml`; Appearance lists named themes and opens a separate
+theme editor; Layout saves the divider to the existing app-state file. `Esc`
+cancels a field edit or closes the popup, with a discard prompt when configuration
+edits remain unsaved.
+
+In Appearance, `Enter` or `a` activates the selected theme, `e` edits it, and `n`
+creates a named copy. The editor retains every color and modifier control, with
+`Ctrl-S` saving only that theme. `Esc` returns to the theme list, asking before
+discarding unsaved theme edits. Saving an inactive theme does not activate it.
+Theme selection is remembered separately in `config.toml` without saving unrelated
+configuration drafts.
 
 Display preferences apply after a successful save. Entry defaults, exports, and
 external-editor preferences apply on the next relevant operation. Backend and
@@ -355,6 +363,9 @@ Here is a sample of the settings in the `config.toml` file:
 
 ```toml
 backend_type = "Sqlite"   # Available options: Json, Sqlite, Vjournal, File. Default value: Sqlite.
+
+theme = "tui"  # Active theme ID; reads themes/theme_tui.toml when present, otherwise built-in Tui defaults.
+# Omit this key to retain an existing legacy themes.toml, or use Tui when none exists.
 
 default_journal_priority = 3  # Sets the suggested priority while creating a new journal
 
@@ -501,7 +512,18 @@ The `VJOURNAL` back-end stores journal entries as iCalendar `.ics` files in the 
 
 ## Themes
 
-Please refer to the [Themes Page](THEMES.md) for a detailed guide on customizing colors and styles within the app.
+Press `!` and choose Appearance to activate, edit, or duplicate a theme. **Tui
+(default)** is always available. Themes use individual TOML files under the app's
+configuration directory, such as `themes/theme_tui.toml`. Starting the app or
+browsing themes creates no theme files; saving a new or edited theme writes its
+file. An existing `themes.toml` remains available as **Legacy** and is kept intact
+when its edits are saved to `themes/theme_legacy.toml`.
+
+`tjournal theme print-path` prints the themes directory, `theme print-default`
+prints the original built-in Tui styles, and `theme write-defaults` writes
+`theme_tui.toml` only if it does not already exist. Writing defaults does not change
+the active theme. See [Themes](THEMES.md) for naming, keyboard controls, and the
+complete file format.
 
 ## Documentation
 

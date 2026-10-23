@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, ensure};
 use clap::Subcommand;
 
-use crate::{app::ui::Styles, settings::Settings};
+use crate::{
+    app::ui::{Styles, themes::ThemeStore},
+    settings::Settings,
+};
 
 use super::*;
 
@@ -35,14 +37,14 @@ pub enum CliCommand {
 #[derive(Debug, Clone, Subcommand, Eq, PartialEq)]
 pub enum Themes {
     #[clap(visible_alias = "path")]
-    /// Prints the path to the user themes file.
+    /// Prints the path to the named themes directory without creating it.
     PrintPath,
     #[clap(name = "print-default", visible_alias = "default")]
     /// Dumps the styles with the default values to be used as a reference and base for
     /// user custom themes.
     DumpDefaults,
     #[clap(name = "write-defaults", visible_alias = "write")]
-    /// Creates user custom themes file if doesn't exist then writes the default styles to it.
+    /// Writes built-in Tui defaults to themes/theme_tui.toml without overwriting an existing file.
     WriteDefaults,
 }
 
@@ -84,7 +86,8 @@ fn exec_print_config(settings: &mut Settings) -> anyhow::Result<CliResult> {
 }
 
 fn exec_print_themes_path(custom_config_dir: Option<&PathBuf>) -> anyhow::Result<CliResult> {
-    let themes_path = Styles::file_path(custom_config_dir)?;
+    let store = ThemeStore::new(custom_config_dir)?;
+    let themes_path = store.directory();
 
     println!("{}", themes_path.display());
 
@@ -99,19 +102,10 @@ fn exec_print_themes_defaults() -> anyhow::Result<CliResult> {
 }
 
 fn exec_write_themes_defaults(custom_config_dir: Option<&PathBuf>) -> anyhow::Result<CliResult> {
-    let themes_path = Styles::file_path(custom_config_dir)?;
-    ensure!(
-        !themes_path.exists(),
-        "Themes file already exists. Path: {}",
-        themes_path.display()
-    );
-
-    let themes_txt = Styles::serialize_default()?;
-
-    fs::write(&themes_path, themes_txt).context("Error while writing default themes to file")?;
+    let themes_path = ThemeStore::new(custom_config_dir)?.write_defaults()?;
 
     println!(
-        "Default themes have been written to {}",
+        "Default Tui theme has been written to {}",
         themes_path.display()
     );
 
@@ -197,6 +191,7 @@ mod tests {
 
         assert_eq!(print_path, CliResult::Return);
         assert_eq!(dump_defaults, CliResult::Return);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
     #[test]
@@ -206,12 +201,46 @@ mod tests {
             .prefix("themes-exists")
             .tempdir()
             .unwrap();
-        fs::write(dir.path().join("themes.toml"), "already here").unwrap();
+        fs::create_dir(dir.path().join("themes")).unwrap();
+        fs::write(dir.path().join("themes/theme_tui.toml"), "already here").unwrap();
 
         let err = CliCommand::Theme(Themes::WriteDefaults)
             .exec(&mut settings, Some(&dir.path().to_path_buf()))
             .unwrap_err();
 
-        assert!(err.to_string().contains("Themes file already exists"));
+        assert!(err.to_string().contains("Tui theme file already exists"));
+    }
+
+    #[test]
+    fn write_defaults_creates_named_tui_file_without_changing_configuration() {
+        let mut settings = Settings::default();
+        let directory = tempfile::tempdir().unwrap();
+        let config_path = directory.path().join("config.toml");
+        let config = "# Active selection must remain unchanged\ntheme = 'night'\n";
+        fs::write(&config_path, config).unwrap();
+        let result = CliCommand::Theme(Themes::WriteDefaults)
+            .exec(&mut settings, Some(&directory.path().to_path_buf()))
+            .unwrap();
+
+        assert_eq!(result, CliResult::Return);
+        assert_eq!(
+            fs::read_to_string(directory.path().join("themes/theme_tui.toml")).unwrap(),
+            Styles::serialize_default().unwrap()
+        );
+        assert_eq!(fs::read_to_string(config_path).unwrap(), config);
+    }
+
+    #[test]
+    fn write_defaults_reports_an_unusable_themes_directory() {
+        let mut settings = Settings::default();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("themes");
+        fs::write(&path, "preserve this file").unwrap();
+        assert!(
+            CliCommand::Theme(Themes::WriteDefaults)
+                .exec(&mut settings, Some(&directory.path().to_path_buf()))
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), "preserve this file");
     }
 }

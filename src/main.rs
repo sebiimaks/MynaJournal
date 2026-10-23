@@ -1,7 +1,7 @@
 use std::io;
 
-use anyhow::{Context, Result};
-use app::ui::Styles;
+use anyhow::Result;
+use app::ui::themes::ThemeStore;
 use clap::Parser;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use settings::Settings;
@@ -28,11 +28,14 @@ async fn main() -> Result<()> {
         cli::CliResult::PendingCommand(cmd) => pending_cmd = Some(cmd),
     }
 
-    let styles =
-        Styles::load(custom_config.as_ref()).context("Error while retrieving app styles")?;
+    let theme_store = ThemeStore::new(custom_config.as_ref())?;
+    let loaded_theme = theme_store.resolve(settings.theme.as_deref());
+    let styles = loaded_theme.styles;
     let config_context = settings::ConfigContext {
         settings_path: Settings::file_path(custom_config.clone())?,
-        themes_path: std::path::absolute(Styles::file_path(custom_config.as_ref())?)?,
+        themes_path: theme_store.directory().to_path_buf(),
+        active_theme_id: loaded_theme.id,
+        theme_warning: loaded_theme.warning,
         launch_details: launch_details?,
     };
     chain_panic_hook();

@@ -7,14 +7,16 @@ use super::*;
 fn popup(settings: &str, themes: &str) -> (tempfile::TempDir, ConfigPopup) {
     let directory = tempfile::tempdir().unwrap();
     let settings_path = directory.path().join("config.toml");
-    let themes_path = directory.path().join("themes.toml");
+    let themes_path = directory.path().join("themes/theme_tui.toml");
+    fs::create_dir(themes_path.parent().unwrap()).unwrap();
     fs::write(&settings_path, settings).unwrap();
     fs::write(&themes_path, themes).unwrap();
     let popup = ConfigPopup::new(
         ConfigDocument::load(settings_path).unwrap(),
-        ConfigDocument::load(themes_path).unwrap(),
+        ThemeStore::new(Some(&directory.path().to_path_buf())).unwrap(),
         &toml::from_str(settings).unwrap(),
         &Styles::deserialize(themes).unwrap(),
+        Some("tui"),
         37,
     )
     .unwrap();
@@ -26,6 +28,9 @@ fn key(popup: &mut ConfigPopup, code: KeyCode) -> ConfigAction {
 }
 
 fn select(popup: &mut ConfigPopup, tab: Tab, path: &[&str]) {
+    if tab == Tab::Appearance && popup.themes_document.is_none() {
+        popup.edit_selected_theme();
+    }
     popup.tab = Tab::ALL
         .iter()
         .position(|candidate| *candidate == tab)
@@ -110,13 +115,15 @@ fn separate_documents_and_layout_return_separate_save_actions() {
     for _ in 0..4 {
         key(&mut popup, KeyCode::Tab);
     }
+    assert_eq!(popup.handle_input(&save), ConfigAction::Keep);
+    key(&mut popup, KeyCode::Char('e'));
     assert_eq!(popup.handle_input(&save), ConfigAction::SaveAppearance);
     key(&mut popup, KeyCode::Tab);
     assert_eq!(popup.handle_input(&save), ConfigAction::SaveLayout(37));
     key(&mut popup, KeyCode::Char('d'));
     assert_eq!(popup.handle_input(&save), ConfigAction::SaveLayout(30));
     assert!(!popup.settings_document.is_dirty());
-    assert!(!popup.themes_document.is_dirty());
+    assert!(!popup.theme_dirty());
     popup.mark_layout_saved(30);
     assert!(!popup.is_dirty());
 }
@@ -136,7 +143,7 @@ fn editing_inherited_color_keeps_the_other_preset_properties() {
     popup
         .apply_value(&field, Some(Value::String("Red".into())))
         .unwrap();
-    let actual = Styles::deserialize(&popup.themes_document.text()).unwrap();
+    let actual = Styles::deserialize(&popup.themes_document.as_ref().unwrap().text()).unwrap();
     assert_eq!(actual.editor.cursor_normal.fg, Some(Color::Red));
     assert_eq!(
         Value::try_from(actual.editor.cursor_normal)
@@ -153,7 +160,7 @@ fn editing_inherited_color_keeps_the_other_preset_properties() {
     assert!(!popup.settings_document.is_dirty());
     popup.apply_value(&field, None).unwrap();
     assert_eq!(
-        Styles::deserialize(&popup.themes_document.text())
+        Styles::deserialize(&popup.themes_document.as_ref().unwrap().text())
             .unwrap()
             .editor
             .cursor_normal
@@ -162,7 +169,7 @@ fn editing_inherited_color_keeps_the_other_preset_properties() {
     );
     popup.restore_default();
     assert_eq!(
-        Styles::deserialize(&popup.themes_document.text())
+        Styles::deserialize(&popup.themes_document.as_ref().unwrap().text())
             .unwrap()
             .editor
             .cursor_normal,
@@ -428,5 +435,390 @@ fn backend_choice_only_contains_compiled_backends() {
         ("File", cfg!(feature = "file")),
     ] {
         assert_eq!(choices.contains(&name), available, "{name}");
+    }
+}
+
+fn appearance(popup: &mut ConfigPopup) {
+    popup.tab = Tab::ALL
+        .iter()
+        .position(|tab| *tab == Tab::Appearance)
+        .unwrap();
+}
+
+fn lazy_popup() -> (tempfile::TempDir, ConfigPopup) {
+    let directory = tempfile::tempdir().unwrap();
+    let popup = ConfigPopup::new(
+        ConfigDocument::load(directory.path().join("config.toml")).unwrap(),
+        ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
+        &Settings::default(),
+        &Styles::default(),
+        Some("tui"),
+        37,
+    )
+    .unwrap();
+    (directory, popup)
+}
+
+#[test]
+fn browsing_activating_and_cancelling_builtin_theme_creates_no_files() {
+    let (directory, mut popup) = lazy_popup();
+    appearance(&mut popup);
+    assert_eq!(popup.theme_catalog.len(), 1);
+    assert_eq!(popup.theme_catalog[0].label, "Tui (default)");
+    assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::ActivateTheme);
+    let (id, styles) = popup.selected_theme().unwrap();
+    assert_eq!(id, "tui");
+    assert_eq!(
+        Value::try_from(styles).unwrap(),
+        Value::try_from(Styles::default()).unwrap()
+    );
+    key(&mut popup, KeyCode::Char('e'));
+    assert_eq!(popup.edited_theme_id(), Some("tui"));
+    assert!(!popup.theme_dirty());
+    assert_eq!(key(&mut popup, KeyCode::Esc), ConfigAction::Keep);
+    assert!(popup.themes_document.is_none());
+    assert_eq!(key(&mut popup, KeyCode::Esc), ConfigAction::Close);
+    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn returning_to_list_discards_only_theme_edits_after_confirmation() {
+    let (_, mut popup) = lazy_popup();
+    key(&mut popup, KeyCode::Enter);
+    let settings_draft = popup.settings_document.text();
+    popup.divider = 45;
+    appearance(&mut popup);
+    key(&mut popup, KeyCode::Char('e'));
+    select(&mut popup, Tab::Appearance, &["msgbox", "error"]);
+    key(&mut popup, KeyCode::Enter);
+    popup.editor = Some(TextArea::new(vec!["Green".into()]));
+    key(&mut popup, KeyCode::Enter);
+    assert!(popup.theme_dirty());
+    key(&mut popup, KeyCode::Esc);
+    assert!(popup.confirm_theme_close);
+    assert!(!popup.confirm_close);
+    key(&mut popup, KeyCode::Char('n'));
+    assert!(popup.themes_document.is_some());
+    key(&mut popup, KeyCode::Esc);
+    key(&mut popup, KeyCode::Char('y'));
+    assert!(popup.themes_document.is_none());
+    assert!(!popup.theme_dirty());
+    assert!(popup.settings_document.is_dirty());
+    assert_eq!(popup.settings_document.text(), settings_draft);
+    assert_eq!(popup.divider, 45);
+}
+
+#[test]
+fn theme_field_cancel_keeps_editor_and_other_theme_drafts() {
+    let (_, mut popup) = lazy_popup();
+    appearance(&mut popup);
+    key(&mut popup, KeyCode::Char('e'));
+    select(&mut popup, Tab::Appearance, &["msgbox", "error"]);
+    let field = popup.current_field().clone();
+    popup
+        .apply_value(&field, Some(Value::String("Green".into())))
+        .unwrap();
+    let draft = popup.themes_document.as_ref().unwrap().text();
+    key(&mut popup, KeyCode::Enter);
+    popup.editor = Some(TextArea::new(vec!["invalid".into()]));
+    key(&mut popup, KeyCode::Esc);
+    assert!(popup.editor.is_none());
+    assert!(!popup.confirm_theme_close);
+    assert_eq!(popup.themes_document.as_ref().unwrap().text(), draft);
+    key(&mut popup, KeyCode::Tab);
+    key(&mut popup, KeyCode::BackTab);
+    assert_eq!(popup.current_field().keys(), ["msgbox", "error"]);
+    assert_eq!(popup.themes_document.as_ref().unwrap().text(), draft);
+}
+
+#[test]
+fn new_theme_validates_name_and_stays_lazy_until_saved() {
+    let (directory, mut popup) = lazy_popup();
+    appearance(&mut popup);
+    key(&mut popup, KeyCode::Char('n'));
+    popup.editor = Some(TextArea::new(vec!["../bad".into()]));
+    key(&mut popup, KeyCode::Enter);
+    assert!(popup.error);
+    assert!(popup.creating_theme);
+    assert!(popup.themes_document.is_none());
+    popup.editor = Some(TextArea::new(vec!["Night Sky".into()]));
+    key(&mut popup, KeyCode::Enter);
+    assert!(!popup.creating_theme);
+    assert_eq!(popup.edited_theme_id(), Some("night_sky"));
+    assert!(popup.theme_dirty());
+    assert!(!popup.theme_is_active());
+    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    key(&mut popup, KeyCode::Esc);
+    key(&mut popup, KeyCode::Char('y'));
+    assert_eq!(popup.theme_catalog.len(), 1);
+    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn saving_duplicate_refreshes_catalog_without_activating_it() {
+    let (directory, mut popup) = lazy_popup();
+    appearance(&mut popup);
+    key(&mut popup, KeyCode::Char('n'));
+    popup.editor = Some(TextArea::new(vec!["Night Sky".into()]));
+    assert_eq!(
+        popup.handle_input(&Input::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+        ConfigAction::SaveAppearance
+    );
+    select(&mut popup, Tab::Appearance, &["msgbox", "error"]);
+    let field = popup.current_field().clone();
+    popup
+        .apply_value(&field, Some(Value::String("Green".into())))
+        .unwrap();
+    let styles = Styles::deserialize(&popup.themes_document.as_ref().unwrap().text()).unwrap();
+    popup.themes_document_mut().unwrap().save().unwrap();
+    popup.mark_appearance_saved(&styles);
+    assert!(!popup.theme_dirty());
+    assert_eq!(popup.active_theme_id.as_deref(), Some("tui"));
+    assert_eq!(popup.saved_themes, Value::try_from(&styles).unwrap());
+    assert!(
+        directory
+            .path()
+            .join("themes/theme_night_sky.toml")
+            .is_file()
+    );
+    assert!(!directory.path().join("themes/theme_tui.toml").exists());
+    key(&mut popup, KeyCode::Esc);
+    assert_eq!(popup.theme_catalog[popup.theme_selected].id, "night_sky");
+    assert_eq!(popup.theme_catalog[popup.theme_selected].label, "Night Sky");
+    assert_eq!(
+        key(&mut popup, KeyCode::Char('a')),
+        ConfigAction::ActivateTheme
+    );
+    let (id, _) = popup.selected_theme().unwrap();
+    popup.mark_theme_activated(&id);
+    assert_eq!(popup.active_theme_id.as_deref(), Some("night_sky"));
+}
+
+#[test]
+fn saving_active_theme_updates_its_saved_styles() {
+    let (_, mut popup) = lazy_popup();
+    appearance(&mut popup);
+    key(&mut popup, KeyCode::Char('e'));
+    select(&mut popup, Tab::Appearance, &["msgbox", "error"]);
+    let field = popup.current_field().clone();
+    popup
+        .apply_value(&field, Some(Value::String("Green".into())))
+        .unwrap();
+    let styles = Styles::deserialize(&popup.themes_document.as_ref().unwrap().text()).unwrap();
+    popup.themes_document_mut().unwrap().save().unwrap();
+    popup.mark_appearance_saved(&styles);
+    assert!(popup.theme_is_active());
+    assert_eq!(popup.saved_themes, Value::try_from(&styles).unwrap());
+}
+
+#[test]
+fn malformed_theme_is_listed_but_cannot_be_edited_or_activated() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("themes")).unwrap();
+    fs::write(directory.path().join("themes/theme_tui.toml"), "[broken").unwrap();
+    fs::write(
+        directory.path().join("themes/theme_night.toml"),
+        "[msgbox]\nerror = 'Green'\n",
+    )
+    .unwrap();
+    let mut popup = ConfigPopup::new(
+        ConfigDocument::load(directory.path().join("config.toml")).unwrap(),
+        ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
+        &Settings::default(),
+        &Styles::default(),
+        Some("tui"),
+        37,
+    )
+    .unwrap();
+    appearance(&mut popup);
+    assert!(popup.theme_catalog[0].error.is_some());
+    assert!(popup.selected_theme().is_err());
+    key(&mut popup, KeyCode::Char('e'));
+    assert!(popup.error);
+    assert!(popup.themes_document.is_none());
+    key(&mut popup, KeyCode::Char('n'));
+    assert!(popup.editor.is_none());
+    key(&mut popup, KeyCode::Down);
+    assert_eq!(popup.selected_theme().unwrap().0, "night");
+    key(&mut popup, KeyCode::Char('e'));
+    assert_eq!(popup.edited_theme_id(), Some("night"));
+}
+
+#[test]
+fn theme_list_and_editor_show_identity_navigation_and_discard_prompt() {
+    let (_, mut popup) = lazy_popup();
+    appearance(&mut popup);
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let render = |popup: &mut ConfigPopup, terminal: &mut Terminal<TestBackend>| {
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>()
+    };
+    let text = render(&mut popup, &mut terminal);
+    for expected in [
+        "Tui (default)",
+        "Active",
+        "activate",
+        "edit",
+        "new/duplicate",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?}");
+    }
+    key(&mut popup, KeyCode::Char('n'));
+    popup.editor = Some(TextArea::new(vec!["Night".into()]));
+    key(&mut popup, KeyCode::Enter);
+    let text = render(&mut popup, &mut terminal);
+    assert!(text.contains("Configuration · Night"));
+    key(&mut popup, KeyCode::Esc);
+    let text = render(&mut popup, &mut terminal);
+    assert!(text.contains("Discard theme edits? y/n"));
+}
+
+#[test]
+fn narrow_theme_list_keeps_actions_and_discard_choices_visible() {
+    for width in [25, 30] {
+        let (_, mut popup) = lazy_popup();
+        appearance(&mut popup);
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+        let render = |popup: &mut ConfigPopup, terminal: &mut Terminal<TestBackend>| {
+            terminal
+                .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+        let text = render(&mut popup, &mut terminal);
+        for expected in ["a Activate", "e Edit", "n New", "Tab Next", "Esc Close"] {
+            assert!(
+                text.contains(expected),
+                "missing {expected:?} at width {width}"
+            );
+        }
+        key(&mut popup, KeyCode::Char('n'));
+        let text = render(&mut popup, &mut terminal);
+        for expected in ["Enter Accept", "Esc Cancel", "^S Save"] {
+            assert!(
+                text.contains(expected),
+                "missing {expected:?} at width {width}"
+            );
+        }
+        popup.editor = Some(TextArea::new(vec!["Night".into()]));
+        key(&mut popup, KeyCode::Enter);
+        key(&mut popup, KeyCode::Esc);
+        assert!(render(&mut popup, &mut terminal).contains("Discard? y/n"));
+    }
+}
+
+#[test]
+fn unavailable_theme_directory_does_not_block_other_configuration_tabs() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("themes"), "keep").unwrap();
+    let mut popup = ConfigPopup::new(
+        ConfigDocument::load(directory.path().join("config.toml")).unwrap(),
+        ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
+        &Settings::default(),
+        &Styles::default(),
+        None,
+        37,
+    )
+    .unwrap();
+    assert!(popup.error);
+    assert!(popup.status.contains("Could not list themes"));
+    key(&mut popup, KeyCode::Enter);
+    assert!(popup.settings_document.is_dirty());
+    appearance(&mut popup);
+    assert!(popup.theme_catalog[0].error.is_some());
+    assert!(popup.selected_theme().is_err());
+    key(&mut popup, KeyCode::Char('e'));
+    assert!(popup.themes_document.is_none());
+    key(&mut popup, KeyCode::Char('n'));
+    assert!(popup.editor.is_none());
+    assert_eq!(
+        fs::read_to_string(directory.path().join("themes")).unwrap(),
+        "keep"
+    );
+}
+
+#[test]
+fn builtin_fallback_is_not_the_custom_tui_theme_until_activated() {
+    let (directory, mut popup) = lazy_popup();
+    fs::create_dir(directory.path().join("themes")).unwrap();
+    fs::write(
+        directory.path().join("themes/theme_tui.toml"),
+        "[msgbox]\nerror = 'Green'\n",
+    )
+    .unwrap();
+    popup.active_theme_id = None;
+    assert!(!popup.theme_is_active());
+    appearance(&mut popup);
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains("Built-in Tui fallback active"));
+    key(&mut popup, KeyCode::Char('e'));
+    assert_eq!(popup.edited_theme_id(), Some("tui"));
+    assert!(!popup.theme_is_active());
+    select(&mut popup, Tab::Appearance, &["msgbox", "error"]);
+    let field = popup.current_field().clone();
+    popup
+        .apply_value(&field, Some(Value::String("Yellow".into())))
+        .unwrap();
+    let styles = Styles::deserialize(&popup.themes_document.as_ref().unwrap().text()).unwrap();
+    popup.themes_document_mut().unwrap().save().unwrap();
+    popup.mark_appearance_saved(&styles);
+    assert!(!popup.theme_is_active());
+    assert!(popup.status.contains("Activate it"));
+    popup.mark_theme_activated("tui");
+    assert!(popup.theme_is_active());
+}
+
+#[test]
+fn medium_theme_list_keeps_navigation_footer_visible() {
+    for width in [55, 60, 70, 75] {
+        let (_, mut popup) = lazy_popup();
+        appearance(&mut popup);
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for expected in [
+            "Enter/a Activate",
+            "e Edit",
+            "n New/duplicate",
+            "Tab Sections",
+            "Esc Close",
+        ] {
+            assert!(
+                text.contains(expected),
+                "missing {expected:?} at width {width}"
+            );
+        }
     }
 }

@@ -3,6 +3,7 @@ use backend::DataProvider;
 
 use crate::settings::{Settings, document::ConfigDocument};
 
+use super::themes::ThemeStore;
 use super::{App, ConfigAction, ConfigPopup, Popup, Styles, UIComponents};
 
 impl UIComponents<'_> {
@@ -12,12 +13,13 @@ impl UIComponents<'_> {
             .as_ref()
             .context("Configuration paths are unavailable")?;
         let settings = ConfigDocument::load(context.settings_path.clone())?;
-        let themes = ConfigDocument::load(context.themes_path.clone())?;
+        let themes = ThemeStore::from_directory(context.themes_path.clone())?;
         let mut popup = ConfigPopup::new(
             settings,
             themes,
             &app.settings,
             &self.styles,
+            self.active_theme_id.as_deref(),
             app.state.entries_list_percentage(),
         )?;
         popup.set_launch_details(context.launch_details.clone());
@@ -45,12 +47,25 @@ impl UIComponents<'_> {
                 popup.mark_settings_saved(&app.settings);
             }
             ConfigAction::SaveAppearance => {
-                let document = popup.themes_document_mut();
+                let is_active = popup.theme_is_active();
+                let document = popup.themes_document_mut()?;
                 let styles =
                     Styles::deserialize(&document.text()).context("Invalid appearance settings")?;
                 document.save()?;
+                if is_active {
+                    self.styles = styles.clone();
+                }
+                popup.mark_appearance_saved(&styles);
+            }
+            ConfigAction::ActivateTheme => {
+                let (id, styles) = popup.selected_theme()?;
+                popup
+                    .settings_document_mut()
+                    .save_field_preserving_draft(&["theme"], Some(id.clone().into()))?;
+                app.settings.theme = Some(id.clone());
+                self.active_theme_id = Some(id.clone());
                 self.styles = styles;
-                popup.mark_appearance_saved(&self.styles);
+                popup.mark_theme_activated(&id);
             }
             ConfigAction::SaveLayout(percentage) => {
                 let previous = app.state.entries_list_percentage();

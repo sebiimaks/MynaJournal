@@ -2,9 +2,8 @@ mod editor_styles;
 mod general_styles;
 mod journals_list_styles;
 mod msgbox;
+mod store;
 mod style;
-
-use std::{fs, path::PathBuf};
 
 use anyhow::Context;
 use ratatui::style::Color;
@@ -14,9 +13,8 @@ pub use editor_styles::EditorStyles;
 pub use general_styles::GeneralStyles;
 pub use journals_list_styles::JournalsListStyles;
 pub use msgbox::MsgBoxColors;
+pub use store::{ThemeDocument, ThemeInfo, ThemeStore};
 pub use style::Style;
-
-use crate::settings::settings_default_dir_path;
 
 const ACTIVE_CONTROL_COLOR: Color = Color::Reset;
 const INACTIVE_CONTROL_COLOR: Color = Color::Rgb(170, 170, 200);
@@ -39,54 +37,11 @@ pub struct Styles {
 }
 
 impl Styles {
-    pub fn file_path(custom_config_dir: Option<&PathBuf>) -> anyhow::Result<PathBuf> {
-        let config_dir = match custom_config_dir {
-            Some(dir) if dir.is_dir() => dir,
-            Some(_path) => {
-                // It's possible for users to provide path for configuration file instead of
-                // directory because this was the previous API.
-                // In this situation it's enough to warn them and ignore the path in themes.
-                eprintln!(
-                    "INFO: Custom config directory is ignored in themese because it's not a directory."
-                );
-                log::warn!(
-                    "Custom config directory is ignored in themese because it's not a directory"
-                );
-                &settings_default_dir_path()?
-            }
-            None => &settings_default_dir_path()?,
-        };
-        let path = config_dir.join("themes.toml");
-
-        Ok(path)
-    }
-
     /// Serialize default themes to `toml` format.
     pub fn serialize_default() -> anyhow::Result<String> {
         let def_style = Self::default();
         toml::to_string_pretty(&def_style)
             .context("Error while serializing default styles to toml format")
-    }
-
-    pub fn load(custom_config_dir: Option<&PathBuf>) -> anyhow::Result<Self> {
-        let file_path = Self::file_path(custom_config_dir)?;
-        if !file_path.exists() {
-            return Ok(Self::default());
-        }
-
-        let file_content = fs::read_to_string(&file_path).with_context(|| {
-            format!(
-                "Loading themes file content failed. Path: {}",
-                file_path.display()
-            )
-        })?;
-
-        Self::deserialize(&file_content).with_context(|| {
-            format!(
-                "Error while desrializing toml text to styles. File path: {}",
-                file_path.display()
-            )
-        })
     }
 
     /// Deserialize [`Styles`] from the given text, filling the missing items from default
@@ -98,54 +53,9 @@ impl Styles {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use ratatui::style::Modifier;
 
     use super::*;
-
-    #[test]
-    fn file_path_uses_directory() {
-        let dir = tempfile::Builder::new()
-            .prefix("themes-dir")
-            .tempdir()
-            .unwrap();
-
-        let path = Styles::file_path(Some(&dir.path().to_path_buf())).unwrap();
-
-        assert_eq!(path, dir.path().join("themes.toml"));
-    }
-
-    #[test]
-    fn file_path_ignores_file_input() {
-        let dir = tempfile::Builder::new()
-            .prefix("themes-file")
-            .tempdir()
-            .unwrap();
-        let config_file = dir.path().join("config.toml");
-        fs::write(&config_file, "").unwrap();
-
-        // Config file paths stay backward compatible, but themes still resolve from the default dir.
-        let path = Styles::file_path(Some(&config_file)).unwrap();
-
-        assert!(path.ends_with("themes.toml"));
-        assert!(!path.starts_with(&config_file));
-    }
-
-    #[test]
-    fn load_missing_returns_default() {
-        let dir = tempfile::Builder::new()
-            .prefix("themes-load")
-            .tempdir()
-            .unwrap();
-
-        let styles = Styles::load(Some(&dir.path().to_path_buf())).unwrap();
-
-        assert_eq!(styles.general, GeneralStyles::default());
-        assert_eq!(styles.journals_list, JournalsListStyles::default());
-        assert_eq!(styles.editor, EditorStyles::default());
-        assert_eq!(styles.msgbox, MsgBoxColors::default());
-    }
 
     #[test]
     fn serialize_default_round_trips() {

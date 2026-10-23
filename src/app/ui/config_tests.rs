@@ -13,6 +13,7 @@ use super::{
     App, ControlType, Popup, Styles, UIComponents,
     config_popup::{ConfigAction, ConfigPopup},
     editor::EditorMode,
+    themes::ThemeStore,
 };
 
 struct NoAccessProvider;
@@ -63,7 +64,9 @@ fn setup(
     let mut app = App::new(NoAccessProvider, settings);
     app.config_context = Some(ConfigContext {
         settings_path,
-        themes_path: dir.path().join("themes.toml"),
+        themes_path: dir.path().join("themes"),
+        active_theme_id: Some("tui".into()),
+        theme_warning: None,
         launch_details: vec!["Test launch overrides".into()],
     });
     app.entries.push(Entry::new(
@@ -100,6 +103,31 @@ fn set_setting(ui: &mut UIComponents<'_>, path: &[&str], value: toml::Value) {
 
 async fn press(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>, code: KeyCode) {
     ui.handle_input(&key(code), app).await.unwrap();
+}
+
+async fn control(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>, character: char) {
+    ui.handle_input(
+        &Input::new(KeyCode::Char(character), KeyModifiers::CONTROL),
+        app,
+    )
+    .await
+    .unwrap();
+}
+
+async fn edit_text(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>, text: &str) {
+    press(ui, app, KeyCode::Enter).await;
+    control(ui, app, 'a').await;
+    control(ui, app, 'k').await;
+    for character in text.chars() {
+        press(ui, app, KeyCode::Char(character)).await;
+    }
+    press(ui, app, KeyCode::Enter).await;
+}
+
+async fn appearance(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>) {
+    for _ in 0..4 {
+        press(ui, app, KeyCode::Tab).await;
+    }
 }
 
 #[tokio::test]
@@ -162,14 +190,14 @@ async fn opening_and_cancelling_does_not_create_or_rewrite_configuration() {
     press(&mut ui, &mut app, KeyCode::Char('!')).await;
     press(&mut ui, &mut app, KeyCode::Esc).await;
     assert_eq!(fs::read(dir.path().join("config.toml")).unwrap(), original);
-    assert!(!dir.path().join("themes.toml").exists());
+    assert!(!dir.path().join("themes").exists());
     assert!(!dir.path().join("state").exists());
 
     fs::remove_file(dir.path().join("config.toml")).unwrap();
     press(&mut ui, &mut app, KeyCode::Char('!')).await;
     press(&mut ui, &mut app, KeyCode::Esc).await;
     assert!(!dir.path().join("config.toml").exists());
-    assert!(!dir.path().join("themes.toml").exists());
+    assert!(!dir.path().join("themes").exists());
 }
 
 #[tokio::test]
@@ -588,8 +616,13 @@ async fn appearance_and_settings_have_independent_save_states() {
     let (dir, mut app, mut ui) = setup("");
     press(&mut ui, &mut app, KeyCode::Char('!')).await;
     set_setting(&mut ui, &["editor_word_wrap"], false.into());
+    for _ in 0..4 {
+        press(&mut ui, &mut app, KeyCode::Tab).await;
+    }
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
     popup(&mut ui)
         .themes_document_mut()
+        .unwrap()
         .set(
             &["general", "input_block_active", "fg"],
             Some("Magenta".into()),
@@ -604,12 +637,12 @@ async fn appearance_and_settings_have_independent_save_states() {
     );
     assert!(app.settings.editor_word_wrap);
     assert!(popup(&mut ui).settings_document_mut().is_dirty());
-    assert!(!popup(&mut ui).themes_document_mut().is_dirty());
+    assert!(!popup(&mut ui).themes_document_mut().unwrap().is_dirty());
     assert_eq!(
         fs::read_to_string(dir.path().join("config.toml")).unwrap(),
         ""
     );
-    assert!(dir.path().join("themes.toml").exists());
+    assert!(dir.path().join("themes/theme_tui.toml").exists());
 
     ui.save_config(ConfigAction::SaveSettings, &mut app)
         .unwrap();
@@ -666,4 +699,377 @@ async fn configuration_renders_all_tabs_in_tiny_terminals() {
         }
         press(&mut ui, &mut app, KeyCode::Tab).await;
     }
+}
+
+#[tokio::test]
+async fn activating_theme_keeps_settings_layout_and_journal_drafts_independent() {
+    let config = "# Preserve preferences\ncolored_tags = true\nauto_title = { kind = 'date' }\n\n[json_backend]\nfile_path = 'keep.json'\n\n[sqlite_backend]\nfile_path = 'keep.db'\n\n[vjournal_backend]\ndirectory = 'keep-events'\n\n[file_backend]\ndirectory = 'keep-files'\nformat = 'markdown'\n";
+    let (dir, mut app, mut ui) = setup(config);
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    let theme = "[general.input_block_active]\nfg = 'Magenta'\n";
+    fs::write(themes.join("theme_night.toml"), theme).unwrap();
+    let original_title = app.settings.auto_title.clone();
+    ui.change_active_control(ControlType::EntryContentTxt);
+    ui.editor.set_entry_content("Unsaved journal 世界", &app);
+    ui.editor.set_editor_mode(EditorMode::Insert);
+    ui.editor
+        .handle_input_prioritized(&key(KeyCode::Char('Z')), &app)
+        .unwrap();
+    ui.editor.set_editor_mode(EditorMode::Normal);
+    let journal_draft = ui.editor.get_content();
+    let entries = app.entries.clone();
+    app.history
+        .register_change_content(HistoryStack::Undo, &app.entries[0]);
+    let history = format!("{:?}", app.history);
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Tab).await;
+    edit_text(&mut ui, &mut app, "45").await;
+    press(&mut ui, &mut app, KeyCode::BackTab).await;
+    press(&mut ui, &mut app, KeyCode::Down).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+
+    assert_eq!(ui.active_theme_id.as_deref(), Some("night"));
+    assert_eq!(app.settings.theme.as_deref(), Some("night"));
+    assert_eq!(
+        ui.styles.general.input_block_active.fg,
+        Some(Color::Magenta)
+    );
+    assert!(app.settings.colored_tags);
+    assert_eq!(app.settings.auto_title, original_title);
+    assert_eq!(app.state.entries_list_percentage(), 30);
+    assert!(!dir.path().join("state").exists());
+    assert_eq!(ui.editor.get_content(), journal_draft);
+    assert!(ui.has_unsaved());
+    assert_eq!(app.entries, entries);
+    assert_eq!(format!("{:?}", app.history), history);
+    let draft = popup(&mut ui).settings_document_mut();
+    assert!(draft.is_dirty());
+    assert_eq!(draft.value(&["colored_tags"]), Some(false.into()));
+    let saved_text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    let saved: toml::Value = toml::from_str(&saved_text).unwrap();
+    let original: toml::Value = toml::from_str(config).unwrap();
+    assert_eq!(saved["theme"].as_str(), Some("night"));
+    for name in [
+        "colored_tags",
+        "auto_title",
+        "json_backend",
+        "sqlite_backend",
+        "vjournal_backend",
+        "file_backend",
+    ] {
+        assert_eq!(saved[name], original[name]);
+    }
+    assert!(saved_text.contains("# Preserve preferences"));
+    assert_eq!(
+        fs::read_to_string(themes.join("theme_night.toml")).unwrap(),
+        theme
+    );
+
+    press(&mut ui, &mut app, KeyCode::Tab).await;
+    control(&mut ui, &mut app, 's').await;
+    assert_eq!(app.state.entries_list_percentage(), 45);
+    assert!(popup(&mut ui).settings_document_mut().is_dirty());
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Char('y')).await;
+    assert!(!ui.has_popup());
+    assert_eq!(ui.editor.get_content(), journal_draft);
+    ui.editor
+        .handle_input(&key(KeyCode::Char('u')), &app)
+        .unwrap();
+    assert_eq!(ui.editor.get_content(), "Unsaved journal 世界");
+    assert_eq!(format!("{:?}", app.history), history);
+}
+
+#[tokio::test]
+async fn saving_named_copy_does_not_activate_it_and_active_edits_apply_after_save() {
+    let (dir, mut app, mut ui) = setup("");
+    let original_styles = toml::Value::try_from(&ui.styles).unwrap();
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Char('n')).await;
+    for character in "Night Blue".chars() {
+        press(&mut ui, &mut app, KeyCode::Char(character)).await;
+    }
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    assert_eq!(popup(&mut ui).edited_theme_id(), Some("night_blue"));
+    assert!(!dir.path().join("themes").exists());
+    edit_text(&mut ui, &mut app, "Magenta").await;
+    control(&mut ui, &mut app, 's').await;
+
+    assert_eq!(ui.active_theme_id.as_deref(), Some("tui"));
+    assert_eq!(app.settings.theme, None);
+    assert_eq!(toml::Value::try_from(&ui.styles).unwrap(), original_styles);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+        ""
+    );
+    let theme_path = dir.path().join("themes/theme_night_blue.toml");
+    let saved: toml::Value = toml::from_str(&fs::read_to_string(&theme_path).unwrap()).unwrap();
+    assert_eq!(saved["theme"]["name"].as_str(), Some("Night Blue"));
+    assert_eq!(
+        saved["general"]["input_block_active"]["fg"].as_str(),
+        Some("Magenta")
+    );
+    assert!(!dir.path().join("themes/theme_tui.toml").exists());
+
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Char('a')).await;
+    assert_eq!(ui.active_theme_id.as_deref(), Some("night_blue"));
+    assert_eq!(
+        ui.styles.general.input_block_active.fg,
+        Some(Color::Magenta)
+    );
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
+    edit_text(&mut ui, &mut app, "Blue").await;
+    assert_eq!(
+        ui.styles.general.input_block_active.fg,
+        Some(Color::Magenta)
+    );
+    control(&mut ui, &mut app, 's').await;
+    assert_eq!(ui.styles.general.input_block_active.fg, Some(Color::Blue));
+    assert_eq!(app.settings.theme.as_deref(), Some("night_blue"));
+    assert!(!popup(&mut ui).themes_document_mut().unwrap().is_dirty());
+}
+
+#[tokio::test]
+async fn opening_editing_and_cancelling_themes_never_creates_themes_directory() {
+    let (dir, mut app, mut ui) = setup("# untouched\n");
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
+    edit_text(&mut ui, &mut app, "Magenta").await;
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Char('n')).await;
+    assert!(popup(&mut ui).themes_document_mut().unwrap().is_dirty());
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Char('y')).await;
+    assert!(popup(&mut ui).edited_theme_id().is_none());
+    press(&mut ui, &mut app, KeyCode::Char('n')).await;
+    for character in "Cancelled Copy".chars() {
+        press(&mut ui, &mut app, KeyCode::Char(character)).await;
+    }
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    assert_eq!(popup(&mut ui).edited_theme_id(), Some("cancelled_copy"));
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Char('y')).await;
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+
+    assert!(!ui.has_popup());
+    assert!(!dir.path().join("themes").exists());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+        "# untouched\n"
+    );
+    assert_eq!(ui.active_theme_id.as_deref(), Some("tui"));
+}
+
+#[tokio::test]
+async fn failed_theme_activation_preserves_runtime_journal_and_settings_draft() {
+    for conflict in [false, true] {
+        let (dir, mut app, mut ui) = setup("colored_tags = true\n");
+        let themes = dir.path().join("themes");
+        fs::create_dir(&themes).unwrap();
+        let theme_path = themes.join("theme_night.toml");
+        fs::write(
+            &theme_path,
+            "[general.input_block_active]\nfg = 'Magenta'\n",
+        )
+        .unwrap();
+        ui.editor.set_entry_content("Unsaved journal 世界", &app);
+        let original_styles = toml::Value::try_from(&ui.styles).unwrap();
+        press(&mut ui, &mut app, KeyCode::Char('!')).await;
+        press(&mut ui, &mut app, KeyCode::Enter).await;
+        appearance(&mut ui, &mut app).await;
+        press(&mut ui, &mut app, KeyCode::Down).await;
+        let external = if conflict {
+            "colored_tags = true\n# Changed outside the app\n"
+        } else {
+            fs::write(
+                &theme_path,
+                "[general.input_block_active]\nfg = 'not-a-color'\n",
+            )
+            .unwrap();
+            "colored_tags = true\n"
+        };
+        fs::write(dir.path().join("config.toml"), external).unwrap();
+
+        press(&mut ui, &mut app, KeyCode::Enter).await;
+
+        assert_eq!(ui.active_theme_id.as_deref(), Some("tui"));
+        assert_eq!(app.settings.theme, None);
+        assert!(app.settings.colored_tags);
+        assert_eq!(toml::Value::try_from(&ui.styles).unwrap(), original_styles);
+        assert_eq!(ui.editor.get_content(), "Unsaved journal 世界");
+        assert!(ui.has_unsaved());
+        let draft = popup(&mut ui).settings_document_mut();
+        assert!(draft.is_dirty());
+        assert_eq!(draft.value(&["colored_tags"]), Some(false.into()));
+        assert_eq!(draft.value(&["theme"]), None);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            external
+        );
+    }
+}
+
+#[tokio::test]
+async fn invalid_configured_theme_does_not_prevent_opening_or_saving_other_settings() {
+    let (dir, mut app, mut ui) = setup("theme = 'broken'\ncolored_tags = true\n");
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    let invalid = "[general.input_block_active]\nfg = 'not-a-color'\n";
+    fs::write(themes.join("theme_broken.toml"), invalid).unwrap();
+    let loaded = ThemeStore::from_directory(themes.clone())
+        .unwrap()
+        .resolve(app.settings.theme.as_deref());
+    assert!(loaded.warning.is_some());
+    ui.styles = loaded.styles;
+    ui.set_active_theme(loaded.id);
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    control(&mut ui, &mut app, 's').await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Down).await;
+    assert!(popup(&mut ui).selected_theme().is_err());
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| ui.render_ui(frame, &app)).unwrap();
+
+    assert!(!app.settings.colored_tags);
+    assert_eq!(ui.active_theme_id, None);
+    assert_eq!(app.settings.theme.as_deref(), Some("broken"));
+    assert_eq!(
+        fs::read_to_string(themes.join("theme_broken.toml")).unwrap(),
+        invalid
+    );
+    let saved: Settings =
+        toml::from_str(&fs::read_to_string(dir.path().join("config.toml")).unwrap()).unwrap();
+    assert_eq!(saved.theme.as_deref(), Some("broken"));
+    assert!(!saved.colored_tags);
+}
+
+#[tokio::test]
+async fn failed_active_theme_save_keeps_runtime_style_and_theme_draft() {
+    let (dir, mut app, mut ui) = setup("");
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    let theme_path = themes.join("theme_tui.toml");
+    fs::write(&theme_path, "# Before editing\n").unwrap();
+    let original_styles = toml::Value::try_from(&ui.styles).unwrap();
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
+    edit_text(&mut ui, &mut app, "Magenta").await;
+    let external = "# Changed externally\n[general.input_block_active]\nfg = 'Blue'\n";
+    fs::write(&theme_path, external).unwrap();
+
+    control(&mut ui, &mut app, 's').await;
+
+    assert_eq!(toml::Value::try_from(&ui.styles).unwrap(), original_styles);
+    assert_eq!(fs::read_to_string(theme_path).unwrap(), external);
+    let draft = popup(&mut ui).themes_document_mut().unwrap();
+    assert!(draft.is_dirty());
+    let styles = Styles::deserialize(&draft.text()).unwrap();
+    assert_eq!(styles.general.input_block_active.fg, Some(Color::Magenta));
+}
+
+#[tokio::test]
+async fn unavailable_themes_directory_does_not_block_general_configuration() {
+    let (dir, mut app, mut ui) = setup("colored_tags = true\n");
+    let themes = dir.path().join("themes");
+    fs::write(&themes, "A file occupies the themes directory path").unwrap();
+    let loaded = ThemeStore::from_directory(themes.clone())
+        .unwrap()
+        .resolve(None);
+    assert!(loaded.warning.is_some());
+    ui.styles = loaded.styles;
+    ui.set_active_theme(loaded.id);
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    control(&mut ui, &mut app, 's').await;
+    assert!(!app.settings.colored_tags);
+    appearance(&mut ui, &mut app).await;
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| ui.render_ui(frame, &app)).unwrap();
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+
+    assert_eq!(ui.active_theme_id, None);
+    assert_eq!(app.settings.theme, None);
+    assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
+    assert_eq!(
+        fs::read_to_string(themes).unwrap(),
+        "A file occupies the themes directory path"
+    );
+    let saved: Settings =
+        toml::from_str(&fs::read_to_string(dir.path().join("config.toml")).unwrap()).unwrap();
+    assert!(!saved.colored_tags);
+    assert_eq!(saved.theme, None);
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    assert!(!ui.has_popup());
+}
+
+#[tokio::test]
+async fn fallback_defaults_do_not_activate_custom_tui_until_explicit_selection() {
+    let (dir, mut app, mut ui) = setup("theme = 'missing'\n");
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    fs::write(
+        themes.join("theme_tui.toml"),
+        "[general.input_block_active]\nfg = 'Blue'\n",
+    )
+    .unwrap();
+    let store = ThemeStore::from_directory(themes.clone()).unwrap();
+    let loaded = store.resolve(app.settings.theme.as_deref());
+    assert!(loaded.warning.is_some());
+    assert_eq!(loaded.id, None);
+    ui.styles = loaded.styles;
+    ui.set_active_theme(loaded.id);
+    let fallback_styles = toml::Value::try_from(&ui.styles).unwrap();
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
+    assert!(!popup(&mut ui).theme_is_active());
+    edit_text(&mut ui, &mut app, "Magenta").await;
+    control(&mut ui, &mut app, 's').await;
+
+    assert_eq!(ui.active_theme_id, None);
+    assert_eq!(toml::Value::try_from(&ui.styles).unwrap(), fallback_styles);
+    assert_eq!(app.settings.theme.as_deref(), Some("missing"));
+    assert_eq!(
+        fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+        "theme = 'missing'\n"
+    );
+    let saved_styles =
+        Styles::deserialize(&fs::read_to_string(themes.join("theme_tui.toml")).unwrap()).unwrap();
+    assert_eq!(
+        saved_styles.general.input_block_active.fg,
+        Some(Color::Magenta)
+    );
+
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+
+    assert_eq!(ui.active_theme_id.as_deref(), Some("tui"));
+    assert_eq!(app.settings.theme.as_deref(), Some("tui"));
+    assert_eq!(
+        ui.styles.general.input_block_active.fg,
+        Some(Color::Magenta)
+    );
+    let saved: Settings =
+        toml::from_str(&fs::read_to_string(dir.path().join("config.toml")).unwrap()).unwrap();
+    let restarted = store.resolve(saved.theme.as_deref());
+    assert_eq!(restarted.id.as_deref(), Some("tui"));
+    assert!(restarted.warning.is_none());
+    assert_eq!(
+        toml::Value::try_from(restarted.styles).unwrap(),
+        toml::Value::try_from(&ui.styles).unwrap()
+    );
 }

@@ -149,6 +149,10 @@ where
     D: DataProvider,
 {
     let mut ui_components = UIComponents::new(styles);
+    ui_components.set_active_theme(config_context.active_theme_id.clone());
+    if let Some(warning) = &config_context.theme_warning {
+        ui_components.show_err_msg(warning.clone());
+    }
     let mut app = App::new(data_provider, settings);
     app.config_context = Some(config_context);
     if let Some(cmd) = pending_cmd
