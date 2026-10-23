@@ -83,7 +83,7 @@ impl EntriesList {
                 let date_priority_lines = match (app.settings.datum_visibility, entry.priority) {
                     (DatumVisibility::Show, Some(prio)) => {
                         let one_liner = format!(
-                            "{},{},{} | Priority: {}",
+                            "{}.{}.{} | Priority: {}",
                             entry.date.day(),
                             entry.date.month(),
                             entry.date.year(),
@@ -93,7 +93,7 @@ impl EntriesList {
                         if one_liner.len() > area.width as usize - LIST_INNER_MARGIN {
                             vec![
                                 format!(
-                                    "{},{},{}",
+                                    "{}.{}.{}",
                                     entry.date.day(),
                                     entry.date.month(),
                                     entry.date.year()
@@ -106,7 +106,7 @@ impl EntriesList {
                     }
                     (DatumVisibility::Show, None) => {
                         vec![format!(
-                            "{},{},{}",
+                            "{}.{}.{}",
                             entry.date.day(),
                             entry.date.month(),
                             entry.date.year()
