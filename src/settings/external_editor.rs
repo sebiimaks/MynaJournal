@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // In older version the external editor was a string only referring to the command.
 // To keep the configuration compatible, deserialize is implemented to accept either string or struct
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExternalEditor {
     #[serde(default)]
     pub command: Option<String>,

@@ -282,6 +282,34 @@ support it, hold Shift to use the terminal's own mouse selection instead of drag
 
 The configuration for TUI-Journal can be found in the `config.toml` file located in the configuration folder within the TUI-Journal directory.
 
+Press `!` in normal mode to open **Show config**, or use it while selecting multiple
+journals. In text insertion mode `!` remains ordinary punctuation. The popup has
+tabs for general preferences, new entries and exports, the editor, storage,
+appearance, and the divider. Each option includes a description and its saved and
+effective values. Command-line overrides and the configuration locations are
+shown for reference.
+
+Use `Tab` / `Shift-Tab` to change tabs, the arrow keys to select an option, and
+`Enter` to edit it. Press `d` outside a text field to restore that option's default.
+`Ctrl-S` saves the current configuration document: General, Entries, Editor and
+Storage share `config.toml`; Appearance saves `themes.toml`; Layout saves the
+divider to the existing app-state file. `Esc` cancels a field edit or closes the
+popup, with a discard prompt when configuration edits remain unsaved.
+
+Display preferences apply after a successful save. Entry defaults, exports, and
+external-editor preferences apply on the next relevant operation. Backend and
+storage paths, the app-state directory, and the journal undo limit are marked
+**restart required**; changing them preserves the current journal and undo history.
+Changing storage paths does not move or copy entries. Relative paths retain their
+existing meaning: they resolve from the application's launch directory.
+
+Viewing settings does not create files. Saving preserves unrelated configuration,
+comments, and backend sections, including those unavailable in the current build.
+CLI backend/path overrides are not copied into saved preferences. If a file changes
+outside the app while the popup is open, saving reports a conflict and keeps the
+configuration draft; close and reopen the popup to load the external changes.
+Journal drafts remain separate from configuration drafts throughout.
+
 Here is a sample of the settings in the `config.toml` file:
 
 ```toml
@@ -319,7 +347,6 @@ app_state_dir = "<STATE_DIRECTORY>/tui-journal/"
 [export]
 default_path = "<Absolute_path_to_export_directory>"   # Optional default path to export multiple journals or a single journal's content. Falls back to the current directory if not specified.
 show_confirmation = true   # Show confirmation after successful export.
-scroll_per_page = 5    # Sets how many journals will be scrolled using Page-Up and Page-Down command
 
 [external_editor]
 # Set the external terminal editor to use from within the app.

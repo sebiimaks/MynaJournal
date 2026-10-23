@@ -1,6 +1,19 @@
 # TUI-Journal Custom Themes:
 
-It's possible to override the styles used in the app or parts of them. Custom themes will be read from the file `theme.toml` in the configuration directory of `tui-journal`.
+It's possible to override the styles used in the app or parts of them. Custom themes will be read from the file `themes.toml` in the configuration directory of `tui-journal`.
+
+You can edit every existing theme property inside the app: press `!` in normal
+mode and select the **Appearance** tab. `Enter` edits a color or modifier, `d`
+restores the selected property's preset, and `Ctrl-S` saves appearance separately
+from application settings. Changes apply after saving without reloading journals.
+Color values accept names, `#RRGGBB`, and palette indices from 0 to 255. For optional
+style colors, `inherit` removes that color; `Reset` explicitly uses the terminal's
+default color. Modifier names can be combined with `|`.
+
+Editing one property of a previously implicit style preserves its other effective
+properties. Legacy cursor-style aliases remain supported. The popup shows the
+actual theme file location; when using the legacy `--config FILE` form, themes
+continue to use the default configuration directory.
 
 ## Table of Contents
 

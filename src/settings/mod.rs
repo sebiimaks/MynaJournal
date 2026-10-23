@@ -32,12 +32,20 @@ pub mod sqlite_backend;
 pub mod vjournal_backend;
 
 mod auto_title;
+pub mod document;
 mod export;
 mod external_editor;
 
+#[derive(Debug, Clone)]
+pub struct ConfigContext {
+    pub settings_path: PathBuf,
+    pub themes_path: PathBuf,
+    pub launch_details: Vec<String>,
+}
+
 const DEFAULT_SCROLL_PER_PAGE: usize = 5;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {
     #[serde(default)]
     pub export: ExportSettings,
@@ -142,6 +150,21 @@ const fn default_colored_tags() -> bool {
 
 impl Settings {
     pub async fn new(custom_config_dir: Option<PathBuf>) -> anyhow::Result<Self> {
+        let config_file = Self::file_path(custom_config_dir)?;
+        let settings = if config_file.exists() {
+            let file_content = tokio::fs::read_to_string(config_file)
+                .await
+                .map_err(|err| anyhow!("Failed to load configuration file. Error infos: {err}"))?;
+            toml::from_str(file_content.as_str())
+                .map_err(|err| anyhow!("Failed to read configuration file. Error infos: {err}"))?
+        } else {
+            Settings::default()
+        };
+
+        Ok(settings)
+    }
+
+    pub fn file_path(custom_config_dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
         let config_file = if let Some(path) = custom_config_dir {
             ensure!(
                 path.exists(),
@@ -162,17 +185,7 @@ impl Settings {
             settings_file_path(&default_dir)
         };
 
-        let settings = if config_file.exists() {
-            let file_content = tokio::fs::read_to_string(config_file)
-                .await
-                .map_err(|err| anyhow!("Failed to load configuration file. Error infos: {err}"))?;
-            toml::from_str(file_content.as_str())
-                .map_err(|err| anyhow!("Failed to read configuration file. Error infos: {err}"))?
-        } else {
-            Settings::default()
-        };
-
-        Ok(settings)
+        Ok(std::path::absolute(config_file)?)
     }
 
     pub fn get_as_text(&mut self) -> anyhow::Result<String> {
@@ -346,6 +359,25 @@ mod tests {
 
         assert_eq!(settings.scroll_per_page, Some(9));
         assert_eq!(settings.history_limit, 4);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn custom_config_keeps_parent_components_after_a_symlink() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("real/child")).unwrap();
+        fs::write(dir.path().join("real/config.toml"), "history_limit = 23").unwrap();
+        fs::write(dir.path().join("config.toml"), "history_limit = 7").unwrap();
+        symlink(dir.path().join("real/child"), dir.path().join("linked")).unwrap();
+        let path = dir.path().join("linked/../config.toml");
+        let settings = Settings::new(Some(path.clone())).await.unwrap();
+        assert_eq!(settings.history_limit, 23);
+        let destination = Settings::file_path(Some(path)).unwrap();
+        assert_eq!(
+            fs::canonicalize(destination).unwrap(),
+            fs::canonicalize(dir.path().join("real/config.toml")).unwrap()
+        );
     }
 
     #[tokio::test]

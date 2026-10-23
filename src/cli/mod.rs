@@ -57,6 +57,40 @@ pub enum CliResult {
 }
 
 impl Cli {
+    pub fn launch_details(&self) -> anyhow::Result<Vec<String>> {
+        let mut details = vec![
+            format!(
+                "Working directory: {} (relative paths resolve here)",
+                std::env::current_dir()?.display()
+            ),
+            format!(
+                "Log: {}",
+                std::path::absolute(self.log_file.clone().map_or_else(default_log_path, Ok)?)?
+                    .display()
+            ),
+            format!("Logging verbosity: {} (launch option)", self.verbose),
+        ];
+        #[cfg(feature = "json")]
+        if let Some(path) = &self.json_file_path {
+            details.push(format!("CLI override: JSON file = {}", path.display()));
+        }
+        #[cfg(feature = "sqlite")]
+        if let Some(path) = &self.sqlite_file_path {
+            details.push(format!("CLI override: SQLite file = {}", path.display()));
+        }
+        #[cfg(feature = "vjournal")]
+        if let Some(path) = &self.vjournal_dir_path {
+            details.push(format!(
+                "CLI override: VJOURNAL directory = {}",
+                path.display()
+            ));
+        }
+        if let Some(backend) = &self.backend_type {
+            details.push(format!("CLI override: backend = {backend:?}"));
+        }
+        Ok(details)
+    }
+
     pub async fn handle_cli(mut self, settings: &mut Settings) -> anyhow::Result<CliResult> {
         #[cfg(feature = "json")]
         if let Some(json_path) = self.json_file_path.take() {

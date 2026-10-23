@@ -93,6 +93,14 @@ impl Keymap {
 pub(crate) fn get_global_keymaps() -> Vec<Keymap> {
     vec![
         Keymap::new(
+            Input::new(KeyCode::Char('!'), KeyModifiers::NONE),
+            UICommand::ShowConfig,
+        ),
+        Keymap::new(
+            Input::new(KeyCode::Char('!'), KeyModifiers::SHIFT),
+            UICommand::ShowConfig,
+        ),
+        Keymap::new(
             Input::new(KeyCode::Char('q'), KeyModifiers::NONE),
             UICommand::Quit,
         ),
@@ -302,6 +310,14 @@ pub(crate) fn get_editor_mode_keymaps() -> Vec<Keymap> {
 
 pub fn get_multi_select_keymaps() -> Vec<Keymap> {
     vec![
+        Keymap::new(
+            Input::new(KeyCode::Char('!'), KeyModifiers::NONE),
+            UICommand::ShowConfig,
+        ),
+        Keymap::new(
+            Input::new(KeyCode::Char('!'), KeyModifiers::SHIFT),
+            UICommand::ShowConfig,
+        ),
         Keymap::new(
             Input::new(KeyCode::Char('q'), KeyModifiers::NONE),
             UICommand::LeaveMultiSelectMode,

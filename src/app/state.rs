@@ -1,4 +1,4 @@
-use std::{fs, io::BufWriter};
+use std::{fs, io::Write};
 
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
@@ -111,15 +111,47 @@ impl AppState {
     }
 
     pub fn save(&self, settings: &Settings) -> anyhow::Result<()> {
-        let state_path = Self::get_persist_path(settings)?;
+        let mut state_path = Self::get_persist_path(settings)?;
+        let mut followed_links = 0;
+        loop {
+            match fs::symlink_metadata(&state_path) {
+                Ok(metadata) if metadata.is_symlink() => {
+                    if followed_links == 40 {
+                        bail!("Too many symbolic links in state file path");
+                    }
+                    let target = fs::read_link(&state_path)?;
+                    state_path = if target.is_absolute() {
+                        target
+                    } else {
+                        state_path
+                            .parent()
+                            .context("State file has no parent directory")?
+                            .join(target)
+                    };
+                    followed_links += 1;
+                }
+                Ok(_) => {
+                    state_path = fs::canonicalize(state_path)?;
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error.into()),
+            }
+        }
         if let Some(parent) = state_path.parent() {
             fs::create_dir_all(parent)?;
         }
-
-        let state_file = File::create(state_path)?;
-        let state_writer = BufWriter::new(state_file);
-
-        serde_json::to_writer_pretty(state_writer, self)?;
+        let parent = state_path
+            .parent()
+            .context("State file has no parent directory")?;
+        let mut staged = tempfile::NamedTempFile::new_in(parent)?;
+        if let Ok(metadata) = fs::metadata(&state_path) {
+            staged.as_file().set_permissions(metadata.permissions())?;
+        }
+        serde_json::to_writer_pretty(&mut staged, self)?;
+        staged.flush()?;
+        staged.as_file().sync_all()?;
+        staged.persist(state_path)?;
 
         Ok(())
     }
@@ -298,5 +330,130 @@ mod tests {
             let state: AppState = serde_json::from_value(value).unwrap();
             assert_eq!(state.entries_list_percentage(), expected);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_preserves_state_symlink_and_permissions() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("actual.json");
+        fs::write(&target, "{}").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        symlink(&target, dir.path().join("state.json")).unwrap();
+        let settings = Settings {
+            app_state_dir: Some(dir.path().into()),
+            ..Default::default()
+        };
+        let mut state = AppState::default();
+        state.set_entries_list_percentage(45);
+        state.save(&settings).unwrap();
+        assert!(
+            fs::symlink_metadata(dir.path().join("state.json"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert_eq!(
+            AppState::load(&settings).unwrap().entries_list_percentage(),
+            45
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_creates_missing_state_target_through_relative_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        for chained in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::create_dir(dir.path().join("targets")).unwrap();
+            let target = dir.path().join("targets/actual.json");
+            if chained {
+                symlink("actual.json", dir.path().join("targets/link.json")).unwrap();
+            }
+            let destination = if chained {
+                "targets/link.json"
+            } else {
+                "targets/actual.json"
+            };
+            let state_path = dir.path().join("state.json");
+            symlink(destination, &state_path).unwrap();
+            let settings = Settings {
+                app_state_dir: Some(dir.path().into()),
+                ..Default::default()
+            };
+            let mut state = AppState::default();
+            state.set_entries_list_percentage(45);
+
+            state.save(&settings).unwrap();
+
+            assert!(target.is_file());
+            assert!(fs::symlink_metadata(&state_path).unwrap().is_symlink());
+            assert_eq!(
+                fs::read_link(&state_path).unwrap(),
+                PathBuf::from(destination)
+            );
+            if chained {
+                assert_eq!(
+                    fs::read_link(dir.path().join("targets/link.json")).unwrap(),
+                    PathBuf::from("actual.json")
+                );
+            }
+            assert_eq!(
+                AppState::load(&settings).unwrap().entries_list_percentage(),
+                45
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_rejects_cyclic_state_symlinks_without_replacing_them() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("state.json");
+        let other_path = dir.path().join("other.json");
+        symlink("other.json", &state_path).unwrap();
+        symlink("state.json", &other_path).unwrap();
+        let settings = Settings {
+            app_state_dir: Some(dir.path().into()),
+            ..Default::default()
+        };
+
+        let error = AppState::default().save(&settings).unwrap_err();
+
+        assert!(error.to_string().contains("Too many symbolic links"));
+        assert_eq!(
+            fs::read_link(state_path).unwrap(),
+            PathBuf::from("other.json")
+        );
+        assert_eq!(
+            fs::read_link(other_path).unwrap(),
+            PathBuf::from("state.json")
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn failed_state_replacement_preserves_existing_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("state.json");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("keep"), "untouched").unwrap();
+        let settings = Settings {
+            app_state_dir: Some(dir.path().into()),
+            ..Default::default()
+        };
+        assert!(AppState::default().save(&settings).is_err());
+        assert_eq!(
+            fs::read_to_string(target.join("keep")).unwrap(),
+            "untouched"
+        );
     }
 }

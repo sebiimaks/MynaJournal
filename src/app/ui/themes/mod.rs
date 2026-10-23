@@ -91,7 +91,7 @@ impl Styles {
 
     /// Deserialize [`Styles`] from the given text, filling the missing items from default
     /// implementation.
-    fn deserialize(input: &str) -> anyhow::Result<Self> {
+    pub(crate) fn deserialize(input: &str) -> anyhow::Result<Self> {
         toml::from_str(input).map_err(|err| err.into())
     }
 }

@@ -3,7 +3,7 @@ use self::{
     sorter::{SortCriteria, SortOrder, Sorter},
     state::AppState,
 };
-use crate::settings::Settings;
+use crate::settings::{ConfigContext, Settings};
 use anyhow::{Context, anyhow, bail};
 use backend::{DataProvider, EntriesDTO, Entry, EntryDraft};
 use chrono::{DateTime, Utc};
@@ -48,6 +48,7 @@ where
     /// Inactive entries' IDs due to not meeting the filter criteria
     pub filtered_out_entries: HashSet<u32>,
     pub settings: Settings,
+    pub config_context: Option<ConfigContext>,
     pub redraw_after_restore: bool,
     pub filter: Option<Filter>,
     state: AppState,
@@ -74,11 +75,29 @@ where
             selected_entries,
             filtered_out_entries,
             settings,
+            config_context: None,
             redraw_after_restore: false,
             filter: None,
             state: Default::default(),
             history,
             colored_tags,
+        }
+    }
+
+    /// Apply preferences that do not replace session storage or discard undo history.
+    pub fn apply_live_settings(&mut self, saved: Settings) {
+        self.settings.export = saved.export;
+        self.settings.external_editor = saved.external_editor;
+        self.settings.default_journal_priority = saved.default_journal_priority;
+        self.settings.auto_title = saved.auto_title;
+        self.settings.scroll_per_page = saved.scroll_per_page;
+        self.settings.sync_os_clipboard = saved.sync_os_clipboard;
+        self.settings.editor_word_wrap = saved.editor_word_wrap;
+        self.settings.datum_visibility = saved.datum_visibility;
+        if self.settings.colored_tags != saved.colored_tags {
+            self.settings.colored_tags = saved.colored_tags;
+            self.colored_tags = saved.colored_tags.then(ColoredTagsManager::new);
+            self.update_colored_tags();
         }
     }
 

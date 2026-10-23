@@ -4,7 +4,7 @@ use ratatui::{Terminal, backend::Backend};
 
 use crate::app::{App, UIComponents};
 use crate::cli::PendingCliCommand;
-use crate::settings::{BackendType, Settings};
+use crate::settings::{BackendType, ConfigContext, Settings};
 use futures_util::StreamExt;
 
 use backend::DataProvider;
@@ -32,6 +32,7 @@ pub async fn run<B: Backend>(
     settings: Settings,
     styles: Styles,
     pending_cmd: Option<PendingCliCommand>,
+    config_context: ConfigContext,
 ) -> Result<()> {
     match settings.backend_type.unwrap_or_default() {
         #[cfg(feature = "json")]
@@ -42,7 +43,15 @@ pub async fn run<B: Backend>(
                 crate::settings::json_backend::get_default_json_path()?
             };
             let data_provider = JsonDataProvide::new(path);
-            run_intern(terminal, data_provider, settings, styles, pending_cmd).await
+            run_intern(
+                terminal,
+                data_provider,
+                settings,
+                styles,
+                pending_cmd,
+                config_context,
+            )
+            .await
         }
         #[cfg(not(feature = "json"))]
         BackendType::Json => {
@@ -58,7 +67,15 @@ pub async fn run<B: Backend>(
                 crate::settings::sqlite_backend::get_default_sqlite_path()?
             };
             let data_provider = SqliteDataProvide::from_file(path).await?;
-            run_intern(terminal, data_provider, settings, styles, pending_cmd).await
+            run_intern(
+                terminal,
+                data_provider,
+                settings,
+                styles,
+                pending_cmd,
+                config_context,
+            )
+            .await
         }
         #[cfg(not(feature = "sqlite"))]
         BackendType::Sqlite => {
@@ -74,7 +91,15 @@ pub async fn run<B: Backend>(
                 crate::settings::vjournal_backend::get_default_vjournal_path()?
             };
             let data_provider = VjournalDataProvide::new(directory);
-            run_intern(terminal, data_provider, settings, styles, pending_cmd).await
+            run_intern(
+                terminal,
+                data_provider,
+                settings,
+                styles,
+                pending_cmd,
+                config_context,
+            )
+            .await
         }
         #[cfg(not(feature = "vjournal"))]
         BackendType::Vjournal => {
@@ -91,6 +116,7 @@ async fn run_intern<B, D>(
     settings: Settings,
     styles: Styles,
     pending_cmd: Option<PendingCliCommand>,
+    config_context: ConfigContext,
 ) -> anyhow::Result<()>
 where
     B: Backend,
@@ -98,6 +124,7 @@ where
 {
     let mut ui_components = UIComponents::new(styles);
     let mut app = App::new(data_provider, settings);
+    app.config_context = Some(config_context);
     if let Some(cmd) = pending_cmd
         && let Err(err) = exec_pending_cmd(terminal, &mut app, cmd).await
     {

@@ -18,6 +18,7 @@ async fn main() -> Result<()> {
 
     let custom_config = cli.config_path.clone();
     let mut settings = Settings::new(custom_config.clone()).await?;
+    let launch_details = cli.launch_details();
 
     let mut pending_cmd = None;
 
@@ -29,12 +30,17 @@ async fn main() -> Result<()> {
 
     let styles =
         Styles::load(custom_config.as_ref()).context("Error while retrieving app styles")?;
+    let config_context = settings::ConfigContext {
+        settings_path: Settings::file_path(custom_config.clone())?,
+        themes_path: std::path::absolute(Styles::file_path(custom_config.as_ref())?)?,
+        launch_details: launch_details?,
+    };
     chain_panic_hook();
     let _terminal_session = terminal_session::TerminalSession::enter()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    app::run(&mut terminal, settings, styles, pending_cmd)
+    app::run(&mut terminal, settings, styles, pending_cmd, config_context)
         .await
         .inspect_err(|err| {
             log::error!("[PANIC] {err:?}");

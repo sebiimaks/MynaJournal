@@ -128,6 +128,12 @@ fn get_standard_text<D: DataProvider>(ui_components: &UIComponents, app: &App<D>
         .collect();
 
     footer_parts.push(get_keymap_text(help_keymap));
+    let config_keymap = ui_components
+        .global_keymaps
+        .iter()
+        .filter(|keymap| keymap.command == UICommand::ShowConfig && keymap.key.modifiers.is_empty())
+        .collect();
+    footer_parts.push(get_keymap_text(config_keymap));
 
     footer_parts.join(SEPARATOR)
 }
@@ -145,7 +151,16 @@ fn get_multi_select_text(ui_components: &UIComponents) -> String {
         .filter(|keymap| keymap.command == UICommand::ShowHelp)
         .collect();
 
-    let parts = [get_keymap_text(leave_keymap), get_keymap_text(help_keymap)];
+    let config_keymap = ui_components
+        .multi_select_keymaps
+        .iter()
+        .filter(|keymap| keymap.command == UICommand::ShowConfig && keymap.key.modifiers.is_empty())
+        .collect();
+    let parts = [
+        get_keymap_text(leave_keymap),
+        get_keymap_text(help_keymap),
+        get_keymap_text(config_keymap),
+    ];
 
     parts.join(SEPARATOR)
 }

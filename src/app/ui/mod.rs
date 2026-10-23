@@ -4,6 +4,7 @@ use backend::DataProvider;
 pub use themes::Styles;
 
 use self::{
+    config_popup::{ConfigAction, ConfigPopup},
     editor::{Editor, EditorMode},
     entries_list::EntriesList,
     entry_popup::{EntryPopup, EntryPopupInputReturn},
@@ -34,6 +35,10 @@ use ratatui::{
 };
 
 mod commands;
+mod config_handlers;
+mod config_popup;
+#[cfg(test)]
+mod config_tests;
 mod divider;
 mod editor;
 mod entries_list;
@@ -59,6 +64,7 @@ pub enum ControlType {
 
 pub enum Popup<'a> {
     Help(Box<HelpPopup>),
+    Config(Box<ConfigPopup>),
     Entry(Box<EntryPopup<'a>>),
     MsgBox(Box<MsgBox>),
     Export(Box<ExportPopup<'a>>),
@@ -197,6 +203,7 @@ impl UIComponents<'_> {
     pub fn render_popup(&mut self, f: &mut Frame) {
         if let Some(popup) = self.popup_stack.last_mut() {
             match popup {
+                Popup::Config(config) => config.render_widget(f, f.area(), &self.styles),
                 Popup::Help(help_popup) => help_popup.render_widget(f, f.area()),
                 Popup::Entry(entry_popup) => entry_popup.render_widget(f, f.area(), &self.styles),
                 Popup::MsgBox(msg_box) => msg_box.render_widget(f, f.area(), &self.styles),
@@ -284,9 +291,21 @@ impl UIComponents<'_> {
         input: &Input,
         app: &mut App<D>,
     ) -> Result<HandleInputReturnType> {
+        if let Some(Popup::Config(config)) = self.popup_stack.last_mut() {
+            let action = config.handle_input(input);
+            if action == ConfigAction::Close {
+                self.popup_stack.pop();
+            } else if let Err(error) = self.save_config(action, app)
+                && let Some(Popup::Config(config)) = self.popup_stack.last_mut()
+            {
+                config.show_error(format!("{error:#}"));
+            }
+            return Ok(HandleInputReturnType::Handled);
+        }
         match self.popup_stack.last_mut() {
             Some(popup) => {
                 match popup {
+                    Popup::Config(_) => unreachable!("configuration handled above"),
                     Popup::Help(help_popup) => {
                         if help_popup.handle_input(input) == HelpInputInputReturn::Close {
                             self.popup_stack.pop().expect("popup stack isn't empty");

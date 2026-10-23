@@ -29,6 +29,7 @@ pub enum ClipboardOperation {
 pub enum UICommand {
     Quit,
     ShowHelp,
+    ShowConfig,
     CycleFocusedControlForward,
     CycleFocusedControlBack,
     SelectedNextEntry,
@@ -91,6 +92,9 @@ impl UICommand {
         match self {
             UICommand::Quit => CommandInfo::new("Exit", "Exit the program"),
             UICommand::ShowHelp => CommandInfo::new("Show help", "Show keybindings overview"),
+            UICommand::ShowConfig => {
+                CommandInfo::new("Show config", "View and edit application configuration")
+            }
             UICommand::CycleFocusedControlForward => {
                 CommandInfo::new("Cycle focus forward", "Move focus to the next control")
             }
@@ -242,6 +246,10 @@ impl UICommand {
         match self {
             UICommand::Quit => exec_quit(ui_components),
             UICommand::ShowHelp => exec_show_help(ui_components),
+            UICommand::ShowConfig => {
+                ui_components.show_config(app)?;
+                Ok(HandleInputReturnType::Handled)
+            }
             UICommand::CycleFocusedControlForward => exec_cycle_forward(ui_components),
             UICommand::CycleFocusedControlBack => exec_cycle_backward(ui_components),
             UICommand::SelectedNextEntry => exec_select_next_entry(ui_components, app),
@@ -305,6 +313,7 @@ impl UICommand {
         match self {
             UICommand::Quit => continue_quit(ui_components, app, msg_box_result).await,
             UICommand::ShowHelp => not_implemented(),
+            UICommand::ShowConfig => not_implemented(),
             UICommand::CycleFocusedControlForward => not_implemented(),
             UICommand::CycleFocusedControlBack => not_implemented(),
             UICommand::SelectedNextEntry => {

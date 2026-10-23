@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::get_default_data_dir;
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct VjournalBackend {
     #[serde(default)]
     pub directory: Option<PathBuf>,
