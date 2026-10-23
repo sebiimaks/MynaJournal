@@ -370,3 +370,63 @@ fn storage_path_checks_existing_types_without_creating_new_paths() {
         );
     }
 }
+
+#[cfg(feature = "file")]
+#[test]
+fn file_storage_options_validate_paths_and_stage_restart_only_changes() {
+    let (directory, mut popup) = popup("", "");
+    select(&mut popup, Tab::Storage, &["file_backend", "directory"]);
+    let field = popup.current_field().clone();
+    assert!(field.restart);
+    let existing_file = directory.path().join("existing");
+    fs::write(&existing_file, "keep").unwrap();
+    assert!(
+        popup
+            .apply_value(&field, Some(existing_file.display().to_string().into()))
+            .is_err()
+    );
+    assert!(!popup.is_dirty());
+    let missing = directory.path().join("new-entries");
+    popup
+        .apply_value(&field, Some(missing.display().to_string().into()))
+        .unwrap();
+    assert!(!missing.exists());
+
+    select(&mut popup, Tab::Storage, &["file_backend", "format"]);
+    assert!(popup.current_field().restart);
+    assert_eq!(popup.value(popup.current_field()), Some("plain".into()));
+    key(&mut popup, KeyCode::Enter);
+    assert_eq!(popup.value(popup.current_field()), Some("markdown".into()));
+    assert_eq!(
+        popup.active_value(popup.current_field()),
+        Some("plain".into())
+    );
+    let settings: Settings = toml::from_str(&popup.settings_document.text()).unwrap();
+    assert_eq!(settings.file_backend.directory, Some(missing));
+    assert_eq!(settings.file_backend.format, backend::FileFormat::Markdown);
+    key(&mut popup, KeyCode::Char('d'));
+    assert_eq!(popup.value(popup.current_field()), Some("plain".into()));
+    assert!(
+        popup
+            .settings_document
+            .value(&["file_backend", "format"])
+            .is_none()
+    );
+}
+
+#[test]
+fn backend_choice_only_contains_compiled_backends() {
+    let (_, mut popup) = popup("", "");
+    select(&mut popup, Tab::Storage, &["backend_type"]);
+    let Kind::Choice(choices) = &popup.current_field().kind else {
+        panic!("backend must be a choice");
+    };
+    for (name, available) in [
+        ("Json", cfg!(feature = "json")),
+        ("Sqlite", cfg!(feature = "sqlite")),
+        ("Vjournal", cfg!(feature = "vjournal")),
+        ("File", cfg!(feature = "file")),
+    ] {
+        assert_eq!(choices.contains(&name), available, "{name}");
+    }
+}

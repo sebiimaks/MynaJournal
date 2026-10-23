@@ -83,6 +83,23 @@ impl HistoryManager {
     pub fn pop_redo(&mut self) -> Option<Change> {
         self.redo_stack.pop_front()
     }
+
+    /// Returns a failed undo/redo operation to its original position for retry.
+    pub fn restore_failed_change(&mut self, change: Change, target: HistoryStack) {
+        self.add_to_stack(change, target);
+    }
+
+    /// Deleted entries whose backend metadata is still needed by undo or redo.
+    pub fn restorable_entry_ids(&self) -> Vec<u32> {
+        self.undo_stack
+            .iter()
+            .chain(&self.redo_stack)
+            .filter_map(|change| match change {
+                Change::RemoveEntry(entry) => Some(entry.id),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -216,5 +233,18 @@ mod tests {
             }
             change => panic!("unexpected change: {change:?}"),
         }
+    }
+
+    #[test]
+    fn restorable_ids_include_both_stacks_and_exclude_evicted_removals() {
+        let mut history = HistoryManager::new(2);
+        history.register_remove(HistoryStack::Undo, sample_entry(1));
+        history.register_remove(HistoryStack::Undo, sample_entry(2));
+        history.register_add(HistoryStack::Undo, &sample_entry(3));
+        history.register_remove(HistoryStack::Redo, sample_entry(4));
+        history.register_change_content(HistoryStack::Redo, &sample_entry(5));
+        let mut ids = history.restorable_entry_ids();
+        ids.sort_unstable();
+        assert_eq!(ids, [2, 4]);
     }
 }

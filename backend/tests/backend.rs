@@ -1,3 +1,5 @@
+#[cfg(feature = "file")]
+mod file;
 #[cfg(feature = "json")]
 mod json;
 #[cfg(feature = "sqlite")]

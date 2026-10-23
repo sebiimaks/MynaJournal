@@ -50,6 +50,9 @@ jobs:
       - name: Check sqlite
         run: cargo check --locked --no-default-features -F sqlite --verbose
 
+      - name: Check file
+        run: cargo check --locked --no-default-features -F file --verbose
+
       - name: Clippy
         if: ${{ matrix.rust-version == 'stable' }}
         run: cargo clippy --locked --all-targets --all-features --verbose -- -D warnings
@@ -65,6 +68,10 @@ jobs:
       - name: Run tests
         if: ${{ matrix.rust-version == 'stable' }}
         run: cargo test --locked --verbose
+
+      - name: Test file backend alone
+        if: ${{ matrix.rust-version == 'stable' }}
+        run: cargo test --locked --no-default-features -F file --verbose
 
   cffconvert:
     runs-on: ubuntu-latest

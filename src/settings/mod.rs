@@ -16,6 +16,8 @@ use serde::{
 
 use crate::app::state::AppState;
 
+#[cfg(feature = "file")]
+use self::file_backend::{FileBackend, get_default_file_path};
 #[cfg(feature = "json")]
 use self::json_backend::{JsonBackend, get_default_json_path};
 #[cfg(feature = "sqlite")]
@@ -24,6 +26,8 @@ use self::sqlite_backend::{SqliteBackend, get_default_sqlite_path};
 use self::vjournal_backend::{VjournalBackend, get_default_vjournal_path};
 use self::{auto_title::AutoTitle, export::ExportSettings, external_editor::ExternalEditor};
 
+#[cfg(feature = "file")]
+pub mod file_backend;
 #[cfg(feature = "json")]
 pub mod json_backend;
 #[cfg(feature = "sqlite")]
@@ -62,6 +66,9 @@ pub struct Settings {
     #[cfg(feature = "vjournal")]
     #[serde(default)]
     pub vjournal_backend: VjournalBackend,
+    #[cfg(feature = "file")]
+    #[serde(default)]
+    pub file_backend: FileBackend,
     #[serde(default)]
     pub default_journal_priority: Option<u32>,
     #[serde(default)]
@@ -96,6 +103,8 @@ impl Default for Settings {
             sqlite_backend: Default::default(),
             #[cfg(feature = "vjournal")]
             vjournal_backend: Default::default(),
+            #[cfg(feature = "file")]
+            file_backend: Default::default(),
             default_journal_priority: Default::default(),
             auto_title: Default::default(),
             scroll_per_page: Default::default(),
@@ -134,6 +143,16 @@ pub enum BackendType {
         default
     )]
     Vjournal,
+    #[cfg_attr(
+        all(
+            feature = "file",
+            not(feature = "json"),
+            not(feature = "sqlite"),
+            not(feature = "vjournal")
+        ),
+        default
+    )]
+    File,
 }
 
 const fn default_history_limit() -> usize {
@@ -197,17 +216,17 @@ impl Settings {
 
     pub fn complete_missing_options(&mut self) -> anyhow::Result<()> {
         // This check is to ensure that all added fields to settings struct are considered here
-        #[cfg(all(
-            debug_assertions,
-            feature = "sqlite",
-            feature = "json",
-            feature = "vjournal"
-        ))]
+        #[cfg(debug_assertions)]
         let Settings {
             backend_type: _,
-            json_backend: _,
-            sqlite_backend: _,
-            vjournal_backend: _,
+            #[cfg(feature = "json")]
+                json_backend: _,
+            #[cfg(feature = "sqlite")]
+                sqlite_backend: _,
+            #[cfg(feature = "vjournal")]
+                vjournal_backend: _,
+            #[cfg(feature = "file")]
+                file_backend: _,
             export: _,
             external_editor: _,
             default_journal_priority: _,
@@ -238,6 +257,11 @@ impl Settings {
         #[cfg(feature = "vjournal")]
         if self.vjournal_backend.directory.is_none() {
             self.vjournal_backend.directory = Some(get_default_vjournal_path()?)
+        }
+
+        #[cfg(feature = "file")]
+        if self.file_backend.directory.is_none() {
+            self.file_backend.directory = Some(get_default_file_path()?)
         }
 
         if self.scroll_per_page.is_none() {
@@ -524,6 +548,22 @@ kind = "date"
     #[test]
     fn get_scroll_falls_back() {
         assert_eq!(Settings::default().get_scroll_per_page(), 5);
+    }
+
+    #[test]
+    fn default_backend_preserves_existing_precedence() {
+        let expected = if cfg!(feature = "sqlite") {
+            BackendType::Sqlite
+        } else if cfg!(feature = "json") {
+            BackendType::Json
+        } else if cfg!(feature = "vjournal") {
+            BackendType::Vjournal
+        } else {
+            BackendType::File
+        };
+        let mut settings = Settings::default();
+        settings.complete_missing_options().unwrap();
+        assert_eq!(settings.backend_type, Some(expected));
     }
 
     #[test]

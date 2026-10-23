@@ -6,7 +6,8 @@ fn main() {
     #[cfg(all(
         not(feature = "json"),
         not(feature = "sqlite"),
-        not(feature = "vjournal")
+        not(feature = "vjournal"),
+        not(feature = "file")
     ))]
     compile_error!("One feature at least must be enabled");
 }

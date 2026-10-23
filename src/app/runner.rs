@@ -8,6 +8,8 @@ use crate::settings::{BackendType, ConfigContext, Settings};
 use futures_util::StreamExt;
 
 use backend::DataProvider;
+#[cfg(feature = "file")]
+use backend::FileDataProvider;
 #[cfg(feature = "json")]
 use backend::JsonDataProvide;
 #[cfg(feature = "sqlite")]
@@ -105,6 +107,30 @@ pub async fn run<B: Backend>(
         BackendType::Vjournal => {
             anyhow::bail!(
                 "Feature 'vjournal' is not installed. Please check your configs and set your backend to an installed feature, or reinstall the program with 'vjournal' feature"
+            )
+        }
+        #[cfg(feature = "file")]
+        BackendType::File => {
+            let directory = settings
+                .file_backend
+                .directory
+                .clone()
+                .map_or_else(crate::settings::file_backend::get_default_file_path, Ok)?;
+            let data_provider = FileDataProvider::new(directory, settings.file_backend.format);
+            run_intern(
+                terminal,
+                data_provider,
+                settings,
+                styles,
+                pending_cmd,
+                config_context,
+            )
+            .await
+        }
+        #[cfg(not(feature = "file"))]
+        BackendType::File => {
+            anyhow::bail!(
+                "Feature 'file' is not installed. Please check your configs and set your backend to an installed feature, or reinstall the program with 'file' feature"
             )
         }
     }

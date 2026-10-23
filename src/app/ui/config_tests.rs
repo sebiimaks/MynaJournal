@@ -297,7 +297,7 @@ async fn saving_wrap_preserves_dirty_text_cursor_selection_and_editor_undo() {
 async fn settings_save_preserves_auto_title_forms_and_unknown_backend_sections() {
     for auto_title in ["'My daily note'", "{ kind = 'date' }"] {
         let input = format!(
-            "# User config\nauto_title = {auto_title}\n\n[future_backend]\nvalue = 'keep me'\n\n[json_backend]\nfile_path = 'keep.json'\n\n[sqlite_backend]\nfile_path = 'keep.db'\n\n[vjournal_backend]\ndirectory = 'keep-journals'\n"
+            "# User config\nauto_title = {auto_title}\n\n[future_backend]\nvalue = 'keep me'\n\n[json_backend]\nfile_path = 'keep.json'\n\n[sqlite_backend]\nfile_path = 'keep.db'\n\n[vjournal_backend]\ndirectory = 'keep-journals'\n\n[file_backend]\ndirectory = 'keep-notes'\nformat = 'markdown'\n"
         );
         let (dir, mut app, mut ui) = setup(&input);
         let title = app.settings.auto_title.clone();
@@ -324,6 +324,11 @@ async fn settings_save_preserves_auto_title_forms_and_unknown_backend_sections()
             values["vjournal_backend"]["directory"].as_str(),
             Some("keep-journals")
         );
+        assert_eq!(
+            values["file_backend"]["directory"].as_str(),
+            Some("keep-notes")
+        );
+        assert_eq!(values["file_backend"]["format"].as_str(), Some("markdown"));
         assert!(saved.contains("# User config"));
     }
 }
@@ -361,6 +366,11 @@ async fn restart_settings_save_without_changing_active_storage_or_history() {
         &["vjournal_backend", "directory"],
         "/new/vjournal".into(),
     );
+    #[cfg(feature = "file")]
+    {
+        set_setting(&mut ui, &["file_backend", "directory"], "/new/notes".into());
+        set_setting(&mut ui, &["file_backend", "format"], "markdown".into());
+    }
     ui.save_config(ConfigAction::SaveSettings, &mut app)
         .unwrap();
 
@@ -383,6 +393,17 @@ async fn restart_settings_save_without_changing_active_storage_or_history() {
         app.settings.vjournal_backend.directory,
         original.vjournal_backend.directory
     );
+    #[cfg(feature = "file")]
+    {
+        assert_eq!(
+            app.settings.file_backend.directory,
+            original.file_backend.directory
+        );
+        assert_eq!(
+            app.settings.file_backend.format,
+            original.file_backend.format
+        );
+    }
     let saved: Settings =
         toml::from_str(&fs::read_to_string(dir.path().join("config.toml")).unwrap()).unwrap();
     assert_eq!(saved.history_limit, 3);
@@ -409,12 +430,20 @@ async fn restart_settings_save_without_changing_active_storage_or_history() {
         saved.vjournal_backend.directory.unwrap().to_str(),
         Some("/new/vjournal")
     );
+    #[cfg(feature = "file")]
+    {
+        assert_eq!(
+            saved.file_backend.directory.unwrap().to_str(),
+            Some("/new/notes")
+        );
+        assert_eq!(saved.file_backend.format, backend::FileFormat::Markdown);
+    }
 }
 
 #[tokio::test]
 async fn unrelated_save_preserves_stored_backend_values_and_active_cli_overrides() {
     let config = format!(
-        "backend_type = '{:?}'\neditor_word_wrap = true\n\n[json_backend]\nfile_path = 'saved.json'\n\n[sqlite_backend]\nfile_path = 'saved.db'\n\n[vjournal_backend]\ndirectory = 'saved-vjournal'\n",
+        "backend_type = '{:?}'\neditor_word_wrap = true\n\n[json_backend]\nfile_path = 'saved.json'\n\n[sqlite_backend]\nfile_path = 'saved.db'\n\n[vjournal_backend]\ndirectory = 'saved-vjournal'\n\n[file_backend]\ndirectory = 'saved-notes'\nformat = 'markdown'\n",
         crate::settings::BackendType::default()
     );
     let (dir, mut app, mut ui) = setup(&config);
@@ -432,6 +461,10 @@ async fn unrelated_save_preserves_stored_backend_values_and_active_cli_overrides
     {
         app.settings.vjournal_backend.directory = Some(dir.path().join("cli-vjournal"));
     }
+    #[cfg(feature = "file")]
+    {
+        app.settings.file_backend.directory = Some(dir.path().join("cli-notes"));
+    }
     let active = app.settings.clone();
     press(&mut ui, &mut app, KeyCode::Char('!')).await;
     set_setting(&mut ui, &["editor_word_wrap"], false.into());
@@ -445,6 +478,7 @@ async fn unrelated_save_preserves_stored_backend_values_and_active_cli_overrides
         "json_backend",
         "sqlite_backend",
         "vjournal_backend",
+        "file_backend",
     ] {
         assert_eq!(saved[name], stored[name]);
     }
@@ -465,9 +499,18 @@ async fn unrelated_save_preserves_stored_backend_values_and_active_cli_overrides
         app.settings.vjournal_backend.directory,
         active.vjournal_backend.directory
     );
+    #[cfg(feature = "file")]
+    {
+        assert_eq!(
+            app.settings.file_backend.directory,
+            active.file_backend.directory
+        );
+        assert_eq!(app.settings.file_backend.format, active.file_backend.format);
+    }
     assert!(!dir.path().join("cli.json").exists());
     assert!(!dir.path().join("cli.db").exists());
     assert!(!dir.path().join("cli-vjournal").exists());
+    assert!(!dir.path().join("cli-notes").exists());
 }
 
 #[tokio::test]

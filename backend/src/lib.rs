@@ -2,6 +2,11 @@ use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "file")]
+mod file;
+#[cfg(feature = "file")]
+pub use file::{FileDataProvider, FileFormat};
+
 #[cfg(feature = "json")]
 mod json;
 #[cfg(feature = "json")]
@@ -30,6 +35,9 @@ pub enum ModifyEntryError {
 // The warning can be suppressed since this will be used with the code base of this app only
 #[allow(async_fn_in_trait)]
 pub trait DataProvider {
+    /// Retain backend-specific deletion snapshots only while undo/redo can restore them.
+    fn retain_restore_metadata(&mut self, _entry_ids: &[u32]) {}
+
     async fn load_all_entries(&mut self) -> anyhow::Result<Vec<Entry>>;
     async fn add_entry(&mut self, entry: EntryDraft) -> Result<Entry, ModifyEntryError>;
     /// Restores an entry with its existing id. Implementations must not overwrite another entry.

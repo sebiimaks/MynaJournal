@@ -797,7 +797,7 @@ fn validate_path(field: &Field, value: Option<&Value>) -> Result<()> {
     };
     let directory = match field.keys().as_slice() {
         ["json_backend" | "sqlite_backend", "file_path"] => false,
-        ["vjournal_backend", "directory"] | ["app_state_dir"] => true,
+        ["vjournal_backend" | "file_backend", "directory"] | ["app_state_dir"] => true,
         _ => return Ok(()),
     };
     match std::fs::metadata(path) {

@@ -185,3 +185,187 @@ async fn many() {
         assert_eq!(app.entries.len(), current_count);
     }
 }
+
+#[tokio::test]
+async fn failed_undo_and_redo_of_content_can_be_retried() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    let original = app.get_current_entry().unwrap().content.clone();
+    app.update_current_entry_content("Changed".into())
+        .await
+        .unwrap();
+
+    app.data_provide.set_return_err(true);
+    assert!(app.undo().await.is_err());
+    assert_eq!(app.get_current_entry().unwrap().content, "Changed");
+    app.data_provide.set_return_err(false);
+    assert_eq!(app.undo().await.unwrap(), Some(1));
+    assert_eq!(app.get_current_entry().unwrap().content, original);
+    assert!(app.undo().await.unwrap().is_none());
+
+    app.data_provide.set_return_err(true);
+    assert!(app.redo().await.is_err());
+    assert_eq!(app.get_current_entry().unwrap().content, original);
+    app.data_provide.set_return_err(false);
+    assert_eq!(app.redo().await.unwrap(), Some(1));
+    assert_eq!(app.get_current_entry().unwrap().content, "Changed");
+    assert!(app.redo().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn failed_history_restore_keeps_metadata_until_retry_succeeds() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    let original = app.get_entry(1).unwrap().clone();
+    app.delete_entry(1).await.unwrap();
+
+    app.data_provide.set_return_err(true);
+    assert!(app.undo().await.is_err());
+    assert!(app.get_entry(1).is_none());
+    assert!(app.data_provide.restore_metadata.contains(&1));
+
+    app.data_provide.set_return_err(false);
+    assert_eq!(app.undo().await.unwrap(), Some(1));
+    assert_eq!(app.get_entry(1), Some(&original));
+    assert!(app.data_provide.restored_with_metadata);
+    assert!(app.data_provide.restore_metadata.is_empty());
+
+    app.data_provide.set_return_err(true);
+    assert!(app.redo().await.is_err());
+    assert_eq!(app.get_entry(1), Some(&original));
+    app.data_provide.set_return_err(false);
+    app.redo().await.unwrap();
+    assert!(app.get_entry(1).is_none());
+    assert!(app.data_provide.restore_metadata.contains(&1));
+}
+
+#[tokio::test]
+async fn redo_restore_metadata_survives_new_undo_history() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    let id = app
+        .add_entry("New entry".into(), DateTime::default(), vec![], None)
+        .await
+        .unwrap();
+    app.undo().await.unwrap();
+    app.update_current_entry_content("Changed".into())
+        .await
+        .unwrap();
+    assert!(app.data_provide.restore_metadata.contains(&id));
+
+    app.data_provide.set_return_err(true);
+    assert!(app.redo().await.is_err());
+    assert!(app.data_provide.restore_metadata.contains(&id));
+    app.data_provide.set_return_err(false);
+    assert_eq!(app.redo().await.unwrap(), Some(id));
+    assert!(app.data_provide.restored_with_metadata);
+}
+
+#[tokio::test]
+async fn history_eviction_releases_deleted_entry_metadata() {
+    for operation in ["add", "attributes", "content", "remove"] {
+        let mut app = create_default_app();
+        app.history = HistoryManager::new(1);
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(1);
+        app.delete_entry(0).await.unwrap();
+        assert!(app.data_provide.restore_metadata.contains(&0));
+
+        match operation {
+            "add" => {
+                app.add_entry("New".into(), DateTime::default(), vec![], None)
+                    .await
+                    .unwrap();
+            }
+            "attributes" => {
+                app.update_current_entry_attributes(
+                    "Changed".into(),
+                    DateTime::default(),
+                    vec![],
+                    None,
+                )
+                .await
+                .unwrap();
+            }
+            "content" => {
+                app.update_current_entry_content("Changed".into())
+                    .await
+                    .unwrap();
+            }
+            "remove" => app.delete_entry(1).await.unwrap(),
+            _ => unreachable!(),
+        }
+
+        assert!(
+            !app.data_provide.restore_metadata.contains(&0),
+            "metadata retained after {operation} evicted its history"
+        );
+    }
+}
+
+#[tokio::test]
+async fn disabled_history_releases_deleted_entry_metadata_immediately() {
+    let mut app = create_default_app();
+    app.history = HistoryManager::new(0);
+    app.load_entries().await.unwrap();
+    app.delete_entry(0).await.unwrap();
+    assert!(app.data_provide.restore_metadata.is_empty());
+    assert!(app.undo().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn missing_entry_history_returns_an_error_and_can_retry_after_reload() {
+    for change_attributes in [false, true] {
+        for redo in [false, true] {
+            let mut app = create_default_app();
+            app.load_entries().await.unwrap();
+            app.current_entry_id = Some(1);
+            let original = app.get_entry(1).unwrap().clone();
+            if change_attributes {
+                app.update_current_entry_attributes(
+                    "Edited title".into(),
+                    original.date,
+                    original.tags.clone(),
+                    original.priority,
+                )
+                .await
+                .unwrap();
+            } else {
+                app.update_current_entry_content("Edited content".into())
+                    .await
+                    .unwrap();
+            }
+            let edited = app.get_entry(1).unwrap().clone();
+            if redo {
+                app.undo().await.unwrap();
+            }
+            let before = app.get_entry(1).unwrap().clone();
+
+            app.data_provide.remove_entry(1).await.unwrap();
+            app.load_entries().await.unwrap();
+            app.current_entry_id = None;
+            let result = if redo {
+                app.redo().await
+            } else {
+                app.undo().await
+            };
+            assert!(result.unwrap_err().to_string().contains("no longer loaded"));
+            assert!(app.get_entry(1).is_none());
+
+            app.data_provide.restore_entry(before).await.unwrap();
+            app.load_entries().await.unwrap();
+            let result = if redo {
+                app.redo().await
+            } else {
+                app.undo().await
+            };
+            assert_eq!(result.unwrap(), Some(1));
+            assert_eq!(
+                app.get_entry(1),
+                Some(if redo { &edited } else { &original })
+            );
+        }
+    }
+}

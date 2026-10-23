@@ -1,5 +1,5 @@
 use anyhow::Ok;
-use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, TimeZone, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
@@ -21,6 +21,8 @@ use self::tags::{TagsPopup, TagsPopupReturn};
 use super::{Styles, ui_functions::centered_rect_exact_height};
 
 mod tags;
+#[cfg(test)]
+mod tests;
 
 const FOOTER_TEXT: &str = "Enter or <Ctrl-m>: confirm | Esc or <Ctrl-c>: Cancel | Tab: Change focused control | <Ctrl-Space> or <Ctrl-t>: Open tags";
 const FOOTER_MARGIN: u16 = 15;
@@ -31,6 +33,7 @@ pub struct EntryPopup<'a> {
     tags_txt: TextArea<'a>,
     priority_txt: TextArea<'a>,
     is_edit_entry: bool,
+    original_date: Option<DateTime<Utc>>,
     active_txt: ActiveText,
     title_err_msg: String,
     date_err_msg: String,
@@ -87,6 +90,7 @@ impl EntryPopup<'_> {
             tags_txt,
             priority_txt,
             is_edit_entry: false,
+            original_date: None,
             active_txt: ActiveText::Title,
             title_err_msg: String::default(),
             date_err_msg: String::default(),
@@ -123,6 +127,7 @@ impl EntryPopup<'_> {
             tags_txt,
             priority_txt,
             is_edit_entry: true,
+            original_date: Some(entry.date),
             active_txt: ActiveText::Title,
             title_err_msg: String::default(),
             date_err_msg: String::default(),
@@ -493,9 +498,13 @@ impl EntryPopup<'_> {
         let date = NaiveDate::parse_from_str(self.date_txt.lines()[0].as_str(), "%d-%m-%Y")
             .expect("Date must be valid here");
 
-        let date = Utc
-            .with_ymd_and_hms(date.year(), date.month(), date.day(), 0, 0, 0)
-            .unwrap();
+        let date = self
+            .original_date
+            .filter(|original| original.date_naive() == date)
+            .unwrap_or_else(|| {
+                Utc.with_ymd_and_hms(date.year(), date.month(), date.day(), 0, 0, 0)
+                    .unwrap()
+            });
 
         let tags = text_to_tags(
             self.tags_txt

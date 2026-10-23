@@ -6,6 +6,8 @@ use super::*;
 pub struct MockDataProvider {
     entries: Vec<Entry>,
     return_error: bool,
+    pub restore_metadata: HashSet<u32>,
+    pub restored_with_metadata: bool,
 }
 
 impl MockDataProvider {
@@ -13,6 +15,7 @@ impl MockDataProvider {
         MockDataProvider {
             entries: get_default_entries(),
             return_error: false,
+            ..Default::default()
         }
     }
 
@@ -62,6 +65,7 @@ impl DataProvider for MockDataProvider {
         }
 
         self.entries.push(entry.clone());
+        self.restored_with_metadata = self.restore_metadata.remove(&entry.id);
 
         Ok(entry)
     }
@@ -70,8 +74,13 @@ impl DataProvider for MockDataProvider {
         self.early_return()?;
 
         self.entries.retain(|entry| entry.id != entry_id);
+        self.restore_metadata.insert(entry_id);
 
         Ok(())
+    }
+
+    fn retain_restore_metadata(&mut self, entry_ids: &[u32]) {
+        self.restore_metadata.retain(|id| entry_ids.contains(id));
     }
 
     async fn update_entry(&mut self, entry: Entry) -> Result<Entry, ModifyEntryError> {

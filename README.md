@@ -22,7 +22,7 @@
 [![][lst]][repository]
 [![][lcns]][repository]
 
-TUI-Journal is a terminal-based application written in Rust that allows you to write and manage your journal/notes from within the comfort of your terminal. It provides a simple and efficient interface for creating and organizing your thoughts, ideas, and reflections. TUI-Journal supports three local back-ends: plain-text JSON, SQLite, and an iCalendar `VJOURNAL` directory.
+TUI-Journal is a terminal-based application written in Rust that allows you to write and manage your journal/notes from within the comfort of your terminal. It provides a simple and efficient interface for creating and organizing your thoughts, ideas, and reflections. This fork supports four local back-ends: JSON, SQLite, an iCalendar `VJOURNAL` directory, and individual plain-text or Markdown journal files.
 
 Before opening a PR, please read the [Contribution and AI Policy](#contribution-and-ai-policy).
 
@@ -55,6 +55,7 @@ Before opening a PR, please read the [Contribution and AI Policy](#contribution-
   - [Build & Install via Cargo](#build--install-via-cargo)
 - [Usage](#usage)
 - [Configuration](#configuration)
+  - [File back-end](#file-back-end)
 - [Themes](#themes)
 - [Documentation](#documentation)
 - [Contribution and AI Policy](#contribution-and-ai-policy)
@@ -64,7 +65,7 @@ Before opening a PR, please read the [Contribution and AI Policy](#contribution-
 ## Features
 
 - Write and manage journal/notes entries from the terminal.
-- Store your entries as JSON, in a SQLite database, or as iCalendar `VJOURNAL` files.
+- Store your entries as JSON, in a SQLite database, as iCalendar `VJOURNAL` files, or as plain-text/Markdown files with YAML front matter.
 - Intuitive, responsive and user-friendly text-based user interface (TUI).
 - Create, edit, and delete entries easily.
 - Edit journal content with the built-in editor or use your favourite terminal text editor from within the app.
@@ -91,6 +92,7 @@ Before opening a PR, please read the [Contribution and AI Policy](#contribution-
 - [x]  Plain text JSON back-end.
 - [x]  Database back-end using SQLite.
 - [x]  `VJOURNAL` directory back-end for use with external CalDAV sync clients.
+- [x]  Individual plain-text or Markdown files with portable metadata.
 #### Application:
 - [x]  Edit journals content with external text editor from within the app.
 - [x]  Filter & Search functionalities.
@@ -107,7 +109,7 @@ Grab the most recent pre-built binaries for your platform from the [Releases pag
 
 This fork builds `.deb` packages for **amd64** and **arm64** using Debian 12
 (Bookworm). The packages target Debian 12 or newer and Ubuntu 24.04 or newer.
-They include the JSON, SQLite, and `VJOURNAL` back-ends and install the `tjournal`
+They include the JSON, SQLite, `VJOURNAL`, and File back-ends and install the `tjournal`
 command into `/usr/bin`.
 
 Open [Build Debian packages](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml)
@@ -229,6 +231,14 @@ To install TUI-Journal with only the `VJOURNAL` back-end feature, use the follow
 cargo install tui-journal --locked --no-default-features --features vjournal
 ```
 
+The File back-end is included in this fork's default source build. Published
+upstream and package-manager versions may differ. From a checkout of this fork,
+build all four back-ends with `cargo build --release --locked`, or only File with:
+
+```bash
+cargo build --release --locked --no-default-features --features file
+```
+
 ## Usage
 
 Once installed, you can run TUI-Journal by typing `tjournal` in your terminal:
@@ -255,7 +265,8 @@ Options:
   -j, --json-file-path <FILE PATH>    Sets the entries Json file path and starts using it
   -s, --sqlite-file-path <FILE PATH>  Sets the entries sqlite file path and starts using it
       --vjournal-dir-path <DIR PATH>  Sets the entries VJOURNAL directory path and starts using it
-  -b, --backend-type <BACKEND_TYPE>   Sets the backend type and starts using it [possible values: json, sqlite, vjournal]
+      --file-dir-path <DIR PATH>     Sets the plain-text/Markdown journal directory path and starts using it
+  -b, --backend-type <BACKEND_TYPE>   Sets the backend type and starts using it [possible values: json, sqlite, vjournal, file]
   -c, --config <DIR PATH>             Specifies the path for the configuration directory.
                                       The configuration directory is considered as the root for themes files too.
                                       It still accepts the path for configuration file for backward compatibility.
@@ -298,7 +309,7 @@ popup, with a discard prompt when configuration edits remain unsaved.
 
 Display preferences apply after a successful save. Entry defaults, exports, and
 external-editor preferences apply on the next relevant operation. Backend and
-storage paths, the app-state directory, and the journal undo limit are marked
+storage paths, the File format preference, the app-state directory, and the journal undo limit are marked
 **restart required**; changing them preserves the current journal and undo history.
 Changing storage paths does not move or copy entries. Relative paths retain their
 existing meaning: they resolve from the application's launch directory.
@@ -313,7 +324,7 @@ Journal drafts remain separate from configuration drafts throughout.
 Here is a sample of the settings in the `config.toml` file:
 
 ```toml
-backend_type = "Sqlite"   # Available options: Json, Sqlite, Vjournal. Default value: Sqlite.
+backend_type = "Sqlite"   # Available options: Json, Sqlite, Vjournal, File. Default value: Sqlite.
 
 default_journal_priority = 3  # Sets the suggested priority while creating a new journal
 
@@ -369,7 +380,90 @@ file_path = "<Documents-folder>/tui-journal/entries.db"
 
 [vjournal_backend]
 directory = "<Documents-folder>/tui-journal/journal"
+
+[file_backend]
+directory = "<Documents-folder>/tui-journal/entries"
+format = "plain" # "plain" (no extension) or "markdown" (.md); applies to new files only.
 ```
+
+### File back-end
+
+The File back-end stores one UTF-8 file per entry. Select **File** under
+`!` → **Storage**, set **File directory** and **File format**, save, and restart.
+Alternatively, select a directory for one launch:
+
+```bash
+tjournal --file-dir-path /path/to/journals
+```
+
+Without a directory override, files live in `<Documents-folder>/tui-journal/entries`
+(the home directory replaces Documents if unavailable). The normal default backend
+remains SQLite. Custom builds choose SQLite, then JSON, then VJOURNAL, then File,
+according to which features are compiled in. Switching backends or directories
+does not move existing entries.
+
+New filenames use local creation time in 24-hour `YYYYMMdd_HHmmss` form, such as
+`20261023_194218`. The default `plain` format has no extension; `markdown` appends
+`.md`. Collisions add `_2`, `_3`, and so on before the extension. Editing an entry's
+title or journal date keeps its filename. Changing the format affects only new
+files; both extensionless and `.md` journals are always read from the directory's
+top level. The body is stored unchanged in either format.
+
+Each file starts with YAML front matter. The editor shows only the body; the entry
+dialog manages title, journal date, tags, and priority. For example:
+
+```text
+---
+title: "Evening notes"
+date: "2026-10-23T00:00:00Z"
+created: "2026-10-23T19:42:18+10:00"
+tags: ["personal", "walking"]
+tui_journal:
+  version: 1
+  id: "8f86c7ae-c1a0-41ea-ad9e-86f3acd90fd3"
+  priority: 2
+---
+Went for a walk after dinner.
+```
+
+`date` is the chosen journal date; `created` records actual creation time with its
+UTC offset. `title`, `date`, `created`, and the version/UUID under `tui_journal` are
+required; tags and priority may be omitted. The UUID is the permanent identity,
+independent of the filename. The app's numeric entry IDs are session identifiers,
+not values to copy into this header. Renamed files retain their identity on reload.
+Copying a file into the same directory requires a new UUID to create a separate entry.
+Titles must be nonempty, and both timestamps use RFC 3339 with a timezone.
+
+Unknown JSON-compatible metadata values are preserved. Body-only saves also retain
+header comments and formatting; editing metadata may reformat YAML and remove
+comments. Headers are limited to 1 MiB and bounded nesting and item counts;
+the same limits are checked before saving. Duplicate keys,
+anchors, aliases, merge keys, and custom YAML tags are rejected. Arbitrary text and
+unrelated files are not automatically adopted; malformed recognized journals and
+duplicate UUIDs must be resolved before writes can continue.
+
+This backend is local-only, with no network access or file watcher. Use **Reload all**
+(`Ctrl-R` in normal mode) to pick up external edits; unsaved journal drafts prompt
+before reloading. Updates and deletions check for external changes and report a
+conflict instead of accepting a stale edit. A failed save keeps the editor draft.
+Saves use flushed temporary files and atomic replacement; new entries never replace
+an existing file. An exclusive directory lock coordinates app instances. External
+editors do not share that lock, so avoid simultaneous writes to the same journal.
+Journal-file symlinks are not supported.
+
+To transfer entries from another backend, export a selection to the shared transfer
+JSON format, then run:
+
+```bash
+tjournal --file-dir-path /path/to/journals import-journals --path exported.json
+```
+
+Transfer JSON preserves journal dates, titles, bodies, tags, and priorities. It does
+not carry filenames, UUIDs, creation timestamps, or custom front matter; imported
+entries receive new UUIDs and creation filenames. Copy the original journal files
+to preserve their complete metadata. Exporting only a journal's content produces
+the body without its metadata. Imports save entries individually; if an import
+fails partway through, entries already saved remain in the directory.
 
 ### VJOURNAL back-end
 

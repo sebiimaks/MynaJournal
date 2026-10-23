@@ -189,6 +189,7 @@ where
         let entry_id = entry.id;
 
         self.history.register_add(history_target, &entry);
+        self.retain_restore_metadata();
 
         self.entries.push(entry);
 
@@ -210,6 +211,7 @@ where
         let entry_id = entry.id;
 
         self.history.register_add(history_target, &entry);
+        self.retain_restore_metadata();
 
         self.entries.push(entry);
 
@@ -230,7 +232,7 @@ where
     ) -> anyhow::Result<()> {
         let current_entry_id = self
             .current_entry_id
-            .expect("Current entry id must have value when updating entry attributes");
+            .context("No journal is selected for updating attributes")?;
         self.update_entry_attributes(
             current_entry_id,
             title,
@@ -255,14 +257,12 @@ where
     ) -> anyhow::Result<()> {
         log::trace!("Updating entry");
 
-        assert!(self.current_entry_id.is_some());
-
         let mut candidate = self
             .entries
             .iter()
             .find(|entry| entry.id == entry_id)
             .cloned()
-            .expect("Current entry must have value when updating entry attributes");
+            .with_context(|| format!("Entry {entry_id} is no longer loaded"))?;
         candidate.title = title;
         candidate.date = date;
         candidate.tags = tags;
@@ -273,6 +273,7 @@ where
             .get_entry_mut(entry_id, EntryEditPart::Attributes, history_target)
             .expect("Updated entry must remain in the entries list");
         *entry = persisted_entry;
+        self.retain_restore_metadata();
 
         self.sort_entries();
 
@@ -290,7 +291,7 @@ where
     ) -> anyhow::Result<()> {
         let current_entry_id = self
             .current_entry_id
-            .expect("Current entry id must have value when updating entry content");
+            .context("No journal is selected for saving content")?;
         self.update_entry_content(current_entry_id, entry_content, HistoryStack::Undo)
             .await
     }
@@ -305,15 +306,20 @@ where
     ) -> anyhow::Result<()> {
         log::trace!("Updating entry content");
 
+        let mut candidate = self
+            .entries
+            .iter()
+            .find(|entry| entry.id == entry_id)
+            .cloned()
+            .with_context(|| format!("Entry {entry_id} is no longer loaded"))?;
+        candidate.content = entry_content;
+
+        let persisted_entry = self.data_provide.update_entry(candidate).await?;
         let entry = self
             .get_entry_mut(entry_id, EntryEditPart::Content, history_target)
-            .expect("Current entry id must have value when updating entry content");
-
-        entry.content = entry_content;
-
-        let clone = entry.clone();
-
-        self.data_provide.update_entry(clone).await?;
+            .expect("Updated entry must remain in the entries list");
+        *entry = persisted_entry;
+        self.retain_restore_metadata();
 
         self.update_filtered_out_entries();
 
@@ -341,6 +347,7 @@ where
             .expect("entry must be in the entries list");
 
         self.history.register_remove(history_target, removed_entry);
+        self.retain_restore_metadata();
 
         self.update_filter();
         self.update_filtered_out_entries();
@@ -586,7 +593,16 @@ where
     /// Apply undo on entries returning the id of the effected entry.
     pub async fn undo(&mut self) -> anyhow::Result<Option<u32>> {
         match self.history.pop_undo() {
-            Some(change) => self.apply_history_change(change, HistoryStack::Redo).await,
+            Some(change) => {
+                let result = self
+                    .apply_history_change(change.clone(), HistoryStack::Redo)
+                    .await;
+                if result.is_err() {
+                    self.history
+                        .restore_failed_change(change, HistoryStack::Undo);
+                }
+                result
+            }
             None => Ok(None),
         }
     }
@@ -594,9 +610,23 @@ where
     /// Apply redo on entries returning the id of the effected entry.
     pub async fn redo(&mut self) -> anyhow::Result<Option<u32>> {
         match self.history.pop_redo() {
-            Some(change) => self.apply_history_change(change, HistoryStack::Undo).await,
+            Some(change) => {
+                let result = self
+                    .apply_history_change(change.clone(), HistoryStack::Undo)
+                    .await;
+                if result.is_err() {
+                    self.history
+                        .restore_failed_change(change, HistoryStack::Redo);
+                }
+                result
+            }
             None => Ok(None),
         }
+    }
+
+    fn retain_restore_metadata(&mut self) {
+        self.data_provide
+            .retain_restore_metadata(&self.history.restorable_entry_ids());
     }
 
     async fn apply_history_change(

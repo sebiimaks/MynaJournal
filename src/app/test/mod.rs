@@ -1,5 +1,7 @@
 use chrono::TimeZone;
 
+#[cfg(feature = "file")]
+mod file;
 mod filter;
 
 use self::mock::MockDataProvider;
@@ -30,7 +32,7 @@ fn get_default_entries() -> Vec<Entry> {
     ]
 }
 
-fn create_default_app() -> App<MockDataProvider> {
+pub(super) fn create_default_app() -> App<MockDataProvider> {
     let settings = Settings::default();
     let data_provider = MockDataProvider::new_with_data();
 
@@ -92,6 +94,62 @@ async fn failed_attribute_update_keeps_entry_unchanged() {
 
     assert!(result.is_err());
     assert_eq!(app.get_current_entry(), Some(&original));
+    assert!(app.history.pop_undo().is_none());
+}
+
+#[tokio::test]
+async fn failed_content_save_preserves_unsaved_editor_draft_and_history() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use ui::{ControlType, Styles, UICommand};
+
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    let mut ui = UIComponents::new(Styles::default());
+    ui.set_current_entry(Some(1), &mut app);
+    ui.change_active_control(ControlType::EntryContentTxt);
+    let original = app.get_current_entry().unwrap().clone();
+    UICommand::StartEditEntryContent
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    ui.handle_input(
+        &keymap::Input::new(KeyCode::Char('X'), KeyModifiers::NONE),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert!(ui.has_unsaved());
+
+    app.data_provide.set_return_err(true);
+    assert!(
+        UICommand::SaveEntryContent
+            .execute(&mut ui, &mut app)
+            .await
+            .is_err()
+    );
+    ui.handle_input(
+        &keymap::Input::new(KeyCode::Left, KeyModifiers::NONE),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert_eq!(app.get_current_entry(), Some(&original));
+    assert!(ui.has_unsaved());
+    assert!(app.history.pop_undo().is_none());
+
+    app.data_provide.set_return_err(false);
+    UICommand::SaveEntryContent
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    assert_eq!(
+        app.get_current_entry().unwrap().content,
+        format!("{}X", original.content)
+    );
+    assert!(!ui.has_unsaved());
+    app.undo().await.unwrap();
+    assert_eq!(app.get_current_entry(), Some(&original));
+    assert!(app.undo().await.unwrap().is_none());
 }
 
 #[tokio::test]

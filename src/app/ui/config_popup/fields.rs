@@ -112,11 +112,14 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         "Sqlite",
         #[cfg(feature = "vjournal")]
         "Vjournal",
+        #[cfg(feature = "file")]
+        "File",
     ];
     let availability = [
         ("Json", cfg!(feature = "json")),
         ("Sqlite", cfg!(feature = "sqlite")),
         ("Vjournal", cfg!(feature = "vjournal")),
+        ("File", cfg!(feature = "file")),
     ]
     .into_iter()
     .map(|(name, enabled)| {
@@ -174,6 +177,25 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         )
         .restart(),
     );
+    #[cfg(feature = "file")]
+    fields.extend([
+        Field::new(
+            Storage,
+            &["file_backend", "directory"],
+            "File directory",
+            path(),
+            "Local directory containing one plain-text or Markdown file per entry. Restart required.",
+        )
+        .restart(),
+        Field::new(
+            Storage,
+            &["file_backend", "format"],
+            "File format",
+            Choice(vec!["plain", "markdown"]),
+            "New files: plain has no extension; markdown uses .md. Both are always read; existing filenames stay unchanged. Restart required.",
+        )
+        .restart(),
+    ]);
     fields.push(Field::new(Storage, &["app_state_dir"], "App-state directory", path(), "Directory for pane size, fullscreen and sorting state. Current-session saves keep their current destination. Restart required.").restart());
 
     for group in ["general", "journals_list", "editor"] {

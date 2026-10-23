@@ -11,6 +11,7 @@ use crate::{
 pub mod commands;
 pub use commands::CliCommand;
 pub use commands::PendingCliCommand;
+#[cfg(any(feature = "json", feature = "sqlite", feature = "vjournal"))]
 use path_absolutize::Absolutize;
 
 #[derive(Parser, Debug)]
@@ -30,6 +31,11 @@ pub struct Cli {
     #[arg(long = "vjournal-dir-path", value_name = "DIR PATH")]
     #[cfg(feature = "vjournal")]
     vjournal_dir_path: Option<PathBuf>,
+
+    /// Sets the plain-text/Markdown journal directory path and starts using it.
+    #[arg(long = "file-dir-path", value_name = "DIR PATH")]
+    #[cfg(feature = "file")]
+    file_dir_path: Option<PathBuf>,
 
     /// Sets the backend type and starts using it.
     #[arg(short, long, value_enum)]
@@ -85,6 +91,10 @@ impl Cli {
                 path.display()
             ));
         }
+        #[cfg(feature = "file")]
+        if let Some(path) = &self.file_dir_path {
+            details.push(format!("CLI override: File directory = {}", path.display()));
+        }
         if let Some(backend) = &self.backend_type {
             details.push(format!("CLI override: backend = {backend:?}"));
         }
@@ -108,6 +118,12 @@ impl Cli {
         if let Some(vjournal_dir) = self.vjournal_dir_path.take() {
             set_vjournal_path(vjournal_dir, settings).await?;
             set_backend_type(BackendType::Vjournal, settings);
+        }
+
+        #[cfg(feature = "file")]
+        if let Some(file_dir) = self.file_dir_path.take() {
+            set_file_path(file_dir, settings)?;
+            set_backend_type(BackendType::File, settings);
         }
 
         if let Some(backend) = self.backend_type.take() {
@@ -158,11 +174,18 @@ async fn set_sqlite_path(path: PathBuf, settings: &mut Settings) -> anyhow::Resu
 #[cfg(feature = "vjournal")]
 async fn set_vjournal_path(path: PathBuf, settings: &mut Settings) -> anyhow::Result<()> {
     if !path.exists() {
-        std::fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path)?;
     }
 
     settings.vjournal_backend.directory = path.absolutize().map(PathBuf::from).ok();
 
+    Ok(())
+}
+
+#[cfg(feature = "file")]
+fn set_file_path(path: PathBuf, settings: &mut Settings) -> anyhow::Result<()> {
+    fs::create_dir_all(&path)?;
+    settings.file_backend.directory = Some(std::path::absolute(path)?);
     Ok(())
 }
 
@@ -239,10 +262,24 @@ mod tests {
             "--log",
             dir.path().join("journal.log").to_str().unwrap(),
         ]);
+        #[cfg(feature = "file")]
+        let cli = Cli {
+            file_dir_path: Some(dir.path().join("file-entries")),
+            ..cli
+        };
 
         let result = cli.handle_cli(&mut settings).await.unwrap();
 
         assert_eq!(result, CliResult::Continue);
+        #[cfg(feature = "file")]
+        {
+            assert_eq!(settings.backend_type, Some(BackendType::File));
+            assert_eq!(
+                settings.file_backend.directory,
+                Some(dir.path().join("file-entries"))
+            );
+            assert!(dir.path().join("file-entries").is_dir());
+        }
     }
 
     #[tokio::test]
@@ -314,5 +351,50 @@ mod tests {
         set_backend_type(BackendType::default(), &mut settings);
 
         assert_eq!(settings.backend_type, Some(BackendType::default()));
+    }
+
+    #[cfg(feature = "file")]
+    #[test]
+    fn file_cli_path_and_explicit_backend_are_visible_as_launch_overrides() {
+        let cli = Cli::parse_from([
+            "tjournal",
+            "--file-dir-path",
+            "notes",
+            "--backend-type",
+            "file",
+        ]);
+        assert_eq!(cli.file_dir_path, Some(PathBuf::from("notes")));
+        assert_eq!(cli.backend_type, Some(BackendType::File));
+        let details = cli.launch_details().unwrap();
+        assert!(details.contains(&"CLI override: File directory = notes".to_string()));
+        assert!(details.contains(&"CLI override: backend = File".to_string()));
+    }
+
+    #[cfg(feature = "file")]
+    #[test]
+    fn file_directory_rejects_regular_files_without_changing_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("existing-file");
+        fs::write(&file, "keep").unwrap();
+        let mut settings = Settings::default();
+        assert!(set_file_path(file.clone(), &mut settings).is_err());
+        assert_eq!(settings.file_backend.directory, None);
+        assert_eq!(fs::read_to_string(file).unwrap(), "keep");
+    }
+
+    #[cfg(all(feature = "file", unix))]
+    #[test]
+    fn file_directory_keeps_parent_components_after_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("real/child")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("real/child"), dir.path().join("linked"))
+            .unwrap();
+        let mut settings = Settings::default();
+        set_file_path(dir.path().join("linked/../notes"), &mut settings).unwrap();
+        assert_eq!(
+            fs::canonicalize(settings.file_backend.directory.unwrap()).unwrap(),
+            fs::canonicalize(dir.path().join("real/notes")).unwrap()
+        );
+        assert!(!dir.path().join("notes").exists());
     }
 }
