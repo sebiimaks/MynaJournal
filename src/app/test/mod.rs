@@ -1,4 +1,5 @@
 use chrono::TimeZone;
+use ratatui::style::Color;
 
 #[cfg(feature = "file")]
 mod file;
@@ -307,4 +308,28 @@ async fn test_sorter_with_filter() {
 
     let ids: Vec<u32> = app.get_active_entries().map(|entry| entry.id).collect();
     assert_eq!(ids, vec![4, 2, 0], "Apply Filter Then Sorter Descending");
+}
+
+#[tokio::test]
+async fn new_tag_palette_reassigns_colors_in_order_and_same_palette_keeps_them() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.add_entry("Title 3".into(), Utc::now(), vec!["Tag 0".into()], None)
+        .await
+        .unwrap();
+    let builtin = TagsColors::default().palette;
+    assert_eq!(app.get_color_for_tag("Tag 0"), Some(builtin[2]));
+
+    app.set_tag_palette(&builtin);
+    assert_eq!(app.get_color_for_tag("Tag 0"), Some(builtin[2]));
+
+    let custom = [
+        TagColors::new(Color::White, Color::Blue),
+        TagColors::new(Color::Black, Color::Yellow),
+        TagColors::new(Color::Red, Color::Black),
+    ];
+    app.set_tag_palette(&custom);
+    for (tag, colors) in ["Tag 0", "Tag 1", "Tag 2"].into_iter().zip(custom) {
+        assert_eq!(app.get_color_for_tag(tag), Some(colors));
+    }
 }

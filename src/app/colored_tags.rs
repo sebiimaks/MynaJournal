@@ -1,21 +1,6 @@
 use std::collections::HashMap;
 
-use ratatui::style::Color;
-
-/// Hard coded colors for the tags.
-/// Note: the order to pick the colors is from bottom to top because we are popping the colors from
-/// the end of the stack.
-const TAG_COLORS: &[TagColors] = &[
-    TagColors::new(Color::Black, Color::LightMagenta),
-    TagColors::new(Color::Red, Color::Cyan),
-    TagColors::new(Color::Yellow, Color::Blue),
-    TagColors::new(Color::Reset, Color::Red),
-    TagColors::new(Color::Black, Color::LightYellow),
-    TagColors::new(Color::Reset, Color::DarkGray),
-    TagColors::new(Color::Black, Color::LightGreen),
-    TagColors::new(Color::Black, Color::LightRed),
-    TagColors::new(Color::Black, Color::LightCyan),
-];
+use super::ui::themes::TagColors;
 
 #[derive(Debug, Clone)]
 /// Manages assigning colors to the tags, keeping track on the assigned colors and providing
@@ -26,8 +11,10 @@ pub struct ColoredTagsManager {
 }
 
 impl ColoredTagsManager {
-    pub fn new() -> Self {
-        let available_colors = TAG_COLORS.to_vec();
+    /// Creates a manager assigning the colors of the given palette to new tags in order.
+    pub fn new(palette: &[TagColors]) -> Self {
+        // Colors are popped from the end of the stack, so the palette is reversed to keep its order.
+        let available_colors = palette.iter().rev().copied().collect();
 
         Self {
             tag_colors_map: HashMap::new(),
@@ -69,26 +56,13 @@ impl ColoredTagsManager {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-/// Represents the needed colors for a colored tag
-pub struct TagColors {
-    pub foreground: Color,
-    pub background: Color,
-}
-
-impl TagColors {
-    pub const fn new(foreground: Color, background: Color) -> Self {
-        Self {
-            foreground,
-            background,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
+    use ratatui::style::Color;
+
     use super::*;
+    use crate::app::ui::themes::TagsColors;
 
     #[test]
     fn test_colored_tags() {
@@ -103,7 +77,7 @@ mod tests {
             String::from("Tag 4"),
         ];
 
-        let mut manager = ColoredTagsManager::new();
+        let mut manager = ColoredTagsManager::new(&TagsColors::default().palette);
         manager.update_tags(tags.clone());
 
         // Ensure all tags have colors.
@@ -138,5 +112,50 @@ mod tests {
 
         // Added tag should take the color of tag one because we removed it then added the new tag.
         assert_eq!(manager.get_tag_color(ADDED_TAG).unwrap(), tag_one_color);
+    }
+
+    #[test]
+    fn custom_palette_is_assigned_to_tags_in_order() {
+        let palette = [
+            TagColors::new(Color::White, Color::Blue),
+            TagColors::new(Color::Black, Color::Rgb(250, 240, 200)),
+            TagColors::new(Color::Indexed(236), Color::LightYellow),
+        ];
+        let tags: Vec<String> = ["alpha", "beta", "gamma", "delta"].map(String::from).into();
+
+        let mut manager = ColoredTagsManager::new(&palette);
+        manager.update_tags(tags.clone());
+
+        for (tag, colors) in tags.iter().zip(palette) {
+            assert_eq!(manager.get_tag_color(tag), Some(colors));
+        }
+        assert_eq!(manager.get_tag_color("delta"), Some(TagColors::default()));
+    }
+
+    #[test]
+    fn default_palette_assigns_the_previous_builtin_colors_in_order() {
+        let tags: Vec<String> = (1..=10).map(|number| format!("Tag {number:02}")).collect();
+        let expected = [
+            (Color::Black, Color::LightCyan),
+            (Color::Black, Color::LightRed),
+            (Color::Black, Color::LightGreen),
+            (Color::Reset, Color::DarkGray),
+            (Color::Black, Color::LightYellow),
+            (Color::Reset, Color::Red),
+            (Color::Yellow, Color::Blue),
+            (Color::Red, Color::Cyan),
+            (Color::Black, Color::LightMagenta),
+            (Color::Reset, Color::Reset),
+        ];
+
+        let mut manager = ColoredTagsManager::new(&TagsColors::default().palette);
+        manager.update_tags(tags.clone());
+
+        for (tag, (foreground, background)) in tags.iter().zip(expected) {
+            assert_eq!(
+                manager.get_tag_color(tag),
+                Some(TagColors::new(foreground, background))
+            );
+        }
     }
 }

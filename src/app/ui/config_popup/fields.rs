@@ -46,6 +46,7 @@ pub(super) enum Kind {
     TitleLiteral,
     Color { optional: bool },
     Modifiers,
+    TagPalette,
     Divider,
 }
 
@@ -232,6 +233,13 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
             "Color name, #RRGGBB, palette index 0-255, or Reset. d restores the preset.",
         ));
     }
+    fields.push(Field::new(
+        Appearance,
+        &["tags", "palette"],
+        "tags.palette",
+        TagPalette,
+        "Tag colors as FG on BG pairs separated by commas, e.g. Black on LightCyan, White on #3A5F8F. Tags take them in alphabetical order; tags beyond the list use Reset. d restores the preset.",
+    ));
     fields.push(Field::new(
         Layout,
         &[],

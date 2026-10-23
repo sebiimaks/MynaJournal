@@ -15,6 +15,7 @@ file in the `themes` folder inside the app's configuration directory. The built-
   - [Themes Types](#themes-types)
     - [Color Type](#color-type)
     - [Style Type](#style-type)
+  - [Tag colors](#tag-colors)
 - [Example](#example)
 
 ## Getting started
@@ -61,7 +62,8 @@ draft. Theme saves and activation preserve unrelated unsaved configuration chang
 Color values accept names, `#RRGGBB`, and palette indices from 0 to 255. For optional
 style colors, `inherit` removes that color; `Reset` explicitly uses the terminal's
 default color. Modifier names can be combined with `|`. Editing one property of a
-previously implicit style preserves its other effective properties.
+previously implicit style preserves its other effective properties. The
+`tags.palette` row holds all tag colors in one line; see [Tag colors](#tag-colors).
 
 ## Theme files and compatibility
 
@@ -120,6 +122,7 @@ Themes are divided into the following groups:
 - **journals_list**: Styles for the main list of journals. These styles are differentiated from the general ones since they are more important and contain more information than general list items.
 - **editor**: Styles for the built-in editor.
 - **msgbox**: Colors for message-box prompts (Questions, Errors, Warnings, etc.).
+- **tags**: Colors of the tag chips in the journals list. See [Tag colors](#tag-colors).
 
 ### Themes Types:
 
@@ -150,6 +153,38 @@ modifiers = "BOLD | DIM | ITALIC | UNDERLINED | SLOW_BLINK | RAPID_BLINK | REVER
 underline_color = "Magenta" # Color for underline element if activated  
 ```
 It's worth mentioning that not all fields must be defined. Missing parts will be filled with their default values.
+
+### Tag colors:
+
+When `colored_tags = true` in `config.toml` (the default), each tag in the journals
+list is drawn as a chip with its own colors, taken from the `palette` of the `tags`
+group. Each entry is a pair of [colors](#color-type): `fg` for the text and `bg` for
+the chip. A missing `fg` or `bg` uses `Reset`, the terminal's default color.
+
+```toml
+[tags]
+palette = [
+    { fg = "Black", bg = "LightCyan" },
+    { fg = "#FFFFFF", bg = "#3A5F8F" },
+    { fg = "Black", bg = "LightYellow" },
+]
+```
+
+- Tags are sorted alphabetically and take the pairs in order: the first tag gets the
+  first pair, the second tag the second pair, and so on. Tags beyond the end of the
+  list use `Reset` for both colors. An empty `palette = []` draws every tag that way.
+- While the app runs, a tag keeps its colors. A new tag reuses a pair freed by a
+  removed tag, or takes the next unused pair. Restarting, or changing the palette of
+  the active theme, assigns the pairs in order again.
+- A palette replaces the built-in one completely. Without a `palette`, a theme uses
+  the nine built-in pairs. `theme print-default` writes them as `[[tags.palette]]`
+  tables, which mean the same as the list form above.
+- The ` | ` separators between tags, and every tag when `colored_tags = false`, use
+  `journals_list.tags_default` instead.
+
+In the theme editor, the `tags.palette` row edits the whole palette as one line of
+`FG on BG` pairs separated by commas, for example `Black on LightCyan, White on #3A5F8F`.
+Saving the active theme, or activating another one, recolors the tags immediately.
 
 ## Example:
 
@@ -205,4 +240,10 @@ modifiers = "RAPID_BLINK"
 [msgbox]
 error = "#105577"
 question = "Magenta"
+
+[tags]
+palette = [
+    { fg = "Black", bg = "LightGreen" },
+    { fg = "White", bg = "#3A5F8F" },
+]
 ```

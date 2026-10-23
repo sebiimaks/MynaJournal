@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use toml_edit::{DocumentMut, InlineTable, Item, Table, TableLike, Value};
+use toml_edit::{Decor, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
 #[derive(Clone, Debug)]
 pub struct ConfigDocument {
@@ -276,6 +276,14 @@ fn to_edit_value(value: toml::Value) -> Result<Value> {
             for value in values {
                 array.push(to_edit_value(value)?);
             }
+            // Lists of tables, such as tag palettes, stay readable with one entry per line.
+            if array.iter().any(Value::is_inline_table) {
+                for value in array.iter_mut() {
+                    value.decor_mut().set_prefix("\n    ");
+                }
+                array.set_trailing("\n");
+                array.set_trailing_comma(true);
+            }
             Value::Array(array)
         }
         toml::Value::Table(values) => {
@@ -312,10 +320,11 @@ fn set_item(
     if path.len() == 1 {
         match value {
             Some(mut replacement) => {
-                let header_decor = table
-                    .get(key)
-                    .and_then(Item::as_table)
-                    .map(|table| table.decor().clone());
+                let header_decor = table.get(key).and_then(|item| match item {
+                    Item::Table(table) => Some(table.decor().clone()),
+                    Item::ArrayOfTables(tables) => tables.get(0).map(|table| table.decor().clone()),
+                    _ => None,
+                });
                 if let Some(existing) = table.get_mut(key) {
                     if let Some(value) = replacement.as_value_mut() {
                         if let Some(existing) = existing.as_value() {
@@ -330,10 +339,14 @@ fn set_item(
                 } else {
                     table.insert(key, replacement);
                 }
-                if let Some(prefix) = header_decor.as_ref().and_then(|decor| decor.prefix())
+                if let Some(header_decor) = &header_decor
                     && let Some(mut key) = table.key_mut(key)
                 {
-                    key.leaf_decor_mut().set_prefix(prefix.clone());
+                    // A key from a table header has no spacing for a `key = value` line.
+                    *key.leaf_decor_mut() = Decor::default();
+                    if let Some(prefix) = header_decor.prefix() {
+                        key.leaf_decor_mut().set_prefix(prefix.clone());
+                    }
                 }
             }
             None => {
@@ -629,6 +642,7 @@ mod tests {
                 .unwrap();
             let _: crate::settings::Settings = toml::from_str(&document.text()).unwrap();
             assert!(document.text().contains("# title"));
+            assert!(document.text().contains("auto_title = "));
             if source.contains("# header") {
                 assert!(document.text().contains("# header"));
             }
@@ -673,6 +687,42 @@ mod tests {
             assert_eq!(document.value(&["future", "thing"]), Some(7.into()));
             let _: crate::app::ui::Styles = toml::from_str(&document.text()).unwrap();
         }
+    }
+
+    #[test]
+    fn lists_of_tables_are_written_one_entry_per_line() {
+        let (_dir, mut document) = fixture("[theme]\nname = 'Night' # display name\n");
+        let palette = toml::from_str::<toml::Value>(
+            "palette = [{ fg = 'Black', bg = 'Blue' }, { fg = 'White', bg = 'Red' }]",
+        )
+        .unwrap()["palette"]
+            .clone();
+        document
+            .set(&["tags", "palette"], Some(palette.clone()))
+            .unwrap();
+        assert_eq!(
+            document.text(),
+            "[theme]\nname = 'Night' # display name\n\n[tags]\npalette = [\n    { bg = \"Blue\", fg = \"Black\" },\n    { bg = \"Red\", fg = \"White\" },\n]\n"
+        );
+        assert_eq!(document.value(&["tags", "palette"]), Some(palette));
+    }
+
+    #[test]
+    fn replacing_table_headers_with_a_list_keeps_comments_and_key_spacing() {
+        let (_dir, mut document) = fixture(
+            "# Tag colors\n[[tags.palette]] # first\nfg = 'Black'\nbg = 'Blue'\n\n[[tags.palette]]\nfg = 'White'\nbg = 'Red'\n",
+        );
+        let palette = toml::from_str::<toml::Value>("palette = [{ fg = 'Red', bg = 'Black' }]")
+            .unwrap()["palette"]
+            .clone();
+        document
+            .set(&["tags", "palette"], Some(palette.clone()))
+            .unwrap();
+        assert_eq!(
+            document.text(),
+            "[tags]\n# Tag colors\npalette = [\n    { bg = \"Black\", fg = \"Red\" },\n] # first\n"
+        );
+        assert_eq!(document.value(&["tags", "palette"]), Some(palette));
     }
 
     #[test]

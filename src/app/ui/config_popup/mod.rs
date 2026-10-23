@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    themes::{Styles, ThemeDocument, ThemeInfo, ThemeStore},
+    themes::{Styles, TagColors, ThemeDocument, ThemeInfo, ThemeStore},
     ui_functions::centered_rect,
 };
 use fields::{Field, Kind, Tab};
@@ -504,7 +504,7 @@ impl ConfigPopup {
         } else {
             let text = match &field.kind {
                 Kind::Color { optional: true } if value.is_none() => "inherit".into(),
-                _ => editable_value(value.as_ref()),
+                _ => editable_value(&field.kind, value.as_ref()),
             };
             if text.chars().any(char::is_control) {
                 self.show_error("This stored value contains control characters and cannot be edited here. Press d to restore its default, or correct it in the configuration file.".into());
@@ -754,7 +754,7 @@ impl ConfigPopup {
                 };
                 Row::new(vec![
                     Cell::from(field.label.clone()),
-                    Cell::from(display_value(value.as_ref())),
+                    Cell::from(display_value(&field.kind, value.as_ref())),
                     Cell::from(status),
                 ])
             })
@@ -787,8 +787,8 @@ impl ConfigPopup {
             } else {
                 "Active"
             },
-            display_value(self.active_value(field).as_ref()),
-            display_value(self.default_value(field).as_ref()),
+            display_value(&field.kind, self.active_value(field).as_ref()),
+            display_value(&field.kind, self.default_value(field).as_ref()),
             field.hint
         );
         if field.restart {
@@ -972,20 +972,50 @@ fn field_value(field: &Field, values: &Value) -> Option<Value> {
     }
 }
 
-fn editable_value(value: Option<&Value>) -> String {
-    match value {
-        Some(Value::String(value)) => value.clone(),
-        Some(value) => value.to_string(),
-        None => String::new(),
+fn editable_value(kind: &Kind, value: Option<&Value>) -> String {
+    match (kind, value) {
+        (Kind::TagPalette, Some(value)) => palette_text(value),
+        (_, Some(Value::String(value))) => value.clone(),
+        (_, Some(value)) => value.to_string(),
+        (_, None) => String::new(),
     }
 }
 
-fn display_value(value: Option<&Value>) -> String {
+fn display_value(kind: &Kind, value: Option<&Value>) -> String {
     match value {
         Some(Value::String(value)) if value.is_empty() => "(empty)".into(),
+        Some(Value::Array(values)) if values.is_empty() => "(none)".into(),
         None => "(unset / inherit)".into(),
-        _ => safe_text(&editable_value(value)),
+        _ => safe_text(&editable_value(kind, value)),
     }
+}
+
+/// Formats a tag palette as the `FG on BG` pairs its field accepts.
+fn palette_text(value: &Value) -> String {
+    match value.clone().try_into::<Vec<TagColors>>() {
+        Ok(palette) => palette
+            .iter()
+            .map(|colors| format!("{} on {}", colors.foreground, colors.background))
+            .collect::<Vec<_>>()
+            .join(", "),
+        Err(_) => value.to_string(),
+    }
+}
+
+fn parse_tag_colors(pair: &str) -> Result<TagColors> {
+    let invalid = || {
+        anyhow::anyhow!(
+            "{pair:?} is not an FG on BG pair. Separate pairs with commas, e.g. Black on LightCyan, White on #3A5F8F."
+        )
+    };
+    let words: Vec<_> = pair.split_whitespace().collect();
+    let on = words
+        .iter()
+        .position(|word| word.eq_ignore_ascii_case("on"))
+        .ok_or_else(invalid)?;
+    let foreground = words[..on].join(" ").parse().map_err(|_| invalid())?;
+    let background = words[on + 1..].join(" ").parse().map_err(|_| invalid())?;
+    Ok(TagColors::new(foreground, background))
 }
 
 fn safe_text(value: &str) -> String {
@@ -1059,6 +1089,15 @@ fn parse_input(kind: &Kind, input: &str) -> Result<Option<Value>> {
         Kind::Modifiers => {
             let modifiers: Modifier = Value::String(input.trim().to_uppercase()).try_into().map_err(|_| anyhow::anyhow!("Use modifier names separated by | (e.g. BOLD | UNDERLINED), or leave empty."))?;
             Ok(Some(Value::try_from(modifiers)?))
+        }
+        Kind::TagPalette => {
+            let palette = input
+                .split(',')
+                .map(str::trim)
+                .filter(|pair| !pair.is_empty())
+                .map(parse_tag_colors)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Some(Value::try_from(palette)?))
         }
         _ => bail!("This setting uses a toggle or choice."),
     }
