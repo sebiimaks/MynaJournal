@@ -10,12 +10,13 @@ All notable changes to this project are documented in this file.
 - Add the `!` configuration popup with editable settings and styling matching the help popup
 - Add a local File backend with extensionless UTF-8 files by default, optional `.md` files, timestamp filenames, and portable YAML metadata
 - Preserve file identities and unfamiliar metadata across edits, and support deletion undo with atomic saves and external-change conflict checks
-- Publish versioned Debian packages for amd64 and arm64 with SHA-256 checksums
+- Publish versioned source releases and support local Debian package builds and upgrades
 
 ### Changed
 
 - Preserve configurable `auto_title`, including blank new-entry titles by default, and retain the JSON, SQLite, and VJOURNAL backends
 - Give fork releases a `+debplus.N` version suffix so Debian installations can distinguish and upgrade them
+- Build and install amd64 and arm64 Debian packages in CI, retaining them as workflow artifacts for 30 days while keeping release pages source-only
 
 ### Fixed
 

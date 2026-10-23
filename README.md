@@ -103,49 +103,58 @@ Before opening a PR, please read the [Contribution and AI Policy](#contribution-
 
 ## Installation
 
-Download this fork's Debian packages from its [latest release](https://github.com/sebiimaks/tui-journal-deb-plus/releases/latest). The other package-manager instructions below and the [upstream releases](https://github.com/AmmarAbouZor/tui-journal/releases) install the upstream application, whose features may differ from this fork.
+This fork publishes versioned source code through its [latest release](https://github.com/sebiimaks/tui-journal-deb-plus/releases/latest). Debian packages are available as workflow artifacts, or you can build them locally using the instructions below. The other package-manager instructions below and the [upstream releases](https://github.com/AmmarAbouZor/tui-journal/releases) install the upstream application, whose features may differ from this fork.
 
 ### Debian and Ubuntu
 
-This fork builds `.deb` packages for **amd64** and **arm64** using Debian 12
-(Bookworm). The packages target Debian 12 or newer and Ubuntu 24.04 or newer.
-They include the JSON, SQLite, `VJOURNAL`, and File back-ends and install the `tjournal`
-command into `/usr/bin`.
+Release pages contain **source code only**, with no attached binaries. The
+[Debian workflow](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml)
+builds and installs packages for **amd64** and **arm64** on Debian 12 (Bookworm),
+then saves the verified `.deb` files as workflow artifacts for **30 days**.
+The packages target Debian 12 or newer and Ubuntu 24.04 or newer.
 
-The [latest release](https://github.com/sebiimaks/tui-journal-deb-plus/releases/latest)
-provides versioned `.deb` files and `SHA256SUMS`. Choose the package matching
-`dpkg --print-architecture`: `amd64` or `arm64`. Release downloads do not expire
-after 30 days like GitHub Actions artifacts.
+To install or upgrade from a workflow build:
 
-For example, download the first fork release:
+1. Open the [source release](https://github.com/sebiimaks/tui-journal-deb-plus/releases/latest) and note its tag and commit.
+2. Open [Build Debian packages](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml) and select a successful run matching that release's commit.
+3. Download `tui-journal-deb-amd64` or `tui-journal-deb-arm64`, matching the output of `dpkg --print-architecture`, and extract the ZIP file.
+
+From the extracted directory, install the package. For the first fork release:
 
 ```bash
 version='0.18.0+debplus.1'
 arch="$(dpkg --print-architecture)"
-package="tui-journal_${version}-1_${arch}.deb"
-release="https://github.com/sebiimaks/tui-journal-deb-plus/releases/download/v${version}"
-curl --fail --location --output "$package" "$release/$package"
-```
-
-To verify the download before installing, also download the release's checksum
-file and check the package in the same directory:
-
-```bash
-curl --fail --location --output SHA256SUMS "$release/SHA256SUMS"
-sha256sum --ignore-missing --check SHA256SUMS
-```
-
-Then install or upgrade:
-
-```bash
-sudo apt install "./$package"
+sudo apt install "./tui-journal_${version}-1_${arch}.deb"
 tjournal --version
 ```
 
-The same `sudo apt install ./<downloaded-package>.deb` command upgrades an
-existing `tui-journal` Debian installation and installs any required runtime
-dependencies. It replaces the application without removing your configuration
-or journals. Close the app before upgrading, then restart it normally.
+The package includes the JSON, SQLite, `VJOURNAL`, and File back-ends and installs
+the `tjournal` command into `/usr/bin`. APT upgrades an existing `tui-journal`
+Debian installation and installs any required runtime dependencies. It replaces
+the application without removing your configuration or journals. Close the app
+before upgrading, then restart it normally.
+
+If the artifacts have expired, use **Run workflow** with the release tag to
+rebuild them, or build locally. For a local build, install Rust 1.92.0 or newer,
+then run:
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential dpkg-dev git liblzma-dev pkg-config
+version='0.18.0+debplus.1'
+git clone --depth 1 --branch "v$version" \
+  https://github.com/sebiimaks/tui-journal-deb-plus.git \
+  "tui-journal-deb-plus-$version"
+cd "tui-journal-deb-plus-$version"
+cargo install cargo-deb --version '=3.8.0' --locked
+cargo deb --locked
+arch="$(dpkg --print-architecture)"
+sudo apt install "./target/debian/tui-journal_${version}-1_${arch}.deb"
+tjournal --version
+```
+
+The locally built package remains in `target/debian/`, with its version taken
+from `Cargo.toml`.
 
 Fork releases use `0.18.0+debplus.N`, incrementing `N` for each release based on
 upstream 0.18.0. This first release's Debian version is
@@ -153,30 +162,12 @@ upstream 0.18.0. This first release's Debian version is
 packaging revision. Future releases will retain increasing Debian versions so
 APT can recognize upgrades.
 
-These downloads are **not an APT repository**: `apt update` and `apt upgrade`
-alone cannot discover new GitHub releases. For each update, download the newer
-package from the same [latest-release link](https://github.com/sebiimaks/tui-journal-deb-plus/releases/latest)
-and install that file with APT.
-
-Development packages remain available through
-[Build Debian packages](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml).
-The workflow runs on pushes to `main`, `v*` tags, and pull requests targeting
-`main`, and can also be started with **Run workflow**. Download and extract the
-`tui-journal-deb-amd64` or `tui-journal-deb-arm64` artifact from a successful run.
-These development artifacts are retained for 30 days.
-
-To build the same package locally on Debian 12 or newer, install Rust 1.92.0 or
-newer and run:
-
-```bash
-sudo apt-get update
-sudo apt-get install build-essential dpkg-dev liblzma-dev pkg-config
-cargo install cargo-deb --version '=3.8.0' --locked
-cargo deb --locked
-```
-
-The resulting package is written to `target/debian/` with its version taken from
-`Cargo.toml`.
+This fork does not provide an APT repository: `apt update` and `apt upgrade`
+alone cannot discover new GitHub releases. For each update, check the
+[latest release](https://github.com/sebiimaks/tui-journal-deb-plus/releases/latest),
+download the matching workflow artifact or build from its source tag, and
+install that `.deb` file with APT. Set `version` in the examples to the release's
+version without the leading `v`.
 
 ### Arch Linux
 

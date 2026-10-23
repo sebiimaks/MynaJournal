@@ -100,8 +100,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-deb:
-    name: Publish Debian release
+  publish-source:
+    name: Publish source release
     needs: build-deb
     if: github.repository == 'sebiimaks/tui-journal-deb-plus' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -116,28 +116,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: tui-journal-deb-*
-          path: release
-          merge-multiple: true
-
-      - name: Verify release packages and prepare checksums
+      - name: Validate source release version
         run: |
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
           test "$RELEASE_TAG" = "v$version"
-          cd release
-          shopt -s nullglob
-          packages=(*.deb)
-          test "${#packages[@]}" -eq 2
-          for arch in amd64 arm64; do
-            package="tui-journal_${version}-1_${arch}.deb"
-            test -f "$package"
-            test "$(dpkg-deb --field "$package" Package)" = tui-journal
-            test "$(dpkg-deb --field "$package" Version)" = "$version-1"
-            test "$(dpkg-deb --field "$package" Architecture)" = "$arch"
-          done
-          sha256sum "${packages[@]}" > SHA256SUMS
 
       - name: Prepare release notes
         run: |
@@ -147,19 +129,9 @@ jobs:
           ' CHANGELOG.md > release-notes.md
           test -s release-notes.md
 
-      - name: Publish complete release
+      # GitHub provides source archives from the tag. Do not attach binaries.
+      - name: Publish source release
         run: |
-          if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"; then
-            if [[ "$draft" != true ]]; then
-              echo "This release is already published. Use a new version instead of replacing it." >&2
-              exit 1
-            fi
-          else
-            gh release create "$RELEASE_TAG" --verify-tag --draft \
-              --title "TUI Journal Deb Plus ${RELEASE_TAG#v}" \
-              --notes-file release-notes.md
-          fi
-          gh release upload "$RELEASE_TAG" release/*.deb release/SHA256SUMS --clobber
-          gh release edit "$RELEASE_TAG" --verify-tag --draft=false --latest \
+          gh release create "$RELEASE_TAG" --verify-tag --latest \
             --title "TUI Journal Deb Plus ${RELEASE_TAG#v}" \
             --notes-file release-notes.md
