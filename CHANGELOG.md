@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.18.0+debplus.1 - 2026-10-23
+
+### Added
+
+- Add safe editable word wrap in the journal window and an adjustable divider between the entries list and editor
+- Add the `!` configuration popup with editable settings and styling matching the help popup
+- Add a local File backend with extensionless UTF-8 files by default, optional `.md` files, timestamp filenames, and portable YAML metadata
+- Preserve file identities and unfamiliar metadata across edits, and support deletion undo with atomic saves and external-change conflict checks
+- Publish versioned Debian packages for amd64 and arm64 with SHA-256 checksums
+
+### Changed
+
+- Preserve configurable `auto_title`, including blank new-entry titles by default, and retain the JSON, SQLite, and VJOURNAL backends
+- Give fork releases a `+debplus.N` version suffix so Debian installations can distinguish and upgrade them
+
+### Fixed
+
+- Retain editor state and undo/redo operations when persistence fails
+- Preserve existing entry timestamps when editing other metadata
+- Reject oversized file metadata before saving so every successful save can be reloaded
+- Avoid a crash when saving after the last journal is deleted externally
+
 ## 0.18.0 - 2026-09-06
 
 ### Added

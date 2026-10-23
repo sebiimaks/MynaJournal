@@ -1,11 +1,11 @@
 [package]
 name = "tui-journal"
-version = "0.18.0"
+version = "0.18.0+debplus.1"
 edition = "2024"
 authors = ["Ammar Abou Zor"]
 license = "MIT"
 description = "Tui app allows writing and managing journals/notes from within the terminal With different local back-ends"
-repository = "https://github.com/ammarabouzor/tui-journal"
+repository = "https://github.com/sebiimaks/tui-journal-deb-plus"
 readme = "README.md"
 categories = ["command-line-utilities"]
 keywords = ["tui", "terminal-app", "journal", "cli", "ui"]

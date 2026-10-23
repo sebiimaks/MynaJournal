@@ -3,8 +3,8 @@ cff-version: 1.2.0
 message: Please cite this software using these information.
 
 # Version information.
-date-released: 2026-09-06
-version: 0.18.0
+date-released: 2026-10-23
+version: 0.18.0+debplus.1
 
 # Project information.
 abstract: Your journal app if you live in a terminal
@@ -13,7 +13,7 @@ authors:
     family-names: Abou Zor
     given-names: Ammar
 license: MIT
-repository-artifact: https://crates.io/crates/tui-journal
-repository-code: https://github.com/AmmarAbouZor/tui-journal
-title: TUI-Journal
-url: https://docs.rs/tui-journal
+repository-artifact: https://github.com/sebiimaks/tui-journal-deb-plus/releases
+repository-code: https://github.com/sebiimaks/tui-journal-deb-plus
+title: TUI-Journal (Debian Plus fork)
+url: https://github.com/sebiimaks/tui-journal-deb-plus

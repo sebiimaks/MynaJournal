@@ -5,6 +5,7 @@ on:
     types: [released]
 jobs:
   homebrew:
+    if: github.repository == 'AmmarAbouZor/tui-journal'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository

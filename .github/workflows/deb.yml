@@ -48,7 +48,17 @@ jobs:
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends \
-            dpkg-dev liblzma-dev pkg-config
+            dpkg-dev liblzma-dev pkg-config python3
+
+      - name: Validate package version
+        id: version
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
+          echo "app_version=$version" >> "$GITHUB_OUTPUT"
+          echo "deb_version=$version-1" >> "$GITHUB_OUTPUT"
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2.9.2
@@ -59,21 +69,27 @@ jobs:
         run: cargo install cargo-deb --version '=3.8.0' --locked
 
       - name: Build Debian package
-        run: cargo deb --locked
+        env:
+          DEB_VERSION: ${{ steps.version.outputs.deb_version }}
+        run: cargo deb --locked --deb-version "$DEB_VERSION"
 
       - name: Inspect and install package
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_VERSION: ${{ steps.version.outputs.deb_version }}
+          EXPECTED_APP_VERSION: ${{ steps.version.outputs.app_version }}
         run: |
           packages=(target/debian/*.deb)
           test "${#packages[@]}" -eq 1
           package="${packages[0]}"
           test "$(dpkg-deb --field "$package" Package)" = tui-journal
           test "$(dpkg-deb --field "$package" Architecture)" = "$EXPECTED_ARCH"
+          test "$(dpkg-deb --field "$package" Version)" = "$EXPECTED_VERSION"
+          dpkg --compare-versions "$EXPECTED_VERSION" gt '0.18.0-1'
           dpkg-deb --info "$package"
           dpkg-deb --contents "$package"
           apt-get install --yes "./$package"
-          /usr/bin/tjournal --version
+          test "$(/usr/bin/tjournal --version)" = "tui-journal $EXPECTED_APP_VERSION"
           /usr/bin/tjournal --help
 
       - name: Upload Debian package
@@ -83,3 +99,67 @@ jobs:
           path: target/debian/*.deb
           if-no-files-found: error
           retention-days: 30
+
+  publish-deb:
+    name: Publish Debian release
+    needs: build-deb
+    if: github.repository == 'sebiimaks/tui-journal-deb-plus' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: tui-journal-deb-*
+          path: release
+          merge-multiple: true
+
+      - name: Verify release packages and prepare checksums
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          test "$RELEASE_TAG" = "v$version"
+          cd release
+          shopt -s nullglob
+          packages=(*.deb)
+          test "${#packages[@]}" -eq 2
+          for arch in amd64 arm64; do
+            package="tui-journal_${version}-1_${arch}.deb"
+            test -f "$package"
+            test "$(dpkg-deb --field "$package" Package)" = tui-journal
+            test "$(dpkg-deb --field "$package" Version)" = "$version-1"
+            test "$(dpkg-deb --field "$package" Architecture)" = "$arch"
+          done
+          sha256sum "${packages[@]}" > SHA256SUMS
+
+      - name: Prepare release notes
+        run: |
+          awk -v version="${RELEASE_TAG#v}" '
+            /^## / { if (found) exit; if ($2 == version) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+
+      - name: Publish complete release
+        run: |
+          if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"; then
+            if [[ "$draft" != true ]]; then
+              echo "This release is already published. Use a new version instead of replacing it." >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "TUI Journal Deb Plus ${RELEASE_TAG#v}" \
+              --notes-file release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" release/*.deb release/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --verify-tag --draft=false --latest \
+            --title "TUI Journal Deb Plus ${RELEASE_TAG#v}" \
+            --notes-file release-notes.md
