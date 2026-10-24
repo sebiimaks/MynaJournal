@@ -43,9 +43,13 @@ pub enum Themes {
     /// Dumps the styles with the default values to be used as a reference and base for
     /// user custom themes.
     DumpDefaults,
-    #[clap(name = "write-defaults", visible_alias = "write")]
-    /// Writes built-in Tui defaults to themes/theme_tui.toml without overwriting an existing file.
-    WriteDefaults,
+    #[command(name = "write-new", visible_alias = "write", disable_help_flag = true)]
+    /// Creates a new theme with the original Tui defaults; all following words form its name.
+    WriteNew {
+        /// Theme name; leave empty for tui_custom, tui_custom_01, tui_custom_02, and so on.
+        #[arg(value_name = "NAME", num_args = 0.., trailing_var_arg = true, allow_hyphen_values = true)]
+        name: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +75,9 @@ impl CliCommand {
             CliCommand::Theme(cmd) => match cmd {
                 Themes::PrintPath => exec_print_themes_path(custom_config_dir),
                 Themes::DumpDefaults => exec_print_themes_defaults(),
-                Themes::WriteDefaults => exec_write_themes_defaults(custom_config_dir),
+                Themes::WriteNew { name } => {
+                    exec_write_new_theme(custom_config_dir, &name.join(" "))
+                }
             },
         }
     }
@@ -101,11 +107,14 @@ fn exec_print_themes_defaults() -> anyhow::Result<CliResult> {
     Ok(CliResult::Return)
 }
 
-fn exec_write_themes_defaults(custom_config_dir: Option<&PathBuf>) -> anyhow::Result<CliResult> {
-    let themes_path = ThemeStore::new(custom_config_dir)?.write_defaults()?;
+fn exec_write_new_theme(
+    custom_config_dir: Option<&PathBuf>,
+    name: &str,
+) -> anyhow::Result<CliResult> {
+    let themes_path = ThemeStore::new(custom_config_dir)?.write_new(name)?;
 
     println!(
-        "Default Tui theme has been written to {}",
+        "New theme with the original Tui defaults has been written to {}",
         themes_path.display()
     );
 
@@ -195,49 +204,155 @@ mod tests {
     }
 
     #[test]
-    fn write_defaults_fails_if_exists() {
+    fn write_new_parses_all_following_words_as_the_name() {
+        for args in [
+            vec!["Night", "Blue"],
+            vec!["Night Blue"],
+            vec!["--help"],
+            vec!["-Night", "--Blue"],
+            vec!["Night", "--config", "Blue"],
+        ] {
+            let mut command = vec!["tjournal", "theme", "write-new"];
+            command.extend(&args);
+            let cli = Cli::try_parse_from(command).unwrap();
+            assert_eq!(
+                cli.command,
+                Some(CliCommand::Theme(Themes::WriteNew {
+                    name: args.into_iter().map(String::from).collect(),
+                }))
+            );
+        }
+    }
+
+    #[test]
+    fn write_new_replaces_write_defaults_and_keeps_the_write_alias() {
+        assert!(Cli::try_parse_from(["tjournal", "theme", "write-defaults"]).is_err());
+        assert_eq!(
+            Cli::parse_from(["tjournal", "style", "write"]).command,
+            Some(CliCommand::Theme(Themes::WriteNew { name: vec![] }))
+        );
+        assert_eq!(
+            Cli::try_parse_from(["tjournal", "theme", "--help"])
+                .unwrap_err()
+                .kind(),
+            clap::error::ErrorKind::DisplayHelp
+        );
+    }
+
+    #[test]
+    fn write_new_fails_if_named_theme_exists() {
         let mut settings = Settings::default();
         let dir = tempfile::Builder::new()
             .prefix("themes-exists")
             .tempdir()
             .unwrap();
         fs::create_dir(dir.path().join("themes")).unwrap();
-        fs::write(dir.path().join("themes/theme_tui.toml"), "already here").unwrap();
+        let existing = dir.path().join("themes/theme_night_blue.toml");
+        fs::write(&existing, "already here").unwrap();
 
-        let err = CliCommand::Theme(Themes::WriteDefaults)
-            .exec(&mut settings, Some(&dir.path().to_path_buf()))
-            .unwrap_err();
+        let err = CliCommand::Theme(Themes::WriteNew {
+            name: vec!["Night".into(), "Blue".into()],
+        })
+        .exec(&mut settings, Some(&dir.path().to_path_buf()))
+        .unwrap_err();
 
-        assert!(err.to_string().contains("Tui theme file already exists"));
+        assert!(err.to_string().contains("Theme already exists"));
+        assert_eq!(fs::read_to_string(existing).unwrap(), "already here");
     }
 
     #[test]
-    fn write_defaults_creates_named_tui_file_without_changing_configuration() {
-        let mut settings = Settings::default();
+    fn write_new_uses_original_defaults_without_changing_configuration_or_initializing_the_catalog()
+    {
+        let mut settings = Settings {
+            theme: Some("night".into()),
+            ..Settings::default()
+        };
         let directory = tempfile::tempdir().unwrap();
         let config_path = directory.path().join("config.toml");
         let config = "# Active selection must remain unchanged\ntheme = 'night'\n";
         fs::write(&config_path, config).unwrap();
-        let result = CliCommand::Theme(Themes::WriteDefaults)
-            .exec(&mut settings, Some(&directory.path().to_path_buf()))
-            .unwrap();
+        fs::create_dir(directory.path().join("themes")).unwrap();
+        let tui_path = directory.path().join("themes/theme_tui.toml");
+        let customized_tui = "[general.input_block_active]\nfg = 'Red'\n";
+        fs::write(&tui_path, customized_tui).unwrap();
+        let result = CliCommand::Theme(Themes::WriteNew {
+            name: vec!["Night".into(), "Blue".into()],
+        })
+        .exec(&mut settings, Some(&directory.path().to_path_buf()))
+        .unwrap();
 
         assert_eq!(result, CliResult::Return);
-        assert_eq!(
-            fs::read_to_string(directory.path().join("themes/theme_tui.toml")).unwrap(),
-            Styles::serialize_default().unwrap()
-        );
+        let text =
+            fs::read_to_string(directory.path().join("themes/theme_night_blue.toml")).unwrap();
+        let created: toml::Value = toml::from_str(&text).unwrap();
+        let defaults: toml::Value = toml::from_str(&Styles::serialize_default().unwrap()).unwrap();
+        for (key, value) in defaults.as_table().unwrap() {
+            assert_eq!(&created[key], value);
+        }
+        assert_eq!(created["theme"]["name"].as_str(), Some("Night Blue"));
+        assert_eq!(fs::read_to_string(tui_path).unwrap(), customized_tui);
         assert_eq!(fs::read_to_string(config_path).unwrap(), config);
+        assert_eq!(settings.theme.as_deref(), Some("night"));
+        assert_eq!(
+            fs::read_dir(directory.path().join("themes"))
+                .unwrap()
+                .count(),
+            2
+        );
     }
 
     #[test]
-    fn write_defaults_reports_an_unusable_themes_directory() {
+    fn write_new_without_a_name_uses_the_custom_filename_sequence() {
+        let mut settings = Settings::default();
+        let directory = tempfile::tempdir().unwrap();
+        for filename in [
+            "theme_tui_custom.toml",
+            "theme_tui_custom_01.toml",
+            "theme_tui_custom_02.toml",
+        ] {
+            let cli = Cli::parse_from(["tjournal", "theme", "write-new"]);
+            assert_eq!(
+                cli.command
+                    .unwrap()
+                    .exec(&mut settings, Some(&directory.path().to_path_buf()))
+                    .unwrap(),
+                CliResult::Return
+            );
+            assert!(directory.path().join("themes").join(filename).is_file());
+        }
+        assert!(!directory.path().join("config.toml").exists());
+        assert_eq!(
+            fs::read_dir(directory.path().join("themes"))
+                .unwrap()
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn write_new_rejects_invalid_names_without_creating_files() {
+        let mut settings = Settings::default();
+        let directory = tempfile::tempdir().unwrap();
+        for name in ["../escape", "a/b", "Tui", "Legacy", "Dark Abyssal", "."] {
+            assert!(
+                CliCommand::Theme(Themes::WriteNew {
+                    name: vec![name.into()]
+                })
+                .exec(&mut settings, Some(&directory.path().to_path_buf()))
+                .is_err()
+            );
+        }
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn write_new_reports_an_unusable_themes_directory() {
         let mut settings = Settings::default();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("themes");
         fs::write(&path, "preserve this file").unwrap();
         assert!(
-            CliCommand::Theme(Themes::WriteDefaults)
+            CliCommand::Theme(Themes::WriteNew { name: vec![] })
                 .exec(&mut settings, Some(&directory.path().to_path_buf()))
                 .is_err()
         );

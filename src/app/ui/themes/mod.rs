@@ -1,3 +1,4 @@
+mod bundled;
 mod editor_styles;
 mod general_styles;
 mod journals_list_styles;

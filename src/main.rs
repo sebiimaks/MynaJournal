@@ -29,7 +29,17 @@ async fn main() -> Result<()> {
     }
 
     let theme_store = ThemeStore::new(custom_config.as_ref())?;
-    let loaded_theme = theme_store.resolve(settings.theme.as_deref());
+    let initialization_warning = theme_store
+        .initialize()
+        .err()
+        .map(|error| format!("Could not install all default theme files: {error:#}"));
+    let mut loaded_theme = theme_store.resolve(settings.theme.as_deref());
+    if let Some(warning) = initialization_warning {
+        loaded_theme.warning = Some(match loaded_theme.warning {
+            Some(theme_warning) => format!("{warning}\n{theme_warning}"),
+            None => warning,
+        });
+    }
     let styles = loaded_theme.styles;
     let config_context = settings::ConfigContext {
         settings_path: Settings::file_path(custom_config.clone())?,

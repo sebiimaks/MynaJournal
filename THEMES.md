@@ -1,9 +1,11 @@
 # TUI-Journal Custom Themes
 
-Themes control the app's colors and styles. Each theme is stored in its own TOML
-file in the `themes` folder inside the app's configuration directory. The built-in
-**Tui (default)** theme works without a file; its customizations are saved to
-`themes/theme_tui.toml` only when you save changes or explicitly write defaults.
+Themes control the app's colors and styles. Every installation includes **Tui
+(default)** and ten additional themes, embedded in the application so they work
+on macOS, Linux, and Debian. The first interactive launch creates the `themes`
+folder inside the app's configuration directory and writes all eleven TOML files.
+Later launches restore missing bundled files while preserving existing files and
+edits. Tui remains the default. Custom themes are saved in the same folder.
 
 ## Table of Contents
 
@@ -26,7 +28,23 @@ The following commands work without launching the interface:
 | --- | --- |
 | `tjournal theme print-path` | Prints the themes directory without creating it. Alias: `path`. |
 | `tjournal theme print-default` | Prints the original built-in Tui values, even if Tui has been customized or another theme is active. Alias: `default`. |
-| `tjournal theme write-defaults` | Creates `themes/theme_tui.toml` containing the built-in defaults; refuses to overwrite an existing file and leaves the active theme unchanged. Alias: `write`. |
+| `tjournal theme write-new [NAME...]` | Creates a new theme containing the original Tui defaults. All following words form its name; an empty name uses the automatic custom naming sequence. Existing files and the active theme are unchanged. Alias: `write`. |
+
+`write-new` replaces the old `write-defaults` command. For example:
+
+```sh
+tjournal theme write-new Night Blue
+# Creates themes/theme_night_blue.toml
+tjournal theme write-new
+# Creates themes/theme_tui_custom.toml, then theme_tui_custom_01.toml, etc.
+```
+
+Quoted and unquoted multiword names both work. All arguments after `write-new`
+are treated as name text, including words beginning with `-`; place launch options
+before `theme`. A standalone `--` immediately after `write-new` is the standard
+argument delimiter and is not part of the name. Use `tjournal theme --help` for command help. These commands do not
+initialize the full theme collection. `write-new` always uses the original Tui
+styles, even when Tui's file has been customized.
 
 Use `--config /path/to/config-directory` before `theme` to use a custom
 configuration directory. The directory itself must already exist. For example:
@@ -41,15 +59,34 @@ Press `!` in normal mode and select the **Appearance** tab. The theme list shows
 **Tui (default)** first and marks the active theme. Use the arrow keys or `j` / `k`
 to select a theme; `Page Up`, `Page Down`, `Home`, and `End` also navigate the list.
 
+The following themes are included, with their files created at interactive startup:
+
+| Theme | Configuration ID |
+| --- | --- |
+| Tui (default) | `tui` |
+| Dark Abyssal | `dark_abyssal` |
+| Dark Borealis | `dark_borealis` |
+| Dark Fernwood | `dark_fernwood` |
+| Dark Kiln | `dark_kiln` |
+| Dark Night Market | `dark_night_market` |
+| Light Cyanotype | `light_cyanotype` |
+| Light Lido | `light_lido` |
+| Light Matcha | `light_matcha` |
+| Light Riso | `light_riso` |
+| Light Sorbet | `light_sorbet` |
+
 | Key | Action in the theme list |
 | --- | --- |
 | `Enter` or `a` | Activate the selected theme immediately and remember the selection. |
 | `e` | Open the selected theme's full color and modifier editor. |
-| `n` | Create a named copy of the selected theme. Enter a name and press `Enter` to open its unsaved editor. |
+| `n` | Copy the selected theme. Enter a name, or leave it blank for automatic naming, and press `Enter` to open its unsaved editor. `Esc` cancels. |
 
 To start a new theme with Tui's current styles, select Tui and press `n`. Creating
-the draft does not write a file. In the theme editor, `Enter` or `Space` edits a
-color or modifier, `d` restores the selected property's built-in preset, and
+the draft does not write a file. A blank name chooses `tui_custom`, then
+`tui_custom_01`, `tui_custom_02`, and so on, using the first available filename.
+This copies the selected theme's current styles; the command-line `write-new`
+instead starts with the original Tui defaults. In the theme editor, `Enter` or `Space` edits a
+color or modifier, `d` restores the selected property's original Tui preset, and
 `Ctrl-S` saves that theme. All existing style controls remain available. Saving
 the active theme updates the interface immediately; saving another theme does not
 activate it. Journals are not reloaded.
@@ -67,16 +104,26 @@ previously implicit style preserves its other effective properties. The
 
 ## Theme files and compatibility
 
-The popup shows the selected theme's actual file location. Theme files follow the
-pattern `APPDEFAULT/themes/theme_THEMENAME.toml`, where `APPDEFAULT` is the app's
-configuration directory. For example, the theme ID `night` uses
+The popup shows where the selected theme's customizations are saved. Theme files
+follow the pattern `APPDEFAULT/themes/theme_THEMENAME.toml`, where `APPDEFAULT` is
+the app's configuration directory. For example, the theme ID `night` uses
 `themes/theme_night.toml`.
+
+A local file with a bundled theme's ID replaces that bundled theme completely;
+it is not merged with the bundled values. For example,
+`themes/theme_dark_abyssal.toml` takes precedence over bundled Dark Abyssal.
+Editing a bundled theme in the popup starts with its full values, so saving one
+change preserves its other colors and styles in the local file. Removing the
+local file recreates the bundled version on the next interactive launch. An invalid local
+file is reported as an error instead of silently using the bundled version.
 
 Names accept ASCII letters, digits, spaces, `_`, and `-`, with at least one letter
 or digit. Leading and trailing whitespace is removed, spaces become underscores,
 and the filename ID is lowercase, up to 64 characters. For example, `Night Blue`
 uses `theme_night_blue.toml`. Duplicate names and filenames are rejected without
-regard to case. `Tui` and `Legacy` are reserved for their existing themes.
+regard to case. Bundled theme names and IDs, including `Tui`, are reserved, as is
+`Legacy`. To customize one under a different name, select it and press `n` to
+create a copy.
 
 Theme files can include a display name, which preserves capitalization and spaces:
 
@@ -91,10 +138,11 @@ The active theme ID is stored in `config.toml`:
 theme = "night"
 ```
 
-Starting the app, listing themes, activating built-in Tui, opening an editor, and
-cancelling changes do not create theme files. Files are written only when you save
-a new or modified theme or run `theme write-defaults`. Activating a theme saves
-its selection in `config.toml`. Saving preserves comments and unrelated fields;
+Interactive startup writes any missing bundled theme files without replacing
+existing files. Opening a new-theme draft or cancelling it does not create a
+custom theme file; save it with `Ctrl-S`. `theme write-new` writes its new file
+immediately. Activating a theme saves its selection in `config.toml`.
+Saving preserves comments and unrelated fields;
 external changes are detected before writing so they are not silently overwritten.
 
 If an existing `themes.toml` is present and no theme has been selected, it remains
@@ -104,9 +152,11 @@ Legacy selections. Legacy cursor-style aliases remain supported. With the legacy
 `--config FILE` form, themes continue to use the default configuration directory;
 use `--config DIRECTORY` to place both configuration and themes together.
 
-Missing or invalid selected themes produce a warning and use built-in Tui styles
-for that session. The app does not overwrite the file or replace the saved
-selection. Invalid theme files are identified in the list so they can be repaired.
+Missing custom themes and invalid selected themes produce a warning and use
+built-in Tui styles for that session. A bundled theme whose local file is absent
+uses its embedded values normally. The app does not overwrite files or replace
+the saved selection. Invalid theme files are identified in the list so they can
+be repaired.
 Fallback mode does not mark any saved theme active, including a customized Tui
 theme. Editing and saving Tui in this mode does not apply it; select Tui and
 activate it explicitly to use those styles now and on future launches. An

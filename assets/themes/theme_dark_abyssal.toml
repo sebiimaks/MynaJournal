@@ -1,0 +1,56 @@
+# Abyssal for tui-journal
+# Made for a stock dark terminal: background #1E1E1E, text #D4D4D4.
+# Builds without themeable tag colors ignore [tags] and keep the built-in chips.
+
+[theme]
+name = "Dark Abyssal"
+
+[general]
+input_block_active      = { fg = "#5CE1E6" }
+input_block_invalid     = { fg = "#FF6B81" }
+input_cursor_active     = { fg = "#04101C", bg = "#5CE1E6" }
+input_cursor_invalid    = { fg = "#04101C", bg = "#FF6B81" }
+list_item_selected      = { fg = "#FFD479", modifiers = "BOLD" }
+list_highlight_active   = { fg = "#A9F5FF", bg = "#13434F" }
+list_highlight_inactive = { fg = "#8E9FBE", bg = "#252F47" }
+
+[journals_list]
+block_active       = { fg = "#5CE1E6", modifiers = "BOLD" }
+block_inactive     = { fg = "#4E5F7E" }
+block_multi_select = { fg = "#FFD479", modifiers = "BOLD | ITALIC" }
+highlight_active   = { fg = "#A9F5FF", bg = "#13434F", modifiers = "BOLD" }
+highlight_inactive = { fg = "#8E9FBE", bg = "#252F47", modifiers = "BOLD" }
+title_active       = { fg = "#E3F4FF", modifiers = "BOLD" }
+title_inactive     = { fg = "#8496B5", modifiers = "BOLD" }
+title_selected     = { fg = "#FFD479", modifiers = "BOLD" }
+date_priority      = { fg = "#6F9BC4" }
+tags_default       = { fg = "#B892FF", modifiers = "ITALIC" }
+
+[editor]
+block_insert          = { fg = "#7CF2B0", modifiers = "BOLD" }
+block_visual          = { fg = "#FF7AC6", modifiers = "BOLD" }
+block_normal_active   = { fg = "#5CE1E6", modifiers = "BOLD" }
+block_normal_inactive = { fg = "#4E5F7E" }
+cursor_normal         = { fg = "#1E1E1E", bg = "#C6D3E6" }
+cursor_insert         = { fg = "#04101C", bg = "#7CF2B0" }
+cursor_visual         = { fg = "#04101C", bg = "#FF7AC6" }
+selection_style       = { fg = "#FFDDF1", bg = "#4A2350" }
+
+[msgbox]
+error    = "#FF6B81"
+warning  = "#FFD479"
+info     = "#7CF2B0"
+question = "#5CE1E6"
+
+[tags]
+# One pair per tag, in alphabetical tag order. Tags past the end use the terminal's colors.
+palette = [
+    { fg = "#8DEAEE", bg = "#31595A" },
+    { fg = "#FFA2D7", bg = "#623A50" },
+    { fg = "#A3F6C8", bg = "#3A5E4A" },
+    { fg = "#FFE1A1", bg = "#625539" },
+    { fg = "#CDB3FF", bg = "#4C4162" },
+    { fg = "#9AC2FF", bg = "#364762" },
+    { fg = "#FFB1A2", bg = "#62403A" },
+    { fg = "#77E2D3", bg = "#27554F" },
+]
