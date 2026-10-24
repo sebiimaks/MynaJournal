@@ -8,7 +8,7 @@ use anyhow::{Context, Result, ensure};
 
 use crate::settings::{document::ConfigDocument, settings_default_dir_path};
 
-use super::Styles;
+use super::{Styles, bundled};
 
 #[derive(Clone, Debug)]
 pub struct ThemeStore {
@@ -71,6 +71,32 @@ impl ThemeStore {
         &self.directory
     }
 
+    /// Install missing built-in themes without replacing any existing files.
+    pub fn initialize(&self) -> Result<()> {
+        let tui = Styles::serialize_default()?;
+        for (id, source) in
+            std::iter::once(("tui", tui.as_str())).chain(bundled::THEMES.iter().copied())
+        {
+            let path = self.directory.join(format!("theme_{id}.toml"));
+            if self.files()?.contains_key(id) || path_present(&path)? {
+                continue;
+            }
+            let mut document = ConfigDocument::load(path.clone())?;
+            if path_present(&path)? {
+                continue;
+            }
+            document.replace_text(source)?;
+            if let Err(error) = document.save() {
+                // Another process may have installed the file while this one prepared it.
+                if self.files()?.contains_key(id) || path_present(&path)? {
+                    continue;
+                }
+                return Err(error).with_context(|| format!("Installing theme {id:?} failed"));
+            }
+        }
+        Ok(())
+    }
+
     pub fn default_id(&self) -> &str {
         if path_present(&self.legacy_path).unwrap_or(true)
             || path_present(&self.directory.join("theme_legacy.toml")).unwrap_or(true)
@@ -106,6 +132,9 @@ impl ThemeStore {
     pub fn list(&self) -> Result<Vec<ThemeInfo>> {
         let mut files = self.files()?;
         files.entry("tui".into()).or_default();
+        for &(id, _) in bundled::THEMES {
+            files.entry(id.into()).or_default();
+        }
         if path_present(&self.legacy_path).unwrap_or(true) {
             files.entry("legacy".into()).or_default();
         }
@@ -154,6 +183,10 @@ impl ThemeStore {
             );
         }
         if named_path.is_none() {
+            ensure!(
+                !path_present(document.path())?,
+                "Theme appeared while opening it; reopen it before editing: {id}"
+            );
             match id {
                 "tui" => {}
                 "legacy" => {
@@ -166,7 +199,10 @@ impl ThemeStore {
                     document.replace_text(&source.text())?;
                     legacy_source = Some(source);
                 }
-                _ => anyhow::bail!("Theme does not exist: {id}"),
+                _ => match bundled::source(id) {
+                    Some(source) => document.replace_text(source)?,
+                    None => anyhow::bail!("Theme does not exist: {id}"),
+                },
             }
         }
         Styles::deserialize(&document.text()).with_context(|| format!("Invalid theme {id:?}"))?;
@@ -187,9 +223,16 @@ impl ThemeStore {
     }
 
     pub fn create(&self, name: &str, source: &str) -> Result<ThemeDocument> {
+        let automatic_name;
+        let name = if name.bytes().all(|byte| byte == b' ') {
+            automatic_name = self.next_custom_name()?;
+            &automatic_name
+        } else {
+            name
+        };
         let id = normalize_name(name)?;
         ensure!(
-            id != "tui" && id != "legacy",
+            id != "tui" && id != "legacy" && bundled::source(&id).is_none(),
             "This theme name is reserved: {name}"
         );
         ensure!(
@@ -216,29 +259,30 @@ impl ThemeStore {
         })
     }
 
-    pub fn write_defaults(&self) -> Result<PathBuf> {
-        ensure!(
-            !self.files()?.contains_key("tui"),
-            "Tui theme file already exists: {}",
-            self.directory.join("theme_tui.toml").display()
-        );
-        let document = ConfigDocument::load(self.directory.join("theme_tui.toml"))?;
-        ensure!(
-            !path_present(document.path())?,
-            "Tui theme file already exists"
-        );
-        let mut theme = ThemeDocument {
-            id: "tui".into(),
-            label: label_for_id("tui"),
-            baseline_text: document.text(),
-            document,
-            legacy_source: None,
-            new_theme: true,
-            store: self.clone(),
-        };
-        theme.document.replace_text(&Styles::serialize_default()?)?;
+    pub fn write_new(&self, name: &str) -> Result<PathBuf> {
+        let mut theme = self.create(name, &Styles::serialize_default()?)?;
         theme.save()?;
         Ok(theme.path().to_path_buf())
+    }
+
+    fn next_custom_name(&self) -> Result<String> {
+        let files = self.files()?;
+        for index in 0u64.. {
+            let (id, name) = if index == 0 {
+                ("tui_custom".into(), "Tui Custom".into())
+            } else {
+                (
+                    format!("tui_custom_{index:02}"),
+                    format!("Tui Custom {index:02}"),
+                )
+            };
+            if !files.contains_key(&id)
+                && !path_present(&self.directory.join(format!("theme_{id}.toml")))?
+            {
+                return Ok(name);
+            }
+        }
+        anyhow::bail!("No unused custom theme name is available")
     }
 
     fn files(&self) -> Result<BTreeMap<String, Vec<PathBuf>>> {
@@ -407,7 +451,7 @@ mod tests {
     fn browsing_opening_and_cancelling_themes_create_nothing() {
         let (directory, store) = store();
         let themes = store.list().unwrap();
-        assert_eq!(themes.len(), 1);
+        assert_eq!(themes.len(), 1 + bundled::THEMES.len());
         assert_eq!(themes[0].id, "tui");
         assert_eq!(themes[0].label, "Tui (default)");
         assert!(!store.load("tui").unwrap().is_dirty());
@@ -418,6 +462,151 @@ mod tests {
         set_color(&mut new_theme, "Blue");
         drop(new_theme);
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn all_supplied_themes_are_available_without_files_or_a_changed_default() {
+        let (directory, store) = store();
+        let catalog = store.list().unwrap();
+        let ids: Vec<_> = catalog.iter().map(|theme| theme.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "tui",
+                "dark_abyssal",
+                "dark_borealis",
+                "dark_fernwood",
+                "dark_kiln",
+                "dark_night_market",
+                "light_cyanotype",
+                "light_lido",
+                "light_matcha",
+                "light_riso",
+                "light_sorbet",
+            ]
+        );
+        assert!(catalog.iter().all(|theme| theme.error.is_none()));
+        for theme in &catalog[1..] {
+            let mut document = store.load(&theme.id).unwrap();
+            assert!(!document.is_dirty());
+            document.save().unwrap();
+            let resolved = store.resolve(Some(&theme.id));
+            assert_eq!(resolved.id.as_deref(), Some(theme.id.as_str()));
+            assert!(resolved.warning.is_none());
+            assert_eq!(resolved.styles.tags.palette.len(), 8);
+        }
+        assert_eq!(store.resolve(None).id.as_deref(), Some("tui"));
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn editing_bundled_theme_saves_an_override_and_preserves_its_other_values() {
+        let (_directory, store) = store();
+        let original = store.load("dark_abyssal").unwrap().text();
+        let original_styles = Styles::deserialize(&original).unwrap();
+        let mut theme = store.load("dark_abyssal").unwrap();
+        set_color(&mut theme, "Red");
+        theme.save().unwrap();
+        assert!(!theme.is_dirty());
+        assert!(theme.path().ends_with("themes/theme_dark_abyssal.toml"));
+        assert_eq!(fs::read_dir(store.directory()).unwrap().count(), 1);
+        let saved = fs::read_to_string(theme.path()).unwrap();
+        assert!(saved.contains("# Abyssal for tui-journal"));
+        let reloaded = store.resolve(Some("dark_abyssal"));
+        assert_eq!(
+            reloaded.styles.general.input_block_active.fg,
+            Some(Color::Red)
+        );
+        assert_eq!(reloaded.styles.tags, original_styles.tags);
+        assert_eq!(reloaded.styles.editor, original_styles.editor);
+        assert_eq!(
+            store
+                .list()
+                .unwrap()
+                .iter()
+                .filter(|theme| theme.id == "dark_abyssal")
+                .count(),
+            1
+        );
+        fs::remove_file(theme.path()).unwrap();
+        assert_eq!(store.load("dark_abyssal").unwrap().text(), original);
+    }
+
+    #[test]
+    fn existing_bundled_name_file_replaces_builtin_values_without_being_overwritten() {
+        let (_directory, store) = store();
+        fs::create_dir(store.directory()).unwrap();
+        let path = store.directory().join("theme_dark_abyssal.toml");
+        let existing = "# My existing custom theme\n[general.input_block_active]\nfg = 'Red'\n";
+        fs::write(&path, existing).unwrap();
+        let resolved = store.resolve(Some("dark_abyssal"));
+        assert_eq!(resolved.id.as_deref(), Some("dark_abyssal"));
+        assert_eq!(
+            resolved.styles.general.input_block_active.fg,
+            Some(Color::Red)
+        );
+        assert_eq!(resolved.styles.tags, Styles::default().tags);
+        store.load("dark_abyssal").unwrap().save().unwrap();
+        assert_eq!(fs::read_to_string(path).unwrap(), existing);
+    }
+
+    #[test]
+    fn invalid_bundled_override_is_reported_instead_of_silently_replaced() {
+        let (_directory, store) = store();
+        fs::create_dir(store.directory()).unwrap();
+        let path = store.directory().join("theme_dark_abyssal.toml");
+        fs::write(&path, "invalid = [").unwrap();
+        let catalog = store.list().unwrap();
+        assert!(
+            catalog
+                .iter()
+                .find(|theme| theme.id == "dark_abyssal")
+                .unwrap()
+                .error
+                .is_some()
+        );
+        let resolved = store.resolve(Some("dark_abyssal"));
+        assert!(resolved.warning.is_some());
+        assert_eq!(resolved.id, None);
+        assert_eq!(resolved.styles.tags, Styles::default().tags);
+        assert_eq!(fs::read_to_string(path).unwrap(), "invalid = [");
+    }
+
+    #[test]
+    fn bundled_theme_names_are_reserved_but_copying_to_a_new_name_is_allowed() {
+        let (_directory, store) = store();
+        for &(id, _) in bundled::THEMES {
+            assert!(
+                store
+                    .create(&id.replace('_', " ").to_uppercase(), "")
+                    .is_err()
+            );
+        }
+        let source = store.load("light_sorbet").unwrap();
+        let mut copy = store.create("My Sorbet", &source.text()).unwrap();
+        copy.save().unwrap();
+        let loaded = store.load("my_sorbet").unwrap();
+        assert_eq!(loaded.label(), "My Sorbet");
+        assert_eq!(
+            Styles::deserialize(&loaded.text()).unwrap().tags,
+            Styles::deserialize(&source.text()).unwrap().tags
+        );
+        assert!(!source.path().exists());
+    }
+
+    #[test]
+    fn file_created_after_opening_a_bundled_theme_blocks_its_first_save() {
+        let (_directory, store) = store();
+        let mut theme = store.load("light_matcha").unwrap();
+        set_color(&mut theme, "Red");
+        fs::create_dir(store.directory()).unwrap();
+        fs::write(theme.path(), "# Created externally\n").unwrap();
+        assert!(theme.save().is_err());
+        assert!(theme.is_dirty());
+        assert_eq!(
+            fs::read_to_string(theme.path()).unwrap(),
+            "# Created externally\n"
+        );
     }
 
     #[test]
@@ -444,7 +633,7 @@ mod tests {
         let loaded = store.load("night_sky").unwrap();
         assert_eq!(loaded.label(), "Night Sky");
         assert!(!loaded.is_dirty());
-        assert_eq!(store.list().unwrap().len(), 2);
+        assert_eq!(store.list().unwrap().len(), 2 + bundled::THEMES.len());
     }
 
     #[test]
@@ -463,28 +652,191 @@ mod tests {
     }
 
     #[test]
-    fn write_defaults_creates_complete_tui_and_refuses_overwrite() {
+    fn initialization_installs_all_defaults_and_preserves_existing_edits() {
         let (_directory, store) = store();
-        let path = store.write_defaults().unwrap();
-        let defaults = Styles::serialize_default().unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), defaults);
-        fs::write(&path, "# keep this file\n").unwrap();
-        assert!(store.write_defaults().is_err());
-        assert_eq!(fs::read_to_string(&path).unwrap(), "# keep this file\n");
+        store.initialize().unwrap();
+        let tui_path = store.directory().join("theme_tui.toml");
+        assert_eq!(
+            fs::read_to_string(&tui_path).unwrap(),
+            Styles::serialize_default().unwrap()
+        );
+        for &(id, source) in bundled::THEMES {
+            assert_eq!(
+                fs::read_to_string(store.directory().join(format!("theme_{id}.toml"))).unwrap(),
+                source
+            );
+        }
+        assert_eq!(fs::read_dir(store.directory()).unwrap().count(), 11);
+        fs::write(&tui_path, "# Customized Tui\n[msgbox]\nerror = 'Blue'\n").unwrap();
+        let modified = fs::metadata(&tui_path).unwrap().modified().unwrap();
+        store.initialize().unwrap();
+        assert_eq!(
+            fs::read_to_string(&tui_path).unwrap(),
+            "# Customized Tui\n[msgbox]\nerror = 'Blue'\n"
+        );
+        assert_eq!(
+            fs::metadata(&tui_path).unwrap().modified().unwrap(),
+            modified
+        );
+        let removed = store.directory().join("theme_light_sorbet.toml");
+        fs::remove_file(&removed).unwrap();
+        store.initialize().unwrap();
+        assert_eq!(
+            fs::read_to_string(removed).unwrap(),
+            bundled::source("light_sorbet").unwrap()
+        );
+        assert_eq!(
+            fs::metadata(&tui_path).unwrap().modified().unwrap(),
+            modified
+        );
     }
 
     #[test]
-    fn writing_tui_defaults_preserves_legacy_selection_and_source() {
+    fn initializing_themes_preserves_legacy_selection_source_and_settings() {
         let (directory, store) = store();
         let source = "[msgbox]\nerror = 'Blue'\n";
         fs::write(directory.path().join("themes.toml"), source).unwrap();
-        store.write_defaults().unwrap();
+        let config = "# Keep my preferences\nauto_title = { kind = 'date' }\n";
+        fs::write(directory.path().join("config.toml"), config).unwrap();
+        store.initialize().unwrap();
         assert_eq!(store.default_id(), "legacy");
         assert_eq!(store.resolve(None).styles.msgbox.error, Color::Blue);
         assert_eq!(
             fs::read_to_string(directory.path().join("themes.toml")).unwrap(),
             source
         );
+        assert_eq!(
+            fs::read_to_string(directory.path().join("config.toml")).unwrap(),
+            config
+        );
+        assert!(!store.directory().join("theme_legacy.toml").exists());
+    }
+
+    #[test]
+    fn initialization_keeps_case_variants_and_invalid_existing_files() {
+        let (_directory, store) = store();
+        fs::create_dir(store.directory()).unwrap();
+        let tui = store.directory().join("theme_TUI.toml");
+        let dark = store.directory().join("theme_dark_abyssal.toml");
+        fs::write(&tui, "# Preserve case and contents\n").unwrap();
+        fs::write(&dark, "invalid = [").unwrap();
+        store.initialize().unwrap();
+        assert_eq!(
+            fs::read_to_string(tui).unwrap(),
+            "# Preserve case and contents\n"
+        );
+        assert_eq!(fs::read_to_string(dark).unwrap(), "invalid = [");
+        assert_eq!(fs::read_dir(store.directory()).unwrap().count(), 11);
+        assert!(
+            store
+                .list()
+                .unwrap()
+                .iter()
+                .find(|theme| theme.id == "dark_abyssal")
+                .unwrap()
+                .error
+                .is_some()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn initialization_does_not_replace_existing_or_dangling_theme_symlinks() {
+        use std::os::unix::fs::symlink;
+        let (directory, store) = store();
+        fs::create_dir(store.directory()).unwrap();
+        let existing = directory.path().join("existing.toml");
+        let missing = directory.path().join("missing.toml");
+        fs::write(&existing, "# Linked customization\n").unwrap();
+        let tui = store.directory().join("theme_tui.toml");
+        let dark = store.directory().join("theme_dark_abyssal.toml");
+        symlink(&existing, &tui).unwrap();
+        symlink(&missing, &dark).unwrap();
+        store.initialize().unwrap();
+        assert_eq!(fs::read_link(tui).unwrap(), existing);
+        assert_eq!(fs::read_link(dark).unwrap(), missing);
+        assert_eq!(
+            fs::read_to_string(existing).unwrap(),
+            "# Linked customization\n"
+        );
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn unusable_themes_directory_reports_initialization_failure_without_changing_it() {
+        let (_directory, store) = store();
+        fs::write(store.directory(), "Keep this file").unwrap();
+        assert!(store.initialize().is_err());
+        assert_eq!(
+            fs::read_to_string(store.directory()).unwrap(),
+            "Keep this file"
+        );
+    }
+
+    #[test]
+    fn unnamed_themes_use_base_then_underscored_numbers_and_preserve_source_styles() {
+        let (_directory, store) = store();
+        let source = store.load("dark_abyssal").unwrap().text();
+        for (input, id, label) in [
+            ("", "tui_custom", "Tui Custom"),
+            (" ", "tui_custom_01", "Tui Custom 01"),
+            ("", "tui_custom_02", "Tui Custom 02"),
+        ] {
+            let mut theme = store.create(input, &source).unwrap();
+            assert_eq!(theme.id(), id);
+            assert_eq!(theme.label(), label);
+            assert!(!theme.path().exists());
+            theme.save().unwrap();
+            let reloaded = store.load(id).unwrap();
+            assert_eq!(reloaded.label(), label);
+            assert_eq!(
+                Styles::deserialize(&reloaded.text()).unwrap().tags,
+                Styles::deserialize(&source).unwrap().tags
+            );
+        }
+    }
+
+    #[test]
+    fn automatic_names_skip_occupied_case_variants_and_use_the_first_unused_suffix() {
+        let (_directory, store) = store();
+        fs::create_dir(store.directory()).unwrap();
+        fs::write(store.directory().join("theme_TUI_CUSTOM.toml"), "# Keep\n").unwrap();
+        fs::create_dir(store.directory().join("theme_tui_custom_01.toml")).unwrap();
+        fs::write(
+            store.directory().join("theme_tui_custom_03.toml"),
+            "invalid = [",
+        )
+        .unwrap();
+        let path = store.write_new("").unwrap();
+        assert!(path.ends_with("theme_tui_custom_02.toml"));
+        assert_eq!(
+            fs::read_to_string(store.directory().join("theme_TUI_CUSTOM.toml")).unwrap(),
+            "# Keep\n"
+        );
+        assert_eq!(
+            fs::read_to_string(store.directory().join("theme_tui_custom_03.toml")).unwrap(),
+            "invalid = ["
+        );
+    }
+
+    #[test]
+    fn write_new_always_uses_pristine_tui_values_and_never_overwrites_named_files() {
+        let (_directory, store) = store();
+        store.initialize().unwrap();
+        let mut tui = store.load("tui").unwrap();
+        set_color(&mut tui, "Red");
+        tui.save().unwrap();
+        let path = store.write_new("  Night   Blue  ").unwrap();
+        assert!(path.ends_with("theme_night_blue.toml"));
+        let loaded = store.load("night_blue").unwrap();
+        assert_eq!(loaded.label(), "Night Blue");
+        assert_eq!(
+            toml::Value::try_from(Styles::deserialize(&loaded.text()).unwrap()).unwrap(),
+            toml::Value::try_from(Styles::default()).unwrap()
+        );
+        let original = fs::read_to_string(&path).unwrap();
+        assert!(store.write_new("NIGHT BLUE").is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), original);
     }
 
     #[test]
@@ -536,7 +888,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(store.resolve(None).styles.msgbox.error, Color::Red);
-        assert_eq!(store.list().unwrap().len(), 2);
+        assert_eq!(store.list().unwrap().len(), 2 + bundled::THEMES.len());
     }
 
     #[test]
@@ -606,8 +958,6 @@ mod tests {
     fn unsafe_and_reserved_names_are_rejected_without_files() {
         let (_directory, store) = store();
         for name in [
-            "",
-            " ",
             "..",
             "../escape",
             "a/b",
@@ -635,7 +985,7 @@ mod tests {
         assert!(store.create("Night", "").is_err());
         assert_eq!(store.load("night").unwrap().id(), "night");
         fs::write(store.directory().join("theme_TUI.toml"), "").unwrap();
-        assert!(store.write_defaults().is_err());
+        assert!(store.write_new("Tui").is_err());
     }
 
     #[test]
@@ -661,10 +1011,13 @@ mod tests {
         fs::write(store.directory().join("theme_bad.name.toml"), "").unwrap();
         fs::write(store.directory().join("unrelated.toml"), "").unwrap();
         let themes = store.list().unwrap();
-        assert_eq!(themes.len(), 3);
+        assert_eq!(themes.len(), 3 + bundled::THEMES.len());
         assert_eq!(themes[0].id, "tui");
         assert!(themes[0].error.is_none());
-        assert!(themes[1..].iter().all(|theme| theme.error.is_some()));
+        assert_eq!(
+            themes.iter().filter(|theme| theme.error.is_some()).count(),
+            2
+        );
     }
 
     #[test]

@@ -84,7 +84,7 @@ impl ConfigPopup {
         }
         self.creating_theme = true;
         self.editor = Some(TextArea::default());
-        self.status = "Name the new theme copied from the selected theme.".into();
+        self.status = "Copy the selected theme. Leave the name blank for automatic naming.".into();
         self.error = false;
     }
 
@@ -179,7 +179,7 @@ impl ConfigPopup {
         if let Some(editor) = &mut self.editor {
             editor.set_block(
                 Block::default()
-                    .title("New theme name · Enter accepts · Esc cancels")
+                    .title("Name: blank=auto")
                     .borders(Borders::ALL),
             );
             editor.set_cursor_line_style(Style::default());

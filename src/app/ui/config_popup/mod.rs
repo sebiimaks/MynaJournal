@@ -542,12 +542,18 @@ impl ConfigPopup {
                 .ok_or_else(|| anyhow::anyhow!("Select a theme first."))
                 .and_then(|theme| self.theme_store.load(&theme.id))
                 .and_then(|source| self.theme_store.create(&input, &source.text()))
-                .and_then(|document| self.open_theme(document));
+                .and_then(|document| {
+                    let label = document.label().to_owned();
+                    self.open_theme(document)?;
+                    Ok(label)
+                });
             return match result {
-                Ok(()) => {
+                Ok(label) => {
                     self.editor = None;
                     self.creating_theme = false;
-                    self.status = "New theme staged. Ctrl-S saves it without activating it.".into();
+                    self.status = format!(
+                        "New theme {label:?} staged. Ctrl-S saves it without activating it."
+                    );
                     true
                 }
                 Err(error) => {
