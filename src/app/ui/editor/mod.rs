@@ -5,7 +5,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     prelude::Margin,
-    style::{Color, Style},
+    style::Style,
     symbols,
     widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
@@ -505,7 +505,7 @@ impl<'a> Editor<'a> {
         self.text_area.set_style(Style::reset());
 
         self.text_area
-            .set_selection_style(Style::default().bg(Color::White).fg(Color::Black));
+            .set_selection_style(Style::from(estyles.selection_style));
 
         frame.render_widget(&self.text_area, area);
 
@@ -886,5 +886,31 @@ mod tests {
 
         editor.mode = EditorMode::Visual;
         assert!(editor.should_extend_selection(&Input::new(KeyCode::Up, KeyModifiers::NONE)));
+    }
+
+    #[test]
+    fn unwrapped_selection_uses_theme_selection_style() {
+        use ratatui::{Terminal, backend::TestBackend, style::Color};
+
+        let mut editor = editor_with(&["abcdefghij"], 0, 1);
+        editor.set_word_wrap(false);
+        editor.text_area.start_selection();
+        editor.text_area.move_cursor(CursorMove::Jump(0, 4));
+
+        let mut styles = Styles::default();
+        styles.editor.selection_style.fg = Some(Color::Cyan);
+        styles.editor.selection_style.bg = Some(Color::Magenta);
+        let mut terminal = Terminal::new(TestBackend::new(14, 3)).unwrap();
+        terminal
+            .draw(|frame| editor.render_widget(frame, frame.area(), &styles))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        for x in 2..5 {
+            assert_eq!(buffer[(x, 1)].fg, Color::Cyan);
+            assert_eq!(buffer[(x, 1)].bg, Color::Magenta);
+        }
+        assert_ne!(buffer[(1, 1)].bg, Color::Magenta);
+        assert_ne!(buffer[(6, 1)].bg, Color::Magenta);
     }
 }
