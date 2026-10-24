@@ -3,11 +3,13 @@ use std::io;
 use anyhow::Result;
 use app::ui::themes::ThemeStore;
 use clap::Parser;
-use ratatui::{Terminal, backend::CrosstermBackend};
+use console_backend::ConsoleBackend;
+use ratatui::Terminal;
 use settings::Settings;
 
 mod app;
 mod cli;
+mod console_backend;
 mod logging;
 mod settings;
 mod terminal_session;
@@ -50,7 +52,9 @@ async fn main() -> Result<()> {
     };
     chain_panic_hook();
     let _terminal_session = terminal_session::TerminalSession::enter()?;
-    let backend = CrosstermBackend::new(io::stdout());
+    let linux_console =
+        std::env::var("TERM").is_ok_and(|term| console_backend::is_linux_console(&term));
+    let backend = ConsoleBackend::new(io::stdout(), linux_console);
     let mut terminal = Terminal::new(backend)?;
 
     app::run(&mut terminal, settings, styles, pending_cmd, config_context)

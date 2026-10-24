@@ -8,6 +8,10 @@ All notable changes to this project are documented in this file.
 
 - Include only Tui (default) in new installations and generate only `theme_tui.toml` on interactive startup; preserve existing custom themes and previously generated theme files
 
+### Fixed
+
+- Keep Linux text-console text intensity consistent when colors or modifiers change, including default-colored text after light colors and bold or dim text with named, palette, or RGB colors
+
 ## 0.18.0+debplus.2 - 2026-10-24
 
 ### Added

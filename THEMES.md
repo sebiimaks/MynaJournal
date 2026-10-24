@@ -17,6 +17,7 @@ existing files and edits. Custom themes are saved in the same folder.
     - [Color Type](#color-type)
     - [Style Type](#style-type)
   - [Tag colors](#tag-colors)
+  - [Linux text console](#linux-text-console)
 - [Example](#example)
 
 ## Getting started
@@ -217,6 +218,24 @@ palette = [
 In the theme editor, the `tags.palette` row edits the whole palette as one line of
 `FG on BG` pairs separated by commas, for example `Black on LightCyan, White on #3A5F8F`.
 Saving the active theme, or activating another one, recolors the tags immediately.
+
+### Linux text console:
+
+On a color display, the Linux text console (`TERM=linux` and its variants) reduces
+hex and palette colors to 16 foreground colors and eight explicit background colors.
+Light foreground colors (`LightRed`, `DarkGray`, `White`, and so on) use the console's
+bold intensity. Named colors give the most predictable result there.
+
+The app resets each new style and sends its colors before its modifiers, so a cell's
+intensity does not depend on previously drawn text. With no other modifiers, `BOLD`
+`Red` looks like `LightRed`; plain `Reset` text uses the console's default foreground
+at normal intensity. If both `BOLD` and `DIM` are selected, `DIM` takes precedence.
+
+On color displays, `ITALIC`, `UNDERLINED`, and `DIM` are generally simulated with
+console-configurable substitute colors; exact rendering depends on the console driver.
+The app does not send a separate `underline_color` on the Linux console. See
+[console_codes(4)](https://man7.org/linux/man-pages/man4/console_codes.4.html) for the
+console's supported styles and color controls.
 
 ## Example:
 
