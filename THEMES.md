@@ -18,6 +18,7 @@ edits. Tui remains the default. Custom themes are saved in the same folder.
     - [Color Type](#color-type)
     - [Style Type](#style-type)
   - [Tag colors](#tag-colors)
+  - [Linux text console](#linux-text-console)
 - [Example](#example)
 
 ## Getting started
@@ -235,6 +236,16 @@ palette = [
 In the theme editor, the `tags.palette` row edits the whole palette as one line of
 `FG on BG` pairs separated by commas, for example `Black on LightCyan, White on #3A5F8F`.
 Saving the active theme, or activating another one, recolors the tags immediately.
+
+### Linux text console:
+
+The Linux text console (`TERM=linux`) has only 16 colors. Hex and palette colors
+are reduced to them, and the eight light colors (`LightRed`, `DarkGray`, `White`, and
+so on) are drawn by turning on the console's bold intensity. Backgrounds use only the
+eight normal colors. Named colors give the most predictable result there. The console
+has no italic, underline, or dim, and draws `ITALIC`, `UNDERLINED`, and `DIM` text in
+a fixed substitute color instead. The app turns bold intensity off before text in the
+`Reset` color, so plain text keeps the console's normal color with any theme.
 
 ## Example:
 
