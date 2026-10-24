@@ -244,8 +244,10 @@ are reduced to them, and the eight light colors (`LightRed`, `DarkGray`, `White`
 so on) are drawn by turning on the console's bold intensity. Backgrounds use only the
 eight normal colors. Named colors give the most predictable result there. The console
 has no italic, underline, or dim, and draws `ITALIC`, `UNDERLINED`, and `DIM` text in
-a fixed substitute color instead. The app turns bold intensity off before text in the
-`Reset` color, so plain text keeps the console's normal color with any theme.
+a fixed substitute color instead. The app sends each style's color before its modifiers
+and turns bold intensity off before text in the `Reset` color, so `BOLD` text in a normal
+color always shows its light version (`BOLD` `Red` looks like `LightRed`), and plain text
+keeps the console's normal color with any theme.
 
 ## Example:
 

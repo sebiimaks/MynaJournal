@@ -1,24 +1,30 @@
 //! ratatui's [`CrosstermBackend`] with a fix for the Linux text console (`TERM=linux`).
 //!
-//! The console draws light foreground colours by turning on its bold intensity, and its
-//! default-foreground code (SGR 39) restores the colour but leaves that intensity on.
-//! `CrosstermBackend` only sends the styles that change from one cell to the next, so text in
-//! the `Reset` colour drawn right after light text came out bright white instead of the
-//! console's normal grey, and could change between frames.
+//! The console draws light foreground colours by turning on its bold intensity, so its colour
+//! codes set the intensity too: a palette colour (`38;5;N`) turns it on for a light colour and
+//! off for a normal one, while the default-foreground code (SGR 39) leaves it as it was.
+//! `CrosstermBackend` only sends the styles that change from one cell to the next, and sends a
+//! cell's modifiers before its colours, so the intensity a cell got depended on the cells
+//! before it. `BOLD` text in a normal colour was bright only when the previous cell had the
+//! same colour, and text in the `Reset` colour drawn right after light text came out bright
+//! white instead of the console's normal grey.
 //!
-//! On the console, a draw is split before every cell whose foreground changes to `Reset`.
-//! Each `CrosstermBackend::draw` call ends with a full attribute reset (SGR 0) and sends the
-//! next cell's modifiers from scratch, so plain text starts at normal intensity while `BOLD`
-//! and `DIM` cells still get their own codes. Other terminals get `CrosstermBackend` unchanged.
+//! On the console, every style change starts from a full attribute reset (SGR 0) and sends the
+//! cell's colours before its modifiers, so each cell's intensity follows from its own style.
+//! Other terminals get `CrosstermBackend` unchanged.
 
 use std::io::{self, Write};
-use std::iter::Peekable;
 
+use crossterm::{
+    cursor::MoveTo,
+    queue,
+    style::{Attribute, Colors, Print, SetAttribute, SetColors},
+};
 use ratatui::{
     backend::{Backend, ClearType, CrosstermBackend, WindowSize},
     buffer::Cell,
     layout::{Position, Size},
-    style::Color,
+    style::{Color, Modifier},
 };
 
 pub struct ConsoleBackend<W: Write> {
@@ -40,25 +46,53 @@ pub fn is_linux_console(term: &str) -> bool {
     term.starts_with("linux")
 }
 
-/// Yields cells up to the next one whose foreground changes to `Reset`.
-struct UntilDefaultForeground<'s, I: Iterator> {
-    cells: &'s mut Peekable<I>,
-    previous_fg: Option<Color>,
-}
+/// The modifiers `CrosstermBackend` sends, in the order it adds them.
+const MODIFIER_ATTRIBUTES: [(Modifier, Attribute); 8] = [
+    (Modifier::REVERSED, Attribute::Reverse),
+    (Modifier::BOLD, Attribute::Bold),
+    (Modifier::ITALIC, Attribute::Italic),
+    (Modifier::UNDERLINED, Attribute::Underlined),
+    (Modifier::DIM, Attribute::Dim),
+    (Modifier::CROSSED_OUT, Attribute::CrossedOut),
+    (Modifier::SLOW_BLINK, Attribute::SlowBlink),
+    (Modifier::RAPID_BLINK, Attribute::RapidBlink),
+];
 
-impl<'a, I> Iterator for UntilDefaultForeground<'_, I>
-where
-    I: Iterator<Item = (u16, u16, &'a Cell)>,
-{
-    type Item = (u16, u16, &'a Cell);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let &(_, _, cell) = self.cells.peek()?;
-        if cell.fg == Color::Reset && self.previous_fg.is_some_and(|fg| fg != Color::Reset) {
-            return None;
+impl<W: Write> ConsoleBackend<W> {
+    /// `CrosstermBackend::draw` with every style change sent from SGR 0, colours first. The
+    /// console has no underline colour, so none is sent.
+    fn draw_on_console<'a, I>(&mut self, content: I) -> io::Result<()>
+    where
+        I: Iterator<Item = (u16, u16, &'a Cell)>,
+    {
+        // Every draw ends with SGR 0, so the next one starts from the default style.
+        let mut style = (Color::Reset, Color::Reset, Modifier::empty());
+        let mut last_pos: Option<Position> = None;
+        for (x, y, cell) in content {
+            if !matches!(last_pos, Some(p) if x == p.x + 1 && y == p.y) {
+                queue!(self.inner, MoveTo(x, y))?;
+            }
+            last_pos = Some(Position { x, y });
+            if (cell.fg, cell.bg, cell.modifier) != style {
+                let colors = Colors {
+                    foreground: (cell.fg != Color::Reset).then(|| cell.fg.into()),
+                    background: (cell.bg != Color::Reset).then(|| cell.bg.into()),
+                };
+                queue!(
+                    self.inner,
+                    SetAttribute(Attribute::Reset),
+                    SetColors(colors)
+                )?;
+                for (modifier, attribute) in MODIFIER_ATTRIBUTES {
+                    if cell.modifier.contains(modifier) {
+                        queue!(self.inner, SetAttribute(attribute))?;
+                    }
+                }
+                style = (cell.fg, cell.bg, cell.modifier);
+            }
+            queue!(self.inner, Print(cell.symbol()))?;
         }
-        self.previous_fg = Some(cell.fg);
-        self.cells.next()
+        queue!(self.inner, SetAttribute(Attribute::Reset))
     }
 }
 
@@ -67,19 +101,10 @@ impl<W: Write> Backend for ConsoleBackend<W> {
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
-        if !self.linux_console {
-            return self.inner.draw(content);
-        }
-
-        let mut cells = content.peekable();
-        loop {
-            self.inner.draw(UntilDefaultForeground {
-                cells: &mut cells,
-                previous_fg: None,
-            })?;
-            if cells.peek().is_none() {
-                return Ok(());
-            }
+        if self.linux_console {
+            self.draw_on_console(content)
+        } else {
+            self.inner.draw(content)
         }
     }
 
@@ -222,6 +247,7 @@ mod tests {
 
         let text = String::from_utf8(output.clone()).unwrap();
         assert!(text[text.find('A').unwrap()..text.find('b').unwrap()].contains("\x1b[0m"));
+        assert!(text.contains("bc"));
         assert_eq!(
             console_intensities(&output),
             [
@@ -276,15 +302,117 @@ mod tests {
     }
 
     #[test]
-    fn draws_without_a_change_to_default_foreground_are_unchanged_on_the_console() {
+    fn bold_normal_colour_is_bright_whether_or_not_the_colour_changed() {
+        let bold = Style::new().add_modifier(Modifier::BOLD);
         let cells = [
-            cell("a", Style::new()),
-            cell("B", Style::new().fg(Color::LightRed)),
-            cell("c", Style::new().fg(Color::Green)),
+            cell("a", Style::new().fg(Color::Red)),
+            cell("B", bold.fg(Color::Red)),
+            cell("C", bold.fg(Color::Green)),
+            cell("D", bold.fg(Color::Red).bg(Color::Blue)),
         ];
 
-        assert_eq!(draw(&cells, true), draw_with_crossterm(&cells));
-        assert_eq!(draw(&[], true), draw_with_crossterm(&[]));
+        let output = draw(&cells, true);
+
+        assert_eq!(
+            console_intensities(&output),
+            [
+                ('a', Intensity::Normal),
+                ('B', Intensity::Bold),
+                ('C', Intensity::Bold),
+                ('D', Intensity::Bold)
+            ]
+        );
+    }
+
+    #[test]
+    fn dim_colour_is_half_bright_whether_or_not_the_colour_changed() {
+        let dim = Style::new().add_modifier(Modifier::DIM);
+        let cells = [
+            cell("a", dim.fg(Color::Red)),
+            cell("b", dim.fg(Color::Red)),
+            cell("c", dim.fg(Color::LightGreen)),
+        ];
+
+        let output = draw(&cells, true);
+
+        assert_eq!(
+            console_intensities(&output),
+            [
+                ('a', Intensity::Half),
+                ('b', Intensity::Half),
+                ('c', Intensity::Half)
+            ]
+        );
+    }
+
+    #[test]
+    fn light_colour_stays_bright_when_bold_is_removed() {
+        let cells = [
+            cell(
+                "A",
+                Style::new()
+                    .fg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            cell("B", Style::new().fg(Color::LightRed)),
+        ];
+
+        let output = draw(&cells, true);
+
+        assert_eq!(
+            console_intensities(&output),
+            [('A', Intensity::Bold), ('B', Intensity::Bold)]
+        );
+    }
+
+    #[test]
+    fn console_draws_the_same_text_at_the_same_positions_as_crossterm() {
+        fn without_sgr(output: &[u8]) -> String {
+            let text = std::str::from_utf8(output).unwrap();
+            let mut kept = String::new();
+            let mut rest = text;
+            while let Some(start) = rest.find("\x1b[") {
+                kept.push_str(&rest[..start]);
+                let after = &rest[start..];
+                let end = after.find(|c: char| c.is_ascii_alphabetic()).unwrap();
+                if !after[..=end].ends_with('m') {
+                    kept.push_str(&after[..=end]);
+                }
+                rest = &after[end + 1..];
+            }
+            kept.push_str(rest);
+            kept
+        }
+
+        let cells = [
+            cell("a", Style::new()),
+            cell(
+                "B",
+                Style::new()
+                    .fg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            cell("c", Style::new().fg(Color::Green).bg(Color::Blue)),
+            cell("d", Style::new()),
+        ];
+        let content = [
+            (0, 0, &cells[0]),
+            (1, 0, &cells[1]),
+            (4, 0, &cells[2]),
+            (0, 2, &cells[3]),
+        ];
+
+        let mut console = Vec::new();
+        ConsoleBackend::new(&mut console, true)
+            .draw(content.into_iter())
+            .unwrap();
+        let mut crossterm = Vec::new();
+        CrosstermBackend::new(&mut crossterm)
+            .draw(content.into_iter())
+            .unwrap();
+
+        assert_eq!(without_sgr(&console), without_sgr(&crossterm));
+        assert!(without_sgr(&console).contains("\x1b[1;5H"));
     }
 
     #[test]
