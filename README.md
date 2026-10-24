@@ -122,7 +122,7 @@ To install or upgrade from a workflow build:
 From the extracted directory, install the package. For this release:
 
 ```bash
-version='0.18.0+debplus.2'
+version='0.18.0+debplus.3'
 arch="$(dpkg --print-architecture)"
 sudo apt install "./tui-journal_${version}-1_${arch}.deb"
 tjournal --version
@@ -131,8 +131,8 @@ tjournal --version
 The package includes the JSON, SQLite, `VJOURNAL`, and File back-ends and installs
 the `tjournal` command into `/usr/bin`. APT upgrades an existing `tui-journal`
 Debian installation and installs any required runtime dependencies. It replaces
-the application without removing your configuration or journals. Close the app
-before upgrading, then restart it normally.
+the application without removing your configuration, journals, or saved themes.
+Close the app before upgrading, then restart it normally.
 
 If the artifacts have expired, use **Run workflow** with the release tag to
 rebuild them, or build locally. For a local build, install Rust 1.92.0 or newer,
@@ -141,7 +141,7 @@ then run:
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential dpkg-dev git liblzma-dev pkg-config
-version='0.18.0+debplus.2'
+version='0.18.0+debplus.3'
 git clone --depth 1 --branch "v$version" \
   https://github.com/sebiimaks/tui-journal-deb-plus.git \
   "tui-journal-deb-plus-$version"
@@ -158,9 +158,10 @@ from `Cargo.toml`.
 
 Fork releases use `0.18.0+debplus.N`, incrementing `N` for each release based on
 upstream 0.18.0. This release's Debian version is
-`0.18.0+debplus.2-1`, which sorts after `0.18.0+debplus.1-1` and `0.18.0-1`. The final `-1` is the Debian
-packaging revision. Future releases will retain increasing Debian versions so
-APT can recognize upgrades.
+`0.18.0+debplus.3-1`, which sorts after `0.18.0+debplus.2-1`,
+`0.18.0+debplus.1-1`, and `0.18.0-1`. The final `-1` is the Debian packaging
+revision. Future releases will retain increasing Debian versions so APT can
+recognize upgrades.
 
 This fork does not provide an APT repository: `apt update` and `apt upgrade`
 alone cannot discover new GitHub releases. For each update, check the

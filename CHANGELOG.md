@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.18.0+debplus.3 - 2026-10-24
 
 ### Changed
 
@@ -11,6 +11,21 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Keep Linux text-console text intensity consistent when colors or modifiers change, including default-colored text after light colors and bold or dim text with named, palette, or RGB colors
+- Reset inherited bold or dim styling before drawing the first cell on the Linux console, including the next draw after a failed terminal write; leave other terminal rendering unchanged
+
+### Debian upgrade
+
+This release contains source code only. The [Build Debian packages workflow](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml) builds and installs both amd64 and arm64 packages, retaining them as workflow artifacts for 30 days. No binaries are attached to the release.
+
+Download and extract the artifact matching your architecture from the successful run for tag `v0.18.0+debplus.3`, then close the app and run from the extracted directory:
+
+```bash
+arch="$(dpkg --print-architecture)"
+sudo apt install "./tui-journal_0.18.0+debplus.3-1_${arch}.deb"
+tjournal --version
+```
+
+APT upgrades earlier fork packages while preserving journals, settings, and existing theme files. New installations generate only Tui; previously generated themes remain available as custom themes. If artifacts have expired, rebuild from the source tag using the [Debian instructions](https://github.com/sebiimaks/tui-journal-deb-plus/blob/v0.18.0%2Bdebplus.3/README.md#debian-and-ubuntu).
 
 ## 0.18.0+debplus.2 - 2026-10-24
 
