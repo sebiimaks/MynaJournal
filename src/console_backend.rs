@@ -129,10 +129,14 @@ impl<W: Write> Backend for ConsoleBackend<W> {
     }
 
     fn clear(&mut self) -> io::Result<()> {
-        self.inner.clear()
+        self.clear_region(ClearType::All)
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> io::Result<()> {
+        if self.linux_console {
+            // Erased cells inherit the current attributes on the Linux console.
+            queue!(self.inner, SetAttribute(Attribute::Reset))?;
+        }
         self.inner.clear_region(clear_type)
     }
 
@@ -272,6 +276,36 @@ mod tests {
     fn enable_test_colors() {
         // CI and terminal wrappers may set NO_COLOR; these tests inspect colour sequences.
         crossterm::style::force_color_output(true);
+    }
+
+    #[test]
+    fn console_clear_resets_inherited_styles_and_keeps_scrollback() {
+        let mut output = Vec::new();
+        ConsoleBackend::new(&mut output, true).clear().unwrap();
+
+        assert_eq!(output, b"\x1b[0m\x1b[2J");
+    }
+
+    #[test]
+    fn console_region_clear_resets_styles_and_other_terminals_are_unchanged() {
+        for clear_type in [ClearType::All, ClearType::AfterCursor] {
+            let mut standard = Vec::new();
+            CrosstermBackend::new(&mut standard)
+                .clear_region(clear_type)
+                .unwrap();
+            for linux_console in [false, true] {
+                let mut output = Vec::new();
+                ConsoleBackend::new(&mut output, linux_console)
+                    .clear_region(clear_type)
+                    .unwrap();
+                let expected = if linux_console {
+                    [b"\x1b[0m".as_slice(), &standard].concat()
+                } else {
+                    standard.clone()
+                };
+                assert_eq!(output, expected);
+            }
+        }
     }
 
     #[test]

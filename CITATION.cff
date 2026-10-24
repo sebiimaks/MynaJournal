@@ -4,7 +4,7 @@ message: Please cite this software using these information.
 
 # Version information.
 date-released: 2026-10-24
-version: 0.18.0+debplus.3
+version: 0.18.0+debplus.4
 
 # Project information.
 abstract: Your journal app if you live in a terminal

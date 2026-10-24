@@ -148,6 +148,8 @@ where
     B: Backend,
     D: DataProvider,
 {
+    // Some terminals keep the old display when entering the alternate screen.
+    terminal.clear()?;
     let mut app = App::new(data_provider, settings);
     app.set_tag_palette(&styles.tags.palette);
     let mut ui_components = UIComponents::new(styles);
@@ -265,5 +267,169 @@ async fn handle_input<D: DataProvider>(
             Ok(HandleInputReturnType::NotFound)
         }
         _ => Ok(HandleInputReturnType::NotFound),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use ratatui::{
+        backend::{TestBackend, WindowSize},
+        buffer::{Buffer, Cell},
+        layout::{Position, Size},
+    };
+
+    use super::*;
+
+    struct StartupBackend {
+        screen: TestBackend,
+        frames: Vec<Buffer>,
+        fail_clear: bool,
+    }
+
+    impl StartupBackend {
+        fn dirty(width: u16, height: u16) -> Self {
+            Self {
+                screen: TestBackend::with_lines(vec!["~".repeat(width.into()); height.into()]),
+                frames: Vec::new(),
+                fail_clear: false,
+            }
+        }
+    }
+
+    impl Backend for StartupBackend {
+        fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
+        where
+            I: Iterator<Item = (u16, u16, &'a Cell)>,
+        {
+            self.screen.draw(content)?;
+            self.frames.push(self.screen.buffer().clone());
+            // Stop before startup reaches the real terminal's event stream.
+            Err(io::Error::other("stopped after frame"))
+        }
+
+        fn hide_cursor(&mut self) -> io::Result<()> {
+            self.screen.hide_cursor()
+        }
+
+        fn show_cursor(&mut self) -> io::Result<()> {
+            self.screen.show_cursor()
+        }
+
+        fn get_cursor_position(&mut self) -> io::Result<Position> {
+            self.screen.get_cursor_position()
+        }
+
+        fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> io::Result<()> {
+            self.screen.set_cursor_position(position)
+        }
+
+        fn clear(&mut self) -> io::Result<()> {
+            if self.fail_clear {
+                return Err(io::Error::other("clearing screen failed"));
+            }
+            self.screen.clear()
+        }
+
+        fn size(&self) -> io::Result<Size> {
+            self.screen.size()
+        }
+
+        fn window_size(&mut self) -> io::Result<WindowSize> {
+            self.screen.window_size()
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.screen.flush()
+        }
+    }
+
+    async fn startup(
+        backend: StartupBackend,
+        pending_cmd: Option<PendingCliCommand>,
+    ) -> (Terminal<StartupBackend>, anyhow::Error) {
+        let dir = tempfile::tempdir().unwrap();
+        let app = crate::app::test::create_default_app();
+        let mut settings = app.settings;
+        settings.app_state_dir = Some(dir.path().join("state"));
+        settings.sync_os_clipboard = false;
+        let context = ConfigContext {
+            settings_path: dir.path().join("config.toml"),
+            themes_path: dir.path().join("themes"),
+            active_theme_id: Some("tui".into()),
+            theme_warning: None,
+            launch_details: Vec::new(),
+        };
+        let mut terminal = Terminal::new(backend).unwrap();
+        let error = run_intern(
+            &mut terminal,
+            app.data_provide,
+            settings,
+            Styles::default(),
+            pending_cmd,
+            context,
+        )
+        .await
+        .unwrap_err();
+        (terminal, error)
+    }
+
+    fn assert_clean_first_frame(terminal: &Terminal<StartupBackend>, expected: &str) {
+        let frame = &terminal.backend().frames[0];
+        let text: String = frame.content.iter().map(Cell::symbol).collect();
+        assert!(
+            !text.contains('~'),
+            "Previous terminal contents survived startup"
+        );
+        assert!(
+            text.contains(expected),
+            "Missing first frame text: {expected}"
+        );
+    }
+
+    #[tokio::test]
+    async fn initial_journal_frame_clears_previous_terminal_contents() {
+        let (terminal, error) = startup(StartupBackend::dirty(80, 24), None).await;
+        assert_eq!(error.to_string(), "stopped after frame");
+        assert_clean_first_frame(&terminal, "Title 2");
+    }
+
+    #[tokio::test]
+    async fn small_terminal_startup_clears_previous_contents() {
+        let (terminal, error) = startup(StartupBackend::dirty(19, 3), None).await;
+        assert_eq!(error.to_string(), "stopped after frame");
+        assert_clean_first_frame(&terminal, "Terminal too small");
+    }
+
+    #[tokio::test]
+    async fn import_progress_clears_previous_terminal_contents() {
+        let (terminal, error) = startup(
+            StartupBackend::dirty(80, 24),
+            Some(PendingCliCommand::ImportJournals("unused.json".into())),
+        )
+        .await;
+        assert_eq!(error.to_string(), "stopped after frame");
+        assert_clean_first_frame(&terminal, "Importing journals...");
+    }
+
+    #[tokio::test]
+    async fn priority_progress_clears_previous_terminal_contents() {
+        let (terminal, error) = startup(
+            StartupBackend::dirty(80, 24),
+            Some(PendingCliCommand::AssignPriority(1)),
+        )
+        .await;
+        assert_eq!(error.to_string(), "stopped after frame");
+        assert_clean_first_frame(&terminal, "Assigning Priority to Journals...");
+    }
+
+    #[tokio::test]
+    async fn startup_clear_failure_stops_before_drawing() {
+        let mut backend = StartupBackend::dirty(80, 24);
+        backend.fail_clear = true;
+        let (terminal, error) = startup(backend, Some(PendingCliCommand::AssignPriority(1))).await;
+        assert_eq!(error.to_string(), "clearing screen failed");
+        assert!(terminal.backend().frames.is_empty());
     }
 }

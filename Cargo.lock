@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "tui-journal"
-version = "0.18.0+debplus.3"
+version = "0.18.0+debplus.4"
 dependencies = [
  "aho-corasick",
  "anyhow",
