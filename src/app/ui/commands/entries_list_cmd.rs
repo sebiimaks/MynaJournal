@@ -238,6 +238,28 @@ pub fn exec_export_entry_content<D: DataProvider>(
 }
 
 pub fn export_entry_content<D: DataProvider>(ui_components: &mut UIComponents, app: &App<D>) {
+    if app.current_is_protected() {
+        ui_components.show_msg_box(
+            MsgBoxType::Question(
+                "Export this protected note as plaintext? The exported file will not be encrypted."
+                    .into(),
+            ),
+            MsgBoxActions::YesNo,
+            Some(UICommand::ExportPrivateContent),
+        );
+        return;
+    }
+    let _ = exec_export_private_content(ui_components, app);
+}
+
+pub fn exec_export_private_content<D: DataProvider>(
+    ui_components: &mut UIComponents,
+    app: &App<D>,
+) -> CmdResult {
+    anyhow::ensure!(
+        !app.current_is_locked(),
+        "Unlock this note before exporting plaintext"
+    );
     if let Some(entry) = app.get_current_entry() {
         match ExportPopup::create_entry_content(entry, app) {
             Ok(popup) => ui_components
@@ -247,6 +269,7 @@ pub fn export_entry_content<D: DataProvider>(ui_components: &mut UIComponents, a
                 .show_err_msg(format!("Error while creating export dialog.\n Err: {err}")),
         }
     }
+    Ok(HandleInputReturnType::Handled)
 }
 
 pub async fn continue_export_entry_content<D: DataProvider>(
@@ -286,6 +309,12 @@ pub async fn edit_in_external_editor<D: DataProvider>(
     ui_components: &mut UIComponents<'_>,
     app: &mut App<D>,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !app.current_is_protected(),
+        "External editing is unavailable for protected notes because editors can leave plaintext temporary files. Use the internal editor or explicitly export plaintext."
+    );
+    // The event loop cannot enforce idle locking while waiting for another editor.
+    app.lock_all_saved_notes();
     if let Some(entry) = app.get_current_entry() {
         const TEMP_FILENAME: &str = "tui_journal";
         let temp_extension = &app.settings.external_editor.temp_file_extension;

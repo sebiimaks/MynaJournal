@@ -54,6 +54,7 @@ Before opening a PR, please read the [Contribution and AI Policy](#contribution-
   - [Homebrew](@homebrew)
   - [Build & Install via Cargo](#build--install-via-cargo)
 - [Usage](#usage)
+- [Note locking](NOTE-LOCKING.md)
 - [Configuration](#configuration)
   - [File back-end](#file-back-end)
 - [Themes](#themes)
@@ -68,6 +69,7 @@ Before opening a PR, please read the [Contribution and AI Policy](#contribution-
 - Store your entries as JSON, in a SQLite database, as iCalendar `VJOURNAL` files, or as plain-text/Markdown files with YAML front matter.
 - Intuitive, responsive and user-friendly text-based user interface (TUI).
 - Create, edit, and delete entries easily.
+- Protect individual notes with a password using `L`; keep titles and dates visible while encrypting private content across all four backends. See [note locking](NOTE-LOCKING.md).
 - Edit journal content with the built-in editor or use your favourite terminal text editor from within the app.
 - Add custom colored tags to the journals and use them in the built-in filter.
 - Fuzzy Finder: Locate your desired journal with lightning-fast speed using smart-case search.

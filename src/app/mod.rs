@@ -17,6 +17,7 @@ use std::{
     path::PathBuf,
 };
 use ui::themes::TagsColors;
+use zeroize::Zeroize;
 
 mod colored_tags;
 mod external_editor;
@@ -24,6 +25,7 @@ mod filter;
 mod history;
 mod keymap;
 mod runner;
+mod security;
 mod sorter;
 pub mod state;
 pub mod ui;
@@ -58,6 +60,7 @@ where
     colored_tags: Option<ColoredTagsManager>,
     /// Tag colors of the active theme, kept while colored tags are disabled too.
     tag_palette: Vec<TagColors>,
+    security: security::SecurityState,
 }
 
 impl<D> App<D>
@@ -88,6 +91,7 @@ where
             history,
             colored_tags,
             tag_palette,
+            security: Default::default(),
         }
     }
 
@@ -100,6 +104,7 @@ where
         self.settings.scroll_per_page = saved.scroll_per_page;
         self.settings.sync_os_clipboard = saved.sync_os_clipboard;
         self.settings.editor_word_wrap = saved.editor_word_wrap;
+        self.settings.security = saved.security;
         self.settings.datum_visibility = saved.datum_visibility;
         if self.settings.colored_tags != saved.colored_tags {
             self.settings.colored_tags = saved.colored_tags;
@@ -130,7 +135,13 @@ where
     }
 
     pub fn get_entry(&self, entry_id: u32) -> Option<&Entry> {
-        self.get_active_entries().find(|e| e.id == entry_id)
+        let stored = self.get_active_entries().find(|e| e.id == entry_id)?;
+        Some(
+            self.security
+                .sessions
+                .get(&entry_id)
+                .map_or(stored, |session| &session.entry),
+        )
     }
 
     /// Gives a mutable reference to the entry with given id if exist, registering it in
@@ -159,14 +170,19 @@ where
 
     /// Gets' the selected entry currently.
     pub fn get_current_entry(&self) -> Option<&Entry> {
-        self.current_entry_id
-            .and_then(|id| self.get_active_entries().find(|entry| entry.id == id))
+        self.current_entry_id.and_then(|id| self.get_entry(id))
     }
 
     pub async fn load_entries(&mut self) -> anyhow::Result<()> {
         log::trace!("Loading entries");
 
-        self.entries = self.data_provide.load_all_entries().await?;
+        anyhow::ensure!(
+            !self.has_sealed_drafts(),
+            "Unlock and save or discard encrypted drafts before reloading"
+        );
+        let entries = self.data_provide.load_all_entries().await?;
+        self.lock_all_saved_notes();
+        self.entries = entries;
 
         self.sort_entries();
 
@@ -278,6 +294,23 @@ where
     ) -> anyhow::Result<()> {
         log::trace!("Updating entry");
 
+        if self.is_protected(entry_id) {
+            anyhow::ensure!(
+                !self.is_locked(entry_id),
+                "Unlock this note before editing it"
+            );
+            let mut candidate = self
+                .get_entry(entry_id)
+                .context("No note selected")?
+                .clone();
+            candidate.title = title;
+            candidate.date = date;
+            candidate.tags.zeroize();
+            candidate.tags = tags;
+            candidate.priority = priority;
+            return self.save_protected_entry(candidate).await;
+        }
+
         let mut candidate = self
             .entries
             .iter()
@@ -327,6 +360,20 @@ where
     ) -> anyhow::Result<()> {
         log::trace!("Updating entry content");
 
+        if self.is_protected(entry_id) {
+            anyhow::ensure!(
+                !self.is_locked(entry_id),
+                "Unlock this note before editing it"
+            );
+            let mut candidate = self
+                .get_entry(entry_id)
+                .context("No note selected")?
+                .clone();
+            candidate.content.zeroize();
+            candidate.content = entry_content;
+            return self.save_protected_entry(candidate).await;
+        }
+
         let mut candidate = self
             .entries
             .iter()
@@ -358,8 +405,17 @@ where
         history_target: HistoryStack,
     ) -> anyhow::Result<()> {
         log::trace!("Deleting entry with id: {entry_id}");
+        anyhow::ensure!(
+            !self.has_sealed_draft(entry_id),
+            "Unlock and save or explicitly discard this note's unsaved encrypted draft before deleting it"
+        );
 
         self.data_provide.remove_entry(entry_id).await?;
+        if self.is_protected(entry_id) {
+            self.security.sessions.remove(&entry_id);
+            self.history.forget_entry(entry_id);
+        }
+        self.discard_sealed_draft(entry_id);
         let removed_entry = self
             .entries
             .iter()
@@ -378,6 +434,10 @@ where
     }
 
     async fn export_entry_content(&self, entry_id: u32, path: PathBuf) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.is_locked(entry_id),
+            "Unlock this note before exporting plaintext"
+        );
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -668,7 +728,7 @@ where
                 Ok(Some(id))
             }
             Change::EntryAttribute(attr) => {
-                log::trace!("History Apply: Change Attributes: {attr:?}");
+                log::trace!("History Apply: Change Attributes: ID {}", attr.id);
                 self.update_entry_attributes(
                     attr.id,
                     attr.title,

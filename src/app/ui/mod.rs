@@ -49,6 +49,10 @@ mod footer;
 mod fuzz_find;
 mod help_popup;
 mod msg_box;
+mod security_handlers;
+mod security_popup;
+#[cfg(test)]
+mod security_tests;
 mod sort_popup;
 pub mod themes;
 pub mod ui_functions;
@@ -63,6 +67,7 @@ pub enum ControlType {
 }
 
 pub enum Popup<'a> {
+    Security(Box<security_popup::SecurityPopup>),
     Help(Box<HelpPopup>),
     Config(Box<ConfigPopup>),
     Entry(Box<EntryPopup<'a>>),
@@ -94,6 +99,8 @@ pub struct UIComponents<'a> {
     pending_command: Option<UICommand>,
     pane_split: Option<divider::PaneSplit>,
     divider_drag: Option<divider::DividerDrag>,
+    privacy_shield: bool,
+    shielded_popups: Vec<Popup<'a>>,
 }
 
 impl UIComponents<'_> {
@@ -122,6 +129,8 @@ impl UIComponents<'_> {
             pending_command: None,
             pane_split: None,
             divider_drag: None,
+            privacy_shield: false,
+            shielded_popups: Vec::new(),
         }
     }
 
@@ -134,6 +143,12 @@ impl UIComponents<'_> {
     }
 
     pub fn set_current_entry<D: DataProvider>(&mut self, entry_id: Option<u32>, app: &mut App<D>) {
+        if entry_id != app.current_entry_id
+            && app.settings.security.lock_on_leave
+            && let Some(previous) = app.current_entry_id
+        {
+            app.lock_note(previous);
+        }
         app.current_entry_id = entry_id;
         if let Some(id) = entry_id {
             let entry_index = app.get_active_entries().position(|entry| entry.id == id);
@@ -147,6 +162,19 @@ impl UIComponents<'_> {
     where
         D: DataProvider,
     {
+        if self.privacy_shield {
+            self.pane_split = None;
+            f.render_widget(
+                Paragraph::new(
+                    "Notes hidden. Press Enter to unlock and recover your unsaved edits.",
+                ),
+                f.area(),
+            );
+            if matches!(self.popup_stack.last(), Some(Popup::Security(_))) {
+                self.render_popup(f);
+            }
+            return;
+        }
         self.editor.set_word_wrap(app.settings.editor_word_wrap);
         self.pane_split = None;
         if f.area().width < divider::MIN_SPLIT_WIDTH || f.area().height < 4 {
@@ -158,7 +186,7 @@ impl UIComponents<'_> {
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(2), Constraint::Length(footer_height)].as_ref())
+            .constraints([Constraint::Min(2), Constraint::Length(footer_height)])
             .split(f.area());
 
         render_footer(f, chunks[1], self, app);
@@ -209,6 +237,7 @@ impl UIComponents<'_> {
     pub fn render_popup(&mut self, f: &mut Frame) {
         if let Some(popup) = self.popup_stack.last_mut() {
             match popup {
+                Popup::Security(popup) => popup.render_widget(f, f.area(), &self.styles),
                 Popup::Config(config) => config.render_widget(f, f.area(), &self.styles),
                 Popup::Help(help_popup) => help_popup.render_widget(f, f.area()),
                 Popup::Entry(entry_popup) => entry_popup.render_widget(f, f.area(), &self.styles),
@@ -230,6 +259,15 @@ impl UIComponents<'_> {
         input: &Input,
         app: &mut App<D>,
     ) -> Result<HandleInputReturnType> {
+        if self.privacy_shield {
+            if matches!(self.popup_stack.last(), Some(Popup::Security(_))) {
+                return self.handle_security_input(input, app).await;
+            }
+            if input.key_code == crossterm::event::KeyCode::Enter {
+                self.show_security(app, true)?;
+            }
+            return Ok(HandleInputReturnType::Handled);
+        }
         if self.has_popup() {
             return self.handle_popup_input(input, app).await;
         }
@@ -297,6 +335,9 @@ impl UIComponents<'_> {
         input: &Input,
         app: &mut App<D>,
     ) -> Result<HandleInputReturnType> {
+        if matches!(self.popup_stack.last(), Some(Popup::Security(_))) {
+            return self.handle_security_input(input, app).await;
+        }
         if let Some(Popup::Config(config)) = self.popup_stack.last_mut() {
             let action = config.handle_input(input);
             if action == ConfigAction::Close {
@@ -311,6 +352,7 @@ impl UIComponents<'_> {
         match self.popup_stack.last_mut() {
             Some(popup) => {
                 match popup {
+                    Popup::Security(_) => unreachable!("security handled above"),
                     Popup::Config(_) => unreachable!("configuration handled above"),
                     Popup::Help(help_popup) => {
                         if help_popup.handle_input(input) == HelpInputInputReturn::Close {

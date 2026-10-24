@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Protect individual notes with a password from the `L` note-security popup, keeping titles and dates visible while encrypting content, tags, priority, and private native metadata across all four backends
+- Unlock, edit, change passwords, and remove protection locally; saved records remain encrypted while a note is open
+- Lock protected notes on selection changes and after configurable inactivity, retaining unsaved content as an encrypted in-memory draft
+- Preserve encrypted notes in transfer exports, require confirmation for plaintext export or system clipboard copies, and block external editors for protected notes
+
+### Fixed
+
+- Open a focused, masked password field directly when protecting a note, with a visible cursor and clear Enter instructions
+- Use atomic, conflict-checked JSON and VJOURNAL writes and transactional SQLite updates so failed protection changes retain the previous note
+- Prevent older transfer readers from silently importing encrypted notes as empty plaintext entries
+- Preserve unchanged native VJOURNAL properties when removing protection, and report malformed protected records instead of hiding them
+- Check all selected notes for encrypted drafts before starting bulk deletion
+
 ## 0.18.0+debplus.4 - 2026-10-24
 
 ### Fixed

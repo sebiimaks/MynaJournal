@@ -705,3 +705,424 @@ async fn roundtrip_preserves_content_through_reload() {
     assert!(titles.contains(&"Title 1"));
     assert!(titles.contains(&"Title 2"));
 }
+
+fn protected(entry: Entry) -> Entry {
+    entry.with_protection(EncryptedNote {
+        version: 1,
+        identity: age::x25519::Identity::generate().to_public().to_string(),
+        ciphertext:
+            "-----BEGIN AGE ENCRYPTED FILE-----\ndGVzdA==\n-----END AGE ENCRYPTED FILE-----\n"
+                .into(),
+    })
+}
+
+#[tokio::test]
+async fn protection_encrypts_whole_recurrence_family_and_restores_unknown_metadata() {
+    let dir = TempDir::new().unwrap();
+    let native = RECURRING_CALENDAR.replace(
+        "DESCRIPTION:Master content",
+        "DESCRIPTION:Master content\r\nX-PRIVATE;LANGUAGE=en:Sensitive metadata",
+    );
+    let path = write_calendar(&dir, &native).await;
+    let mut provider = create_provider(&dir);
+    let entries = provider.load_all_entries().await.unwrap();
+    let master = entries
+        .iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap()
+        .clone();
+    let mut sibling = entries
+        .iter()
+        .find(|entry| entry.title == "Standalone")
+        .unwrap()
+        .clone();
+    let metadata = provider
+        .protection_metadata(master.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(metadata.contains("Detached content"));
+    assert!(metadata.contains("Sensitive metadata"));
+    let locked = protected(master.clone());
+    provider.update_entry(locked.clone()).await.unwrap();
+    let saved = tokio::fs::read_to_string(&path).await.unwrap();
+    for private in [
+        "Detached content",
+        "Detached instance",
+        "Master content",
+        "Sensitive metadata",
+        "RRULE:",
+    ] {
+        assert!(!saved.contains(private), "{private}");
+    }
+    assert!(saved.contains("BEGIN:X-TUI-JOURNAL-LOCKED"));
+    assert!(saved.contains("Event with matching UID"));
+    assert_eq!(
+        provider
+            .load_all_entries()
+            .await
+            .unwrap()
+            .iter()
+            .find(|entry| entry.id == master.id),
+        Some(&locked)
+    );
+    sibling.content = "Edited sibling".into();
+    provider.update_entry(sibling.clone()).await.unwrap();
+    assert!(provider.load_all_entries().await.unwrap().contains(&locked));
+    provider
+        .update_entry_with_metadata(master.clone(), Some(&metadata))
+        .await
+        .unwrap();
+    let restored = parse_component(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+    let family: Vec<_> = restored
+        .subcomponents
+        .iter()
+        .filter(|component| {
+            component.name == "VJOURNAL" && component_uid(component) == Some("recurring-journal")
+        })
+        .collect();
+    assert_eq!(family.len(), 2);
+    assert!(family.iter().any(|c| {
+        c.get_only("X-PRIVATE").is_some_and(|p| {
+            p.value_as_string() == "Sensitive metadata"
+                && p.params.get("LANGUAGE").is_some_and(|value| value == "en")
+        })
+    }));
+    assert!(family.iter().any(|c| {
+        c.get_only("DESCRIPTION")
+            .is_some_and(|p| p.value_as_string() == "Detached content")
+    }));
+    let entries = provider.load_all_entries().await.unwrap();
+    assert!(entries.contains(&master));
+    assert!(entries.contains(&sibling));
+}
+
+#[tokio::test]
+async fn protecting_cross_file_recurrence_families_fails_without_writing() {
+    let dir = TempDir::new().unwrap();
+    let path = write_calendar(&dir, RECURRING_CALENDAR).await;
+    let extra = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VJOURNAL\r\nUID:recurring-journal\r\nRECURRENCE-ID;VALUE=DATE:20250110\r\nDESCRIPTION:Separate private instance\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n";
+    tokio::fs::write(dir.path().join("other.ics"), extra)
+        .await
+        .unwrap();
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    assert!(provider.protection_metadata(master.id).await.is_err());
+    assert!(provider.update_entry(protected(master)).await.is_err());
+    assert_eq!(
+        tokio::fs::read_to_string(path).await.unwrap(),
+        RECURRING_CALENDAR
+    );
+}
+
+#[tokio::test]
+async fn external_calendar_changes_block_update_removal_and_protection() {
+    let dir = TempDir::new().unwrap();
+    let path = write_calendar(&dir, RECURRING_CALENDAR).await;
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    let changed = RECURRING_CALENDAR.replace("Master content", "Externally edited content");
+    tokio::fs::write(&path, &changed).await.unwrap();
+    assert!(provider.update_entry(master.clone()).await.is_err());
+    assert!(provider.remove_entry(master.id).await.is_err());
+    assert!(provider.protection_metadata(master.id).await.is_err());
+    assert_eq!(tokio::fs::read_to_string(path).await.unwrap(), changed);
+}
+
+#[tokio::test]
+async fn protected_calendar_import_preserves_timestamp_and_excludes_priority_assignment() {
+    let dir = TempDir::new().unwrap();
+    let mut provider = create_provider(&dir);
+    let original = protected(Entry::from_draft(
+        0,
+        EntryDraft::new(
+            Utc.with_ymd_and_hms(2025, 1, 2, 3, 4, 5).unwrap(),
+            "Visible title".into(),
+            vec![],
+            None,
+        ),
+    ));
+    assert_eq!(
+        provider
+            .add_entry(EntryDraft::from_entry(original.clone()))
+            .await
+            .unwrap(),
+        original
+    );
+    provider.assign_priority_to_entries(8).await.unwrap();
+    assert_eq!(
+        provider.load_all_entries().await.unwrap(),
+        vec![original.clone()]
+    );
+    assert_eq!(
+        provider
+            .get_export_object(&[original.id])
+            .await
+            .unwrap()
+            .entries,
+        vec![EntryDraft::from_entry(original.clone())]
+    );
+    provider.remove_entry(original.id).await.unwrap();
+    assert!(provider.load_all_entries().await.unwrap().is_empty());
+    assert_eq!(
+        provider.restore_entry(original.clone()).await.unwrap(),
+        original
+    );
+}
+
+#[tokio::test]
+async fn invalid_protected_calendar_is_reported_instead_of_hidden() {
+    let dir = TempDir::new().unwrap();
+    write_calendar(&dir, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:X-TUI-JOURNAL-LOCKED\r\nUID:locked\r\nSUMMARY:Visible\r\nEND:X-TUI-JOURNAL-LOCKED\r\nEND:VCALENDAR\r\n").await;
+    assert!(create_provider(&dir).load_all_entries().await.is_err());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn atomic_calendar_updates_preserve_permissions_and_leave_no_plaintext_temporary_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TempDir::new().unwrap();
+    let path = write_calendar(&dir, RECURRING_CALENDAR).await;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    provider.update_entry(protected(master)).await.unwrap();
+    assert_eq!(
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    let filenames: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(filenames.len(), 2);
+    assert!(filenames.contains(&".tui-journal.lock".into()));
+}
+
+#[tokio::test]
+async fn protected_recurrence_conflict_is_reported_without_overwriting_private_instance() {
+    let dir = TempDir::new().unwrap();
+    let path = write_calendar(&dir, RECURRING_CALENDAR).await;
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    provider.update_entry(protected(master)).await.unwrap();
+    let extra = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VJOURNAL\r\nUID:recurring-journal\r\nRECURRENCE-ID;VALUE=DATE:20250110\r\nDESCRIPTION:Unencrypted private instance\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n";
+    tokio::fs::write(dir.path().join("other.ics"), extra)
+        .await
+        .unwrap();
+    let before = tokio::fs::read(&path).await.unwrap();
+    assert!(provider.load_all_entries().await.is_err());
+    assert_eq!(tokio::fs::read(path).await.unwrap(), before);
+    assert_eq!(
+        tokio::fs::read_to_string(dir.path().join("other.ics"))
+            .await
+            .unwrap(),
+        extra
+    );
+}
+
+#[tokio::test]
+async fn export_does_not_accept_external_changes_as_a_new_write_baseline() {
+    let dir = TempDir::new().unwrap();
+    let path = write_calendar(&dir, RECURRING_CALENDAR).await;
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    let changed = RECURRING_CALENDAR.replace("Master content", "External content");
+    tokio::fs::write(&path, &changed).await.unwrap();
+    assert!(provider.get_export_object(&[master.id]).await.is_err());
+    assert!(provider.update_entry(master).await.is_err());
+    assert_eq!(tokio::fs::read_to_string(path).await.unwrap(), changed);
+}
+
+#[tokio::test]
+async fn protection_includes_case_insensitive_recurrence_components_and_properties() {
+    let dir = TempDir::new().unwrap();
+    let calendar = RECURRING_CALENDAR
+        .replacen("BEGIN:VJOURNAL", "BEGIN:vjournal", 1)
+        .replacen("END:VJOURNAL", "END:vjournal", 1)
+        .replacen("UID:recurring-journal", "uid:recurring-journal", 1)
+        .replacen("RECURRENCE-ID;", "recurrence-id;", 1);
+    let path = write_calendar(&dir, &calendar).await;
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    let metadata = provider
+        .protection_metadata(master.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(metadata.contains("Detached content"));
+    provider.update_entry(protected(master)).await.unwrap();
+    assert!(
+        !tokio::fs::read_to_string(path)
+            .await
+            .unwrap()
+            .contains("Detached content")
+    );
+}
+
+#[tokio::test]
+async fn ambiguous_family_uid_prevents_partial_encryption() {
+    let dir = TempDir::new().unwrap();
+    let calendar = RECURRING_CALENDAR.replacen(
+        "UID:recurring-journal",
+        "UID:recurring-journal\r\nuid:another-journal",
+        1,
+    );
+    let path = write_calendar(&dir, &calendar).await;
+    let mut provider = create_provider(&dir);
+    let master = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    assert!(provider.protection_metadata(master.id).await.is_err());
+    assert!(provider.update_entry(protected(master)).await.is_err());
+    assert_eq!(tokio::fs::read_to_string(path).await.unwrap(), calendar);
+}
+
+#[tokio::test]
+async fn removing_imported_protection_preserves_literal_backslashes_and_line_breaks() {
+    let dir = TempDir::new().unwrap();
+    let mut provider = create_provider(&dir);
+    let text = "Literal \\n and \\N; comma, and CRLF\r\n";
+    let original = Entry::from_draft(
+        0,
+        EntryDraft::new(
+            Utc.with_ymd_and_hms(2025, 1, 2, 0, 0, 0).unwrap(),
+            text.into(),
+            vec![r"tag\n".into(), r"tag\N".into()],
+            Some(2),
+        )
+        .with_content(text.into()),
+    );
+    provider
+        .add_entry(EntryDraft::from_entry(protected(original.clone())))
+        .await
+        .unwrap();
+    provider
+        .update_entry_with_metadata(
+            original.clone(),
+            Some(r#"{"format":"file-v1","document":"file metadata"}"#),
+        )
+        .await
+        .unwrap();
+    assert_eq!(provider.load_all_entries().await.unwrap(), vec![original]);
+}
+
+#[tokio::test]
+async fn removing_protection_preserves_unchanged_native_properties_and_applies_edits() {
+    let native = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VJOURNAL\r\nUID:timed-journal\r\nDTSTAMP:20250101T000000Z\r\nDTSTART;TZID=Europe/Berlin:20250102T090000\r\nSUMMARY;LANGUAGE=en:Title\r\nDESCRIPTION;LANGUAGE=en:Body\r\nDESCRIPTION;LANGUAGE=de:Zweiter Absatz\r\nCATEGORIES;LANGUAGE=en:one,two\r\nPRIORITY:0\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n";
+    let before = parse_component(native).unwrap().subcomponents.remove(0);
+    for edit in [false, true] {
+        let dir = TempDir::new().unwrap();
+        let path = write_calendar(&dir, native).await;
+        let mut provider = create_provider(&dir);
+        let mut entry = provider.load_all_entries().await.unwrap().remove(0);
+        let metadata = provider
+            .protection_metadata(entry.id)
+            .await
+            .unwrap()
+            .unwrap();
+        provider
+            .update_entry(protected(entry.clone()))
+            .await
+            .unwrap();
+        if edit {
+            entry.content = "Edited body".into();
+        }
+        provider
+            .update_entry_with_metadata(entry.clone(), Some(&metadata))
+            .await
+            .unwrap();
+        let restored = parse_component(&tokio::fs::read_to_string(path).await.unwrap())
+            .unwrap()
+            .subcomponents
+            .remove(0);
+        for property in [
+            "SUMMARY",
+            "DTSTART",
+            "CATEGORIES",
+            "PRIORITY",
+            "RRULE",
+            "DESCRIPTION",
+        ] {
+            if edit && property == "DESCRIPTION" {
+                continue;
+            }
+            let values = |component: &Component| {
+                component
+                    .get_all(property)
+                    .iter()
+                    .map(|value| {
+                        (
+                            value.raw_value.clone(),
+                            value.params.clone(),
+                            value.prop_group.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(values(&restored), values(&before), "{property}");
+        }
+        assert_eq!(provider.load_all_entries().await.unwrap(), vec![entry]);
+    }
+}
+
+#[tokio::test]
+async fn invalid_locked_component_identity_is_reported_instead_of_hidden() {
+    for properties in [
+        "SUMMARY:Visible",
+        "UID:\r\nSUMMARY:Visible",
+        "UID:one\r\nUID:two\r\nSUMMARY:Visible",
+        "UID:one\r\nRECURRENCE-ID;VALUE=DATE:20250102\r\nSUMMARY:Visible",
+    ] {
+        let dir = TempDir::new().unwrap();
+        write_calendar(
+            &dir,
+            &format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:X-TUI-JOURNAL-LOCKED\r\n{properties}\r\nEND:X-TUI-JOURNAL-LOCKED\r\nEND:VCALENDAR\r\n"),
+        )
+        .await;
+        assert!(
+            create_provider(&dir).load_all_entries().await.is_err(),
+            "{properties}"
+        );
+    }
+}

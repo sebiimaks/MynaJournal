@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
+
+pub mod protection;
+pub use protection::EncryptedNote;
 
 #[cfg(feature = "file")]
 mod file;
@@ -22,7 +26,8 @@ mod vjournal;
 #[cfg(feature = "vjournal")]
 pub use vjournal::VjournalDataProvide;
 
-pub const TRANSFER_DATA_VERSION: u16 = 100;
+pub const TRANSFER_DATA_VERSION: u16 = 101;
+pub const LEGACY_TRANSFER_DATA_VERSION: u16 = 100;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModifyEntryError {
@@ -44,12 +49,20 @@ pub trait DataProvider {
     async fn restore_entry(&mut self, entry: Entry) -> Result<Entry, ModifyEntryError>;
     async fn remove_entry(&mut self, entry_id: u32) -> anyhow::Result<()>;
     async fn update_entry(&mut self, entry: Entry) -> Result<Entry, ModifyEntryError>;
+    /// Native metadata is encrypted along with the portable note fields.
+    async fn protection_metadata(&mut self, _entry_id: u32) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+    async fn update_entry_with_metadata(
+        &mut self,
+        entry: Entry,
+        _metadata: Option<&str>,
+    ) -> Result<Entry, ModifyEntryError> {
+        self.update_entry(entry).await
+    }
     async fn get_export_object(&mut self, entries_ids: &[u32]) -> anyhow::Result<EntriesDTO>;
     async fn import_entries(&mut self, entries_dto: EntriesDTO) -> anyhow::Result<()> {
-        debug_assert_eq!(
-            TRANSFER_DATA_VERSION, entries_dto.version,
-            "Version mismatches check if there is a need to do a converting to the data"
-        );
+        entries_dto.validate()?;
 
         for entry_draft in entries_dto.entries {
             self.add_entry(entry_draft).await?;
@@ -61,7 +74,7 @@ pub trait DataProvider {
     async fn assign_priority_to_entries(&mut self, priority: u32) -> anyhow::Result<()>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     pub id: u32,
     pub date: DateTime<Utc>,
@@ -71,6 +84,8 @@ pub struct Entry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub priority: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<EncryptedNote>,
 }
 
 impl Entry {
@@ -90,6 +105,7 @@ impl Entry {
             content,
             tags,
             priority,
+            protection: None,
         }
     }
 
@@ -101,17 +117,43 @@ impl Entry {
             content: draft.content,
             tags: draft.tags,
             priority: draft.priority,
+            protection: draft.protection,
         }
+    }
+
+    pub fn validate_protection(&self) -> anyhow::Result<()> {
+        protection::validate_protected_entry(self).map_err(Into::into)
+    }
+
+    /// Only the public fields accompany an encrypted payload across the storage boundary.
+    pub fn with_protection(mut self, protection: EncryptedNote) -> Self {
+        self.content.zeroize();
+        self.tags.zeroize();
+        self.priority.zeroize();
+        self.priority = None;
+        self.protection = Some(protection);
+        self
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl std::fmt::Debug for Entry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entry")
+            .field("id", &self.id)
+            .field("protected", &self.protection.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryDraft {
     pub date: DateTime<Utc>,
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
     pub priority: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<EncryptedNote>,
 }
 
 impl EntryDraft {
@@ -128,11 +170,13 @@ impl EntryDraft {
             content,
             tags,
             priority,
+            protection: None,
         }
     }
 
     #[must_use]
     pub fn with_content(mut self, content: String) -> Self {
+        self.content.zeroize();
         self.content = content;
         self
     }
@@ -144,12 +188,21 @@ impl EntryDraft {
             content: entry.content,
             tags: entry.tags,
             priority: entry.priority,
+            protection: entry.protection,
         }
     }
 }
 
-/// Entries data transfer object
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl std::fmt::Debug for EntryDraft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntryDraft")
+            .field("protected", &self.protection.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Entries data transfer object. Protected records use a shape that legacy importers reject.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntriesDTO {
     pub version: u16,
     pub entries: Vec<EntryDraft>,
@@ -161,6 +214,153 @@ impl EntriesDTO {
             version: TRANSFER_DATA_VERSION,
             entries,
         }
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            matches!(
+                self.version,
+                LEGACY_TRANSFER_DATA_VERSION | TRANSFER_DATA_VERSION
+            ),
+            "Unsupported journal transfer version {}",
+            self.version
+        );
+        for draft in &self.entries {
+            anyhow::ensure!(
+                self.version != LEGACY_TRANSFER_DATA_VERSION || draft.protection.is_none(),
+                "Encrypted records require the current journal transfer format"
+            );
+            anyhow::ensure!(!draft.title.is_empty(), "Entry title can't be empty");
+            if let Some(protection) = &draft.protection {
+                protection.validate()?;
+                anyhow::ensure!(
+                    draft.content.is_empty() && draft.tags.is_empty() && draft.priority.is_none(),
+                    protection::ProtectionError::PlaintextFields
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for EntriesDTO {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.validate().map_err(serde::ser::Error::custom)?;
+        let entries = self
+            .entries
+            .iter()
+            .map(|entry| match &entry.protection {
+                Some(protection) => transfer_format::EntryRef::Protected {
+                    protected: transfer_format::ProtectedRef {
+                        date: entry.date,
+                        title: &entry.title,
+                        protection,
+                    },
+                },
+                None => transfer_format::EntryRef::Plain(entry),
+            })
+            .collect();
+        transfer_format::DocumentRef {
+            version: self.version,
+            entries,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for EntriesDTO {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let document = transfer_format::Document::deserialize(deserializer)?;
+        let entries = document
+            .entries
+            .into_iter()
+            .map(|entry| match entry {
+                transfer_format::TransferEntry::Protected { protected } => EntryDraft {
+                    date: protected.date,
+                    title: protected.title,
+                    content: String::new(),
+                    tags: Vec::new(),
+                    priority: None,
+                    protection: Some(protected.protection),
+                },
+                transfer_format::TransferEntry::Plain(plain) => EntryDraft {
+                    date: plain.date,
+                    title: plain.title,
+                    content: plain.content,
+                    tags: plain.tags,
+                    priority: plain.priority,
+                    protection: None,
+                },
+            })
+            .collect();
+        let document = Self {
+            version: document.version,
+            entries,
+        };
+        document.validate().map_err(serde::de::Error::custom)?;
+        Ok(document)
+    }
+}
+
+mod transfer_format {
+    use super::*;
+
+    #[derive(Serialize)]
+    pub(super) struct DocumentRef<'a> {
+        pub version: u16,
+        pub entries: Vec<EntryRef<'a>>,
+    }
+
+    #[derive(Serialize)]
+    #[serde(untagged)]
+    pub(super) enum EntryRef<'a> {
+        Protected { protected: ProtectedRef<'a> },
+        Plain(&'a EntryDraft),
+    }
+
+    #[derive(Serialize)]
+    pub(super) struct ProtectedRef<'a> {
+        pub date: DateTime<Utc>,
+        pub title: &'a str,
+        pub protection: &'a EncryptedNote,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub(super) struct Document {
+        pub version: u16,
+        pub entries: Vec<TransferEntry>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(untagged, deny_unknown_fields)]
+    pub(super) enum TransferEntry {
+        Protected { protected: Protected },
+        Plain(Plain),
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub(super) struct Protected {
+        pub date: DateTime<Utc>,
+        pub title: String,
+        pub protection: EncryptedNote,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub(super) struct Plain {
+        pub date: DateTime<Utc>,
+        pub title: String,
+        pub content: String,
+        pub tags: Vec<String>,
+        pub priority: Option<u32>,
     }
 }
 
@@ -177,6 +377,7 @@ mod tests {
             content: String::from("Body"),
             tags: vec![String::from("one"), String::from("two")],
             priority: Some(3),
+            protection: None,
         }
     }
 
@@ -337,5 +538,160 @@ mod tests {
 
         // The stub records the draft before failing, so the third entry proves import stopped.
         assert_eq!(provider.added_entries, entries[..2]);
+    }
+
+    fn protected_draft() -> EntryDraft {
+        static DRAFT: std::sync::LazyLock<EntryDraft> = std::sync::LazyLock::new(|| {
+            let entry = Entry::new(
+                42,
+                Utc.with_ymd_and_hms(2026, 10, 24, 1, 2, 3).unwrap(),
+                "Public protected title".into(),
+                "PRIVATE_TRANSFER_BODY".into(),
+                vec!["PRIVATE_TRANSFER_TAG".into()],
+                Some(7),
+            );
+            let protection = protection::protect(
+                &entry,
+                &protection::SecretString::from("transfer test password".to_owned()),
+                None,
+            )
+            .unwrap();
+            EntryDraft::from_entry(entry.with_protection(protection))
+        });
+        DRAFT.clone()
+    }
+
+    #[test]
+    fn protected_transfer_rejects_legacy_reader_and_preserves_encryption() {
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct LegacyDraft {
+            date: DateTime<Utc>,
+            title: String,
+            content: String,
+            tags: Vec<String>,
+            priority: Option<u32>,
+        }
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct LegacyDocument {
+            version: u16,
+            entries: Vec<LegacyDraft>,
+        }
+        let document = EntriesDTO::new(vec![sample_draft(), protected_draft()]);
+        let json = serde_json::to_string(&document).unwrap();
+        assert!(serde_json::from_str::<LegacyDocument>(&json).is_err());
+        assert!(!json.contains("PRIVATE_TRANSFER_BODY"));
+        assert!(!json.contains("PRIVATE_TRANSFER_TAG"));
+        assert!(json.contains("Public protected title"));
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["entries"][1].get("content").is_none());
+        assert!(value["entries"][1].get("title").is_none());
+        assert!(value["entries"][1].get("protected").is_some());
+        let decoded: EntriesDTO = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, document);
+        let entry = Entry::from_draft(99, decoded.entries[1].clone());
+        let unlocked = protection::unlock(
+            &entry,
+            &protection::SecretString::from("transfer test password".to_owned()),
+        )
+        .unwrap();
+        assert_eq!(unlocked.content, "PRIVATE_TRANSFER_BODY");
+        assert_eq!(unlocked.tags, ["PRIVATE_TRANSFER_TAG"]);
+        assert_eq!(unlocked.priority, Some(7));
+    }
+
+    #[test]
+    fn plaintext_transfer_accepts_legacy_and_current_versions() {
+        for version in [LEGACY_TRANSFER_DATA_VERSION, TRANSFER_DATA_VERSION] {
+            let json = serde_json::json!({ "version": version, "entries": [sample_draft()] });
+            let decoded: EntriesDTO = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(decoded.version, version);
+            assert_eq!(decoded.entries, vec![sample_draft()]);
+            assert_eq!(serde_json::to_value(decoded).unwrap(), json);
+        }
+    }
+
+    #[test]
+    fn transfer_rejects_unknown_versions_and_downgraded_encryption() {
+        let protected = EntriesDTO::new(vec![protected_draft()]);
+        let mut value = serde_json::to_value(&protected).unwrap();
+        value["version"] = LEGACY_TRANSFER_DATA_VERSION.into();
+        assert!(serde_json::from_value::<EntriesDTO>(value).is_err());
+        for version in [
+            0,
+            LEGACY_TRANSFER_DATA_VERSION - 1,
+            TRANSFER_DATA_VERSION + 1,
+            u16::MAX,
+        ] {
+            let invalid = EntriesDTO {
+                version,
+                entries: vec![sample_draft()],
+            };
+            assert!(serde_json::to_string(&invalid).is_err());
+            assert!(
+                serde_json::from_value::<EntriesDTO>(serde_json::json!({
+                    "version": version, "entries": [sample_draft()],
+                }))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn transfer_rejects_flat_or_mixed_protected_records() {
+        let protected = protected_draft();
+        let flat = serde_json::to_value(&protected).unwrap();
+        assert!(
+            serde_json::from_value::<EntriesDTO>(serde_json::json!({
+                "version": TRANSFER_DATA_VERSION, "entries": [flat],
+            }))
+            .is_err()
+        );
+        let original = serde_json::to_value(EntriesDTO::new(vec![protected])).unwrap();
+        for location in ["outside", "inside"] {
+            let mut mixed = original.clone();
+            let entry = &mut mixed["entries"][0];
+            let fields = if location == "inside" {
+                &mut entry["protected"]
+            } else {
+                entry
+            };
+            fields["content"] = "PRIVATE_MIXED_CONTENT".into();
+            assert!(serde_json::from_value::<EntriesDTO>(mixed).is_err());
+        }
+        let mut malformed = original;
+        malformed["entries"][0]["protected"]["protection"]["version"] = 999.into();
+        assert!(serde_json::from_value::<EntriesDTO>(malformed).is_err());
+    }
+
+    #[tokio::test]
+    async fn invalid_transfer_is_rejected_before_any_import_write() {
+        let mut invalid_fields = protected_draft();
+        invalid_fields.content = "PRIVATE_MIXED_CONTENT".into();
+        let mut invalid_title = sample_draft();
+        invalid_title.title.clear();
+        let mut invalid_envelope = protected_draft();
+        invalid_envelope.protection.as_mut().unwrap().version = 999;
+        let documents = [
+            EntriesDTO::new(vec![sample_draft(), invalid_fields]),
+            EntriesDTO::new(vec![sample_draft(), invalid_title]),
+            EntriesDTO::new(vec![sample_draft(), invalid_envelope]),
+            EntriesDTO {
+                version: LEGACY_TRANSFER_DATA_VERSION,
+                entries: vec![sample_draft(), protected_draft()],
+            },
+            EntriesDTO {
+                version: TRANSFER_DATA_VERSION + 1,
+                entries: vec![sample_draft()],
+            },
+        ];
+        for document in documents {
+            let mut provider = ImportStubProvider::new(None);
+            assert!(serde_json::to_string(&document).is_err());
+            let error = provider.import_entries(document).await.unwrap_err();
+            assert!(!error.to_string().contains("PRIVATE_MIXED_CONTENT"));
+            assert!(provider.added_entries.is_empty());
+        }
     }
 }

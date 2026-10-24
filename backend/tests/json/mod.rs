@@ -205,3 +205,222 @@ async fn assign_priority() {
     assert_eq!(entries[0].priority, Some(3));
     assert_eq!(entries[1].priority, Some(1));
 }
+
+fn protected_entry() -> Entry {
+    static ENTRY: std::sync::LazyLock<Entry> = std::sync::LazyLock::new(|| {
+        let entry = Entry::new(
+            0,
+            Utc.with_ymd_and_hms(2026, 10, 24, 1, 2, 3).unwrap(),
+            "Public title".into(),
+            "PRIVATE_NOTE_BODY_json".into(),
+            vec!["PRIVATE_NOTE_TAG_json".into()],
+            Some(17),
+        );
+        let envelope = backend::protection::protect(
+            &entry,
+            &backend::protection::SecretString::from("test passphrase".to_owned()),
+            None,
+        )
+        .unwrap();
+        entry.with_protection(envelope)
+    });
+    ENTRY.clone()
+}
+
+#[tokio::test]
+async fn protected_entries_use_versioned_store_and_export_ciphertext() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let mut provider = JsonDataProvide::new(path.clone());
+    let expected = provider
+        .add_entry(EntryDraft::from_entry(protected_entry()))
+        .await
+        .unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(serde_json::from_slice::<Vec<Entry>>(&bytes).is_err());
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(!text.contains("PRIVATE_NOTE_BODY_json"));
+    assert!(!text.contains("PRIVATE_NOTE_TAG_json"));
+    assert!(text.contains("Public title"));
+    assert!(text.contains("AGE ENCRYPTED FILE"));
+    provider.assign_priority_to_entries(3).await.unwrap();
+    assert_eq!(
+        provider.load_all_entries().await.unwrap(),
+        vec![expected.clone()]
+    );
+    let exported = provider.get_export_object(&[expected.id]).await.unwrap();
+    assert_eq!(
+        exported.entries,
+        vec![EntryDraft::from_entry(expected.clone())]
+    );
+    let mut destination = JsonDataProvide::new(directory.path().join("import.json"));
+    destination.import_entries(exported).await.unwrap();
+    assert_eq!(
+        destination.load_all_entries().await.unwrap(),
+        vec![expected]
+    );
+}
+
+#[tokio::test]
+async fn protected_store_never_reverts_to_legacy_after_removal() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let mut provider = JsonDataProvide::new(path.clone());
+    let entry = provider
+        .add_entry(EntryDraft::from_entry(protected_entry()))
+        .await
+        .unwrap();
+    provider.remove_entry(entry.id).await.unwrap();
+    drop(provider);
+    let mut reopened = JsonDataProvide::new(path.clone());
+    reopened
+        .add_entry(EntryDraft::new(
+            Utc::now(),
+            "Plain note".into(),
+            vec![],
+            None,
+        ))
+        .await
+        .unwrap();
+    let bytes = std::fs::read(path).unwrap();
+    assert!(serde_json::from_slice::<Vec<Entry>>(&bytes).is_err());
+    let store: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(store["version"], 2);
+}
+
+#[tokio::test]
+async fn rejects_legacy_array_containing_protection() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let bytes = serde_json::to_vec(&vec![protected_entry()]).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    let mut provider = JsonDataProvide::new(path.clone());
+    assert!(provider.load_all_entries().await.is_err());
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+}
+
+#[tokio::test]
+async fn invalid_protected_update_preserves_original_store() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let mut provider = JsonDataProvide::new(path.clone());
+    let mut entry = provider
+        .add_entry(EntryDraft::from_entry(protected_entry()))
+        .await
+        .unwrap();
+    let before = std::fs::read(&path).unwrap();
+    entry.content = "PRIVATE_ACCIDENTAL_PLAINTEXT".into();
+    assert!(provider.update_entry(entry).await.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let files: Vec<_> = std::fs::read_dir(directory.path()).unwrap().collect();
+    assert_eq!(files.len(), 2);
+}
+
+#[tokio::test]
+async fn external_changes_cannot_be_overwritten_by_stale_update_or_delete() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let mut provider = JsonDataProvide::new(path.clone());
+    let entry = provider
+        .add_entry(EntryDraft::new(Utc::now(), "Original".into(), vec![], None))
+        .await
+        .unwrap();
+    let mut external = entry.clone();
+    external.content = "Externally changed".into();
+    let replacement = serde_json::to_vec(&vec![external.clone()]).unwrap();
+    std::fs::write(&path, &replacement).unwrap();
+    assert!(provider.update_entry(entry.clone()).await.is_err());
+    assert!(provider.remove_entry(entry.id).await.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), replacement);
+    assert_eq!(provider.load_all_entries().await.unwrap(), vec![external]);
+    provider.remove_entry(entry.id).await.unwrap();
+}
+
+#[tokio::test]
+async fn second_provider_cannot_write_until_first_closes() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let mut first = JsonDataProvide::new(path.clone());
+    first.load_all_entries().await.unwrap();
+    let mut second = JsonDataProvide::new(path);
+    assert!(
+        second
+            .add_entry(EntryDraft::new(Utc::now(), "Blocked".into(), vec![], None))
+            .await
+            .is_err()
+    );
+    drop(first);
+    second
+        .add_entry(EntryDraft::new(Utc::now(), "Allowed".into(), vec![], None))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn unsupported_version_and_duplicate_ids_fail_without_rewriting() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("entries.json");
+    let entry = Entry::from_draft(0, EntryDraft::new(Utc::now(), "Entry".into(), vec![], None));
+    for bytes in [
+        serde_json::to_vec(&serde_json::json!({"format":"tui-journal","version":999,"entries":[]}))
+            .unwrap(),
+        serde_json::to_vec(&vec![entry.clone(), entry]).unwrap(),
+    ] {
+        std::fs::write(&path, &bytes).unwrap();
+        let mut provider = JsonDataProvide::new(path.clone());
+        assert!(provider.load_all_entries().await.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn replaced_lock_and_directory_are_rejected_before_writing() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = directory.path().join("store");
+    std::fs::create_dir(&store).unwrap();
+    let path = store.join("entries.json");
+    let mut provider = JsonDataProvide::new(path.clone());
+    let entry = provider
+        .add_entry(EntryDraft::new(Utc::now(), "Original".into(), vec![], None))
+        .await
+        .unwrap();
+    let before = std::fs::read(&path).unwrap();
+    std::fs::rename(store.join("entries.json.lock"), store.join("previous.lock")).unwrap();
+    std::fs::write(store.join("entries.json.lock"), b"").unwrap();
+    assert!(provider.update_entry(entry.clone()).await.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    drop(provider);
+    let mut provider = JsonDataProvide::new(path.clone());
+    provider.load_all_entries().await.unwrap();
+    std::fs::rename(&store, directory.path().join("original")).unwrap();
+    std::fs::create_dir(&store).unwrap();
+    std::fs::write(&path, &before).unwrap();
+    std::fs::write(store.join("entries.json.lock"), b"").unwrap();
+    assert!(provider.update_entry(entry).await.is_err());
+    assert_eq!(std::fs::read(path).unwrap(), before);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn symlink_store_is_not_replaced() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("target.json");
+    let link = directory.path().join("entries.json");
+    std::fs::write(&target, b"[]").unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let mut provider = JsonDataProvide::new(link.clone());
+    assert!(
+        provider
+            .add_entry(EntryDraft::new(Utc::now(), "Entry".into(), vec![], None))
+            .await
+            .is_err()
+    );
+    assert!(
+        std::fs::symlink_metadata(link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read(target).unwrap(), b"[]");
+}

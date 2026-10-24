@@ -20,6 +20,7 @@ use self::tags::{TagsPopup, TagsPopupReturn};
 
 use super::{Styles, ui_functions::centered_rect_exact_height};
 
+mod snapshot;
 mod tags;
 #[cfg(test)]
 mod tests;
@@ -167,16 +168,13 @@ impl EntryPopup<'_> {
             .direction(Direction::Vertical)
             .horizontal_margin(4)
             .vertical_margin(2)
-            .constraints(
-                [
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Min(1),
-                ]
-                .as_ref(),
-            )
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Min(1),
+            ])
             .split(area);
 
         self.title_txt.set_cursor_line_style(Style::default());

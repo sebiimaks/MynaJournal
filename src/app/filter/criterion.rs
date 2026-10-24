@@ -18,6 +18,9 @@ pub enum TagFilterOption {
 impl FilterCriterion {
     /// Checks if the entry meets the criterion
     pub fn check_entry(&self, entry: &Entry) -> bool {
+        if entry.protection.is_some() && !matches!(self, Self::Title(_)) {
+            return false;
+        }
         match self {
             FilterCriterion::Tag(TagFilterOption::Tag(tag)) => entry.tags.contains(tag),
             FilterCriterion::Tag(TagFilterOption::NoTags) => entry.tags.is_empty(),
@@ -41,9 +44,7 @@ impl FilterCriterion {
                     {
                         Ok(ac) => ac,
                         Err(err) => {
-                            log::error!(
-                                "Build AhoCorasick with pattern {search} failed with error: {err}"
-                            );
+                            log::error!("Building the content search matcher failed: {err}");
                             return false;
                         }
                     };

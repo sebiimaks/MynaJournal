@@ -101,6 +101,32 @@ fn set_setting(ui: &mut UIComponents<'_>, path: &[&str], value: toml::Value) {
         .unwrap();
 }
 
+#[tokio::test]
+async fn security_preferences_save_and_apply_without_touching_journals_or_auto_title() {
+    let (dir, mut app, mut ui) = setup("# Keep\nauto_title = 'Daily'\n");
+    let original = app.get_current_entry().unwrap().clone();
+    ui.show_config(&app).unwrap();
+    set_setting(
+        &mut ui,
+        &["security", "auto_lock_seconds"],
+        toml::Value::Integer(60),
+    );
+    set_setting(
+        &mut ui,
+        &["security", "lock_on_leave"],
+        toml::Value::Boolean(false),
+    );
+    control(&mut ui, &mut app, 's').await;
+    assert_eq!(app.settings.security.auto_lock_seconds, 60);
+    assert!(!app.settings.security.lock_on_leave);
+    assert_eq!(app.get_current_entry(), Some(&original));
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("# Keep"));
+    assert!(text.contains("auto_title = 'Daily'"));
+    let saved: Settings = toml::from_str(&text).unwrap();
+    assert_eq!(saved.security, app.settings.security);
+}
+
 async fn press(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>, code: KeyCode) {
     ui.handle_input(&key(code), app).await.unwrap();
 }

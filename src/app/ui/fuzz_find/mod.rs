@@ -79,14 +79,11 @@ impl FuzzFindPopup<'_> {
             .direction(Direction::Vertical)
             .horizontal_margin(2)
             .vertical_margin(2)
-            .constraints(
-                [
-                    Constraint::Length(3),
-                    Constraint::Min(4),
-                    Constraint::Length(footer_height.try_into().unwrap()),
-                ]
-                .as_ref(),
-            )
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(4),
+                Constraint::Length(footer_height.try_into().unwrap()),
+            ])
             .split(area);
 
         frame.render_widget(&self.query_text_box, chunks[0]);

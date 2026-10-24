@@ -7,7 +7,7 @@ use ratatui::{
     prelude::Margin,
     style::Style,
     symbols,
-    widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
 use crate::app::{App, keymap::Input, runner::HandleInputReturnType};
@@ -39,6 +39,7 @@ pub struct Editor<'a> {
     has_unsaved: bool,
     word_wrap: bool,
     wrapped: WrappedView,
+    locked: bool,
 }
 
 /// Direction of a single-line vertical cursor movement.
@@ -71,6 +72,7 @@ impl<'a> Editor<'a> {
             has_unsaved: false,
             word_wrap: true,
             wrapped: WrappedView::default(),
+            locked: false,
         }
     }
 
@@ -90,6 +92,8 @@ impl<'a> Editor<'a> {
     }
 
     pub fn set_current_entry<D: DataProvider>(&mut self, entry_id: Option<u32>, app: &App<D>) {
+        self.locked = entry_id.is_some_and(|id| app.is_locked(id));
+        self.mode = EditorMode::Normal;
         let text_area = match entry_id {
             Some(id) => {
                 if let Some(entry) = app.get_entry(id) {
@@ -117,13 +121,16 @@ impl<'a> Editor<'a> {
         input: &Input,
         app: &App<D>,
     ) -> anyhow::Result<HandleInputReturnType> {
+        if self.locked {
+            return Ok(HandleInputReturnType::Handled);
+        }
         if self.is_insert_mode() {
             if self.handle_wrapped_navigation(input) {
                 return Ok(HandleInputReturnType::Handled);
             }
             // We must handle clipboard operation separately if sync with system clipboard is
             // activated
-            if app.settings.sync_os_clipboard {
+            if app.settings.sync_os_clipboard && !app.current_is_protected() {
                 let has_ctrl = input.modifiers.contains(KeyModifiers::CONTROL);
                 // Keymaps are taken from `text_area` source code
                 let handled = match input.key_code {
@@ -174,11 +181,15 @@ impl<'a> Editor<'a> {
     ) -> anyhow::Result<HandleInputReturnType> {
         debug_assert!(!self.is_insert_mode());
 
+        if self.locked {
+            return Ok(HandleInputReturnType::Handled);
+        }
+
         if app.get_current_entry().is_none() {
             return Ok(HandleInputReturnType::Handled);
         }
 
-        let sync_os_clipboard = app.settings.sync_os_clipboard;
+        let sync_os_clipboard = app.settings.sync_os_clipboard && !app.current_is_protected();
 
         if self.handle_wrapped_navigation(input) {
             return Ok(HandleInputReturnType::Handled);
@@ -294,11 +305,15 @@ impl<'a> Editor<'a> {
             }
             (KeyCode::Char('D'), false) => {
                 self.text_area.delete_line_by_end();
-                self.exec_os_clipboard(ClipboardOperation::Copy)?;
+                if sync_os_clipboard {
+                    self.exec_os_clipboard(ClipboardOperation::Copy)?;
+                }
             }
             (KeyCode::Char('C'), false) => {
                 self.text_area.delete_line_by_end();
-                self.exec_os_clipboard(ClipboardOperation::Copy)?;
+                if sync_os_clipboard {
+                    self.exec_os_clipboard(ClipboardOperation::Copy)?;
+                }
                 self.mode = EditorMode::Insert;
             }
             (KeyCode::Char('p'), false) => {
@@ -316,7 +331,9 @@ impl<'a> Editor<'a> {
             }
             (KeyCode::Char('x'), false) => {
                 self.text_area.delete_next_char();
-                self.exec_os_clipboard(ClipboardOperation::Copy)?;
+                if sync_os_clipboard {
+                    self.exec_os_clipboard(ClipboardOperation::Copy)?;
+                }
             }
             (KeyCode::Char('i'), false) => self.mode = EditorMode::Insert,
             (KeyCode::Char('a'), false) => {
@@ -434,6 +451,11 @@ impl<'a> Editor<'a> {
     }
 
     pub fn set_editor_mode(&mut self, mode: EditorMode) {
+        let mode = if self.locked {
+            EditorMode::Normal
+        } else {
+            mode
+        };
         if self.mode != mode {
             self.wrapped.clear_goal();
         }
@@ -451,6 +473,20 @@ impl<'a> Editor<'a> {
     }
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+        if self.locked {
+            frame.render_widget(
+                Paragraph::new("Locked note\n\nEnter: unlock\nL: note security")
+                    .wrap(Wrap { trim: false })
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title("Content — locked")
+                            .style(Style::from(styles.editor.block_normal_inactive)),
+                    ),
+                area,
+            );
+            return;
+        }
         if self.word_wrap {
             self.render_wrapped(frame, area, styles);
             return;
@@ -723,6 +759,32 @@ fn map_clipboard_error(err: arboard::Error) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vim_deletions_keep_cut_text_internal_when_clipboard_sync_is_disabled() {
+        for key in ['D', 'C', 'x'] {
+            let mut editor = editor_with(&["private text"], 0, 0);
+            editor.text_area.set_yank_text("previous internal copy");
+            editor
+                .handle_vim_motions(&Input::new(KeyCode::Char(key), KeyModifiers::NONE), false)
+                .unwrap();
+            assert_eq!(
+                editor.get_content(),
+                if key == 'x' { "rivate text" } else { "" }
+            );
+            assert_eq!(
+                editor.text_area.yank_text(),
+                if key == 'x' {
+                    "previous internal copy"
+                } else {
+                    "private text"
+                }
+            );
+            if key == 'C' {
+                assert!(editor.is_insert_mode());
+            }
+        }
+    }
     use crate::app::keymap::Input;
     use crossterm::event::{KeyCode, KeyModifiers};
     use tui_textarea::{CursorMove, TextArea};

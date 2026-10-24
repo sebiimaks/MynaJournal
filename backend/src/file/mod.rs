@@ -412,13 +412,51 @@ impl DataProvider for FileDataProvider {
     }
 
     async fn update_entry(&mut self, entry: Entry) -> Result<Entry, ModifyEntryError> {
+        self.update_entry_with_metadata(entry, None).await
+    }
+
+    async fn protection_metadata(&mut self, entry_id: u32) -> Result<Option<String>> {
+        self.prepare_write()?;
+        let stored = self
+            .entries
+            .get(&entry_id)
+            .ok_or_else(|| anyhow!("No entry with id {entry_id}"))?;
+        check_destination(&stored.path, Some(&stored.baseline))?;
+        ensure!(
+            stored.document.entry(entry_id)?.protection.is_none(),
+            "Note is already protected"
+        );
+        Ok(Some(
+            serde_json::json!({"format": "file-v1", "document": stored.document.text()?})
+                .to_string(),
+        ))
+    }
+
+    async fn update_entry_with_metadata(
+        &mut self,
+        entry: Entry,
+        metadata: Option<&str>,
+    ) -> Result<Entry, ModifyEntryError> {
         validate_title(&entry.title)?;
+        entry.validate_protection()?;
         self.prepare_write()?;
         let stored = self
             .entries
             .get(&entry.id)
             .ok_or_else(|| anyhow!("No entry with id {}", entry.id))?;
-        let document = stored.document.with_entry(&entry)?;
+        let native = metadata
+            .map(serde_json::from_str::<serde_json::Value>)
+            .transpose()
+            .context("Invalid native journal metadata")?;
+        let document = match native.as_ref().filter(|value| value["format"] == "file-v1") {
+            Some(metadata) => stored.document.restore_metadata(
+                &entry,
+                metadata["document"]
+                    .as_str()
+                    .context("Invalid native journal metadata")?,
+            )?,
+            None => stored.document.with_entry(&entry)?,
+        };
         let path = stored.path.clone();
         let baseline = self.write_file(&path, &document, Some(&stored.baseline), None)?;
         let entry = document.entry(entry.id)?;
@@ -459,7 +497,7 @@ impl DataProvider for FileDataProvider {
             .collect::<Result<Vec<_>>>()?;
         entries.sort_by_key(|entry| entry.id);
         for mut entry in entries {
-            if entry.priority.is_none() {
+            if entry.priority.is_none() && entry.protection.is_none() {
                 entry.priority = Some(priority);
                 self.update_entry(entry).await?;
             }

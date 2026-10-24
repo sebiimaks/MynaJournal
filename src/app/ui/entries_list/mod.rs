@@ -57,6 +57,16 @@ impl EntriesList {
 
                 // *** Title ***
                 let mut title = entry.title.to_string();
+                if entry.protection.is_some() {
+                    title.insert_str(
+                        0,
+                        if app.is_locked(entry.id) {
+                            "[Locked] "
+                        } else {
+                            "[Open] "
+                        },
+                    );
+                }
 
                 if highlight_selected {
                     title.insert_str(0, "* ");

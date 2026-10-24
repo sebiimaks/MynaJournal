@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use backend::Entry;
 use chrono::{DateTime, Utc};
+use zeroize::Zeroize;
 
 #[derive(Debug)]
 /// Keeps history of the changes on entries, enabling undo & redo operations
@@ -13,6 +14,35 @@ pub struct HistoryManager {
 }
 
 impl HistoryManager {
+    pub fn forget_entry(&mut self, id: u32) {
+        let keep = |change: &mut Change| {
+            let keep = match change {
+                Change::AddEntry { id: changed } | Change::EntryContent { id: changed, .. } => {
+                    *changed != id
+                }
+                Change::RemoveEntry(entry) => entry.id != id,
+                Change::EntryAttribute(attributes) => attributes.id != id,
+            };
+            if !keep {
+                match change {
+                    Change::AddEntry { .. } => {}
+                    Change::RemoveEntry(entry) => {
+                        entry.content.zeroize();
+                        entry.tags.zeroize();
+                        entry.priority.zeroize();
+                    }
+                    Change::EntryAttribute(attributes) => {
+                        attributes.tags.zeroize();
+                        attributes.priority.zeroize();
+                    }
+                    Change::EntryContent { content, .. } => content.zeroize(),
+                }
+            }
+            keep
+        };
+        self.undo_stack.retain_mut(keep);
+        self.redo_stack.retain_mut(keep);
+    }
     pub fn new(stacks_limit: usize) -> Self {
         Self {
             undo_stack: VecDeque::new(),

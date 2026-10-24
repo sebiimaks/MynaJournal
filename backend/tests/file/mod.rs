@@ -559,3 +559,130 @@ async fn retargeting_a_directory_symlink_blocks_writes() {
     assert!(backend.update_entry(entry).await.is_err());
     assert_eq!(journal_paths(&first).len(), 1);
 }
+
+fn protected(entry: Entry) -> Entry {
+    entry.with_protection(backend::EncryptedNote {
+        version: 1,
+        identity: age::x25519::Identity::generate().to_public().to_string(),
+        ciphertext:
+            "-----BEGIN AGE ENCRYPTED FILE-----\ndGVzdA==\n-----END AGE ENCRYPTED FILE-----\n"
+                .into(),
+    })
+}
+
+#[tokio::test]
+async fn protection_removes_private_front_matter_and_restores_native_metadata() {
+    let directory = TempDir::new().unwrap();
+    let mut backend = provider(directory.path());
+    let original = backend.add_entry(draft()).await.unwrap();
+    let path = only_journal(directory.path());
+    let before = fs::read_to_string(&path).unwrap().replacen(
+        "---\n",
+        "---\n# Private comment\ncustom: private native value\n",
+        1,
+    );
+    fs::write(&path, &before).unwrap();
+    backend.load_all_entries().await.unwrap();
+    let metadata = backend
+        .protection_metadata(original.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let locked = protected(original.clone());
+    assert_eq!(backend.update_entry(locked.clone()).await.unwrap(), locked);
+    let saved = fs::read_to_string(&path).unwrap();
+    for private in [
+        "Private comment",
+        "private native value",
+        "walking",
+        "A journal",
+        "priority:",
+    ] {
+        assert!(!saved.contains(private), "{private}");
+    }
+    assert!(saved.contains("version: 2"));
+    assert!(saved.ends_with(&locked.protection.as_ref().unwrap().ciphertext));
+    assert_eq!(only_journal(directory.path()), path);
+    assert_eq!(
+        backend.load_all_entries().await.unwrap(),
+        vec![locked.clone()]
+    );
+    assert_eq!(
+        backend
+            .get_export_object(&[locked.id])
+            .await
+            .unwrap()
+            .entries,
+        vec![EntryDraft::from_entry(locked)]
+    );
+    backend
+        .update_entry_with_metadata(original.clone(), Some(&metadata))
+        .await
+        .unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    assert_eq!(backend.load_all_entries().await.unwrap(), vec![original]);
+}
+
+#[tokio::test]
+async fn protected_import_keeps_full_timestamp_and_skips_bulk_priority() {
+    let directory = TempDir::new().unwrap();
+    let mut backend = provider(directory.path());
+    let original = protected(Entry::from_draft(0, draft()));
+    let imported = backend
+        .add_entry(EntryDraft::from_entry(original.clone()))
+        .await
+        .unwrap();
+    backend.assign_priority_to_entries(4).await.unwrap();
+    assert_eq!(
+        backend.load_all_entries().await.unwrap(),
+        vec![imported.clone()]
+    );
+    assert_eq!(imported, original);
+}
+
+#[tokio::test]
+async fn protected_file_rejects_unencrypted_private_fields_without_writing() {
+    let directory = TempDir::new().unwrap();
+    let mut backend = provider(directory.path());
+    let original = backend.add_entry(draft()).await.unwrap();
+    let path = only_journal(directory.path());
+    let before = fs::read(&path).unwrap();
+    let mut invalid = protected(original);
+    invalid.content = "must not escape".into();
+    assert!(backend.update_entry(invalid).await.is_err());
+    assert_eq!(fs::read(path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn protection_metadata_rejects_external_changes() {
+    let directory = TempDir::new().unwrap();
+    let mut backend = provider(directory.path());
+    let original = backend.add_entry(draft()).await.unwrap();
+    let path = only_journal(directory.path());
+    let changed = fs::read_to_string(&path)
+        .unwrap()
+        .replace("A journal", "External journal");
+    fs::write(&path, &changed).unwrap();
+    assert!(backend.protection_metadata(original.id).await.is_err());
+    assert!(backend.update_entry(protected(original)).await.is_err());
+    assert_eq!(fs::read_to_string(path).unwrap(), changed);
+}
+
+#[tokio::test]
+async fn removing_protection_imported_from_other_backend_uses_file_metadata() {
+    let directory = TempDir::new().unwrap();
+    let mut backend = provider(directory.path());
+    let original = Entry::from_draft(0, draft());
+    backend
+        .add_entry(EntryDraft::from_entry(protected(original.clone())))
+        .await
+        .unwrap();
+    backend
+        .update_entry_with_metadata(
+            original.clone(),
+            Some(r#"{"format":"vjournal-v1","document":"native calendar"}"#),
+        )
+        .await
+        .unwrap();
+    assert_eq!(backend.load_all_entries().await.unwrap(), vec![original]);
+}

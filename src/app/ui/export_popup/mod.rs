@@ -138,15 +138,12 @@ impl ExportPopup<'_> {
             .direction(Direction::Vertical)
             .horizontal_margin(4)
             .vertical_margin(2)
-            .constraints(
-                [
-                    Constraint::Length(2),
-                    Constraint::Length(3),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                ]
-                .as_ref(),
-            )
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(3),
+                Constraint::Length(1),
+                Constraint::Min(1),
+            ])
             .split(area);
 
         let journal_paragraph =

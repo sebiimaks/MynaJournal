@@ -175,8 +175,31 @@ where
     draw_ui(terminal, &mut app, &mut ui_components)?;
 
     let mut input_stream = EventStream::new();
-    while let Some(event) = input_stream.next().await {
+    let mut security_tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    loop {
+        let event = tokio::select! {
+            biased;
+            _ = security_tick.tick() => {
+                if app.security_expired() && !ui_components.is_privacy_shielded() {
+                    auto_lock(terminal, &mut app, &mut ui_components).await?;
+                }
+                continue;
+            }
+            event = input_stream.next() => event,
+        };
+        let Some(event) = event else {
+            break;
+        };
         let event = event.context("Error getting input stream")?;
+        if app.security_expired() && !ui_components.is_privacy_shielded() {
+            auto_lock(terminal, &mut app, &mut ui_components).await?;
+            continue;
+        }
+        if matches!(&event, Event::Key(key) if key.kind == KeyEventKind::Press)
+            || matches!(event, Event::Mouse(mouse) if !matches!(mouse.kind, crossterm::event::MouseEventKind::Moved))
+        {
+            app.record_activity();
+        }
         match handle_input(event, &mut app, &mut ui_components).await {
             Ok(result) => {
                 match result {
@@ -230,6 +253,20 @@ async fn exec_pending_cmd<B: Backend, D: DataProvider>(
     Ok(())
 }
 
+async fn auto_lock<B: Backend, D: DataProvider>(
+    terminal: &mut Terminal<B>,
+    app: &mut App<D>,
+    ui: &mut UIComponents<'_>,
+) -> anyhow::Result<()> {
+    ui.hide_for_auto_lock();
+    terminal.clear()?;
+    draw_ui(terminal, app, ui)?;
+    if let Err(error) = ui.auto_lock(app).await {
+        ui.recover_failed_auto_lock(app, &error)?;
+    }
+    draw_ui(terminal, app, ui)
+}
+
 fn draw_ui<B: Backend, D: DataProvider>(
     terminal: &mut Terminal<B>,
     app: &mut App<D>,
@@ -253,6 +290,10 @@ async fn handle_input<D: DataProvider>(
     app: &mut App<D>,
     ui_components: &mut UIComponents<'_>,
 ) -> Result<HandleInputReturnType> {
+    if ui_components.is_privacy_shielded() && !matches!(event, Event::Key(_) | Event::Resize(_, _))
+    {
+        return Ok(HandleInputReturnType::Ignore);
+    }
     match event {
         Event::Key(key) => match key.kind {
             KeyEventKind::Press => {

@@ -30,6 +30,9 @@ pub enum UICommand {
     Quit,
     ShowHelp,
     ShowConfig,
+    ShowSecurity,
+    LockNote,
+    ExportPrivateContent,
     CycleFocusedControlForward,
     CycleFocusedControlBack,
     SelectedNextEntry,
@@ -90,6 +93,15 @@ impl CommandInfo {
 impl UICommand {
     pub fn get_info(&self) -> CommandInfo {
         match self {
+            UICommand::ShowSecurity => CommandInfo::new(
+                "Note security",
+                "Protect, unlock, lock, or change a note password",
+            ),
+            UICommand::LockNote => CommandInfo::new("Lock note", "Lock this protected note"),
+            UICommand::ExportPrivateContent => CommandInfo::new(
+                "Export plaintext",
+                "Export private content after confirmation",
+            ),
             UICommand::Quit => CommandInfo::new("Exit", "Exit the program"),
             UICommand::ShowHelp => CommandInfo::new("Show help", "Show keybindings overview"),
             UICommand::ShowConfig => {
@@ -243,7 +255,43 @@ impl UICommand {
         ui_components: &mut UIComponents<'_>,
         app: &mut App<D>,
     ) -> CmdResult {
+        if app.current_is_locked()
+            && matches!(
+                self,
+                UICommand::StartEditEntryContent
+                    | UICommand::EditCurrentEntry
+                    | UICommand::SaveEntryContent
+                    | UICommand::ToggleEditorVisualMode
+                    | UICommand::PasteOsClipboard
+                    | UICommand::ExportEntryContent
+                    | UICommand::CopyOsClipboard
+                    | UICommand::CutOsClipboard
+            )
+        {
+            ui_components.show_security(app, true)?;
+            return Ok(HandleInputReturnType::Handled);
+        }
+        if app.current_is_protected()
+            && matches!(self, UICommand::CopyOsClipboard | UICommand::CutOsClipboard)
+        {
+            return Ok(ui_components.confirm_private_clipboard(*self));
+        }
+        if *self == UICommand::Quit && app.has_sealed_drafts() {
+            anyhow::bail!(
+                "Unlock and save your encrypted drafts before quitting, or discard them in Note security (L)"
+            );
+        }
         match self {
+            UICommand::ShowSecurity => {
+                ui_components.show_security(app, false)?;
+                Ok(HandleInputReturnType::Handled)
+            }
+            UICommand::LockNote => {
+                ui_components
+                    .continue_lock_note(app, MsgBoxResult::No)
+                    .await
+            }
+            UICommand::ExportPrivateContent => exec_export_private_content(ui_components, app),
             UICommand::Quit => exec_quit(ui_components),
             UICommand::ShowHelp => exec_show_help(ui_components),
             UICommand::ShowConfig => {
@@ -311,6 +359,15 @@ impl UICommand {
     ) -> CmdResult {
         let not_implemented = || unreachable!("continue exec isn't implemented for {:?}", self);
         match self {
+            UICommand::ShowSecurity => not_implemented(),
+            UICommand::LockNote => ui_components.continue_lock_note(app, msg_box_result).await,
+            UICommand::ExportPrivateContent => {
+                if msg_box_result == MsgBoxResult::Yes {
+                    exec_export_private_content(ui_components, app)
+                } else {
+                    Ok(HandleInputReturnType::Handled)
+                }
+            }
             UICommand::Quit => continue_quit(ui_components, app, msg_box_result).await,
             UICommand::ShowHelp => not_implemented(),
             UICommand::ShowConfig => not_implemented(),
@@ -367,8 +424,20 @@ impl UICommand {
             UICommand::ToggleEditorVisualMode => not_implemented(),
             UICommand::ToggleFullScreenMode => not_implemented(),
             UICommand::ShrinkEntriesPane | UICommand::GrowEntriesPane => not_implemented(),
-            UICommand::CopyOsClipboard => not_implemented(),
-            UICommand::CutOsClipboard => not_implemented(),
+            UICommand::CopyOsClipboard => {
+                if msg_box_result == MsgBoxResult::Yes && !app.current_is_locked() {
+                    exec_copy_os_clipboard(ui_components)
+                } else {
+                    Ok(HandleInputReturnType::Handled)
+                }
+            }
+            UICommand::CutOsClipboard => {
+                if msg_box_result == MsgBoxResult::Yes && !app.current_is_locked() {
+                    exec_cut_os_clipboard(ui_components)
+                } else {
+                    Ok(HandleInputReturnType::Handled)
+                }
+            }
             UICommand::PasteOsClipboard => not_implemented(),
             UICommand::ShowSortOptions => {
                 continue_show_sort_options(ui_components, app, msg_box_result).await

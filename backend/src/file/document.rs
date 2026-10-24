@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::{Entry, EntryDraft};
+use crate::{EncryptedNote, Entry, EntryDraft};
 
 const MAX_HEADER_BYTES: usize = 1024 * 1024;
 
@@ -34,10 +34,19 @@ struct JournalMetadata {
     id: String,
     #[serde(default)]
     priority: Option<u32>,
+    #[serde(default)]
+    protection: Option<ProtectionMetadata>,
+}
+
+#[derive(Deserialize)]
+struct ProtectionMetadata {
+    version: u32,
+    identity: String,
 }
 
 impl JournalDocument {
     pub fn new(draft: &EntryDraft, created: DateTime<FixedOffset>) -> Result<Self> {
+        Entry::from_draft(0, draft.clone()).validate_protection()?;
         let uid = Uuid::new_v4();
         let mut metadata = json!({
             "title": draft.title,
@@ -56,8 +65,7 @@ impl JournalDocument {
             body: draft.content.clone(),
             original_header: None,
         };
-        document.entry(0)?;
-        Ok(document)
+        document.with_entry(&Entry::from_draft(0, draft.clone()))
     }
 
     pub fn parse(text: &str) -> Result<Option<Self>> {
@@ -112,19 +120,57 @@ impl JournalDocument {
 
     pub fn entry(&self, id: u32) -> Result<Entry> {
         let metadata = validate_metadata(&self.metadata)?;
-        Ok(Entry::new(
+        let protection = metadata
+            .tui_journal
+            .protection
+            .map(|protection| EncryptedNote {
+                version: protection.version,
+                identity: protection.identity,
+                ciphertext: self.body.clone(),
+            });
+        let mut entry = Entry::new(
             id,
             metadata.date,
             metadata.title,
-            self.body.clone(),
+            if protection.is_some() {
+                String::new()
+            } else {
+                self.body.clone()
+            },
             metadata.tags,
             metadata.tui_journal.priority,
-        ))
+        );
+        entry.protection = protection;
+        entry.validate_protection()?;
+        Ok(entry)
     }
 
     pub fn with_entry(&self, entry: &Entry) -> Result<Self> {
+        entry.validate_protection()?;
+        if let Some(protection) = &entry.protection {
+            // Unknown front matter can contain private information, too.
+            return Ok(Self {
+                uid: self.uid,
+                created: self.created,
+                metadata: json!({
+                    "title": entry.title,
+                    "date": entry.date.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+                    "created": self.created.to_rfc3339_opts(SecondsFormat::AutoSi, false),
+                    "tui_journal": {
+                        "version": 2,
+                        "id": self.uid.to_string(),
+                        "protection": {"version": protection.version, "identity": protection.identity},
+                    },
+                }),
+                body: protection.ciphertext.clone(),
+                original_header: None,
+            });
+        }
         let before = self.entry(entry.id)?;
         let mut document = self.clone();
+        if before.protection.is_some() {
+            document.metadata["tui_journal"] = json!({"version": 1, "id": self.uid.to_string()});
+        }
         if before.title != entry.title {
             document.metadata["title"] = entry.title.clone().into();
         }
@@ -153,6 +199,29 @@ impl JournalDocument {
         document.body = entry.content.clone();
         document.entry(entry.id)?;
         Ok(document)
+    }
+
+    pub fn restore_metadata(&self, entry: &Entry, text: &str) -> Result<Self> {
+        ensure!(
+            entry.protection.is_none(),
+            "Cannot restore plaintext metadata on a protected note"
+        );
+        let mut original = Self::parse(text)?.context("Missing journal metadata")?;
+        ensure!(
+            original.entry(entry.id)?.protection.is_none(),
+            "Expected plaintext journal metadata"
+        );
+        if original.uid != self.uid || original.created != self.created {
+            original.uid = self.uid;
+            original.created = self.created;
+            original.metadata["tui_journal"]["id"] = self.uid.to_string().into();
+            original.metadata["created"] = self
+                .created
+                .to_rfc3339_opts(SecondsFormat::AutoSi, false)
+                .into();
+            original.original_header = None;
+        }
+        original.with_entry(entry)
     }
 
     pub fn text(&self) -> Result<String> {
@@ -209,8 +278,12 @@ fn validate_metadata(value: &Value) -> Result<Metadata> {
     let metadata: Metadata =
         serde_json::from_value(value.clone()).context("Invalid journal metadata fields")?;
     ensure!(
-        metadata.tui_journal.version == 1,
+        matches!(metadata.tui_journal.version, 1 | 2),
         "Unsupported journal format version"
+    );
+    ensure!(
+        (metadata.tui_journal.version == 2) == metadata.tui_journal.protection.is_some(),
+        "Journal protection does not match its format version"
     );
     ensure!(!metadata.title.is_empty(), "Entry title can't be empty");
     let uid = Uuid::parse_str(&metadata.tui_journal.id).context("Invalid journal UUID")?;

@@ -5,6 +5,7 @@ pub(super) enum Tab {
     General,
     Entries,
     Editor,
+    Security,
     Storage,
     Appearance,
     Layout,
@@ -12,13 +13,14 @@ pub(super) enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::General,
         Self::Entries,
         Self::Editor,
         Self::Storage,
         Self::Appearance,
         Self::Layout,
+        Self::Security,
         Self::Context,
     ];
 
@@ -27,6 +29,7 @@ impl Tab {
             Self::General => "General",
             Self::Entries => "Entries",
             Self::Editor => "Editor",
+            Self::Security => "Security",
             Self::Storage => "Storage",
             Self::Appearance => "Appearance",
             Self::Layout => "Layout",
@@ -91,6 +94,8 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
     };
     let path = || Text { allow_empty: false };
     let mut fields = vec![
+        Field::new(Security, &["security", "auto_lock_seconds"], "Lock after idle seconds", Number { min: 0, max: 86400 }, "Lock protected notes after inactivity. Default 300 seconds; zero disables the timer. Unsaved text is sealed in memory until you unlock again."),
+        Field::new(Security, &["security", "lock_on_leave"], "Lock when leaving note", Bool, "Forget a protected note's password when selecting another note. Titles and dates remain visible."),
         Field::new(General, &["colored_tags"], "Colored tags", Bool, "Use a distinct color for each tag."),
         Field::new(General, &["datum_visibility"], "Entry dates", Choice(vec!["show", "hide", "empty_line"]), "Show dates, hide them, or reserve an empty line."),
         Field::new(General, &["scroll_per_page"], "Entries per page step", number(), "Number of entries moved by list page navigation. Zero disables list page movement."),

@@ -127,7 +127,7 @@ impl HelpPopup {
             .direction(Direction::Vertical)
             .horizontal_margin(2)
             .vertical_margin(1)
-            .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area);
 
         let headers = KeybindingsTabs::get_headers();

@@ -101,15 +101,12 @@ impl SortPopup {
             .direction(Direction::Vertical)
             .horizontal_margin(horizontal_margin)
             .vertical_margin(2)
-            .constraints(
-                [
-                    Constraint::Length(3),
-                    Constraint::Length((lists_height / 2).max(3)),
-                    Constraint::Length((lists_height - lists_height / 2).max(3)),
-                    Constraint::Length(footer_height),
-                ]
-                .as_ref(),
-            )
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length((lists_height / 2).max(3)),
+                Constraint::Length((lists_height - lists_height / 2).max(3)),
+                Constraint::Length(footer_height),
+            ])
             .split(area);
 
         self.render_sort_order(frame, chunks[0]);

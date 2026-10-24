@@ -135,6 +135,10 @@ pub async fn continue_delete_selected_entries<D: DataProvider>(
     match msg_box_result {
         MsgBoxResult::Yes => {
             let delete_ids: Vec<u32> = app.selected_entries.iter().cloned().collect();
+            anyhow::ensure!(
+                !delete_ids.iter().any(|id| app.has_sealed_draft(*id)),
+                "Unlock and save or discard the selected notes' encrypted drafts before deleting them"
+            );
             for entry_id in delete_ids {
                 app.delete_entry(entry_id).await?;
             }

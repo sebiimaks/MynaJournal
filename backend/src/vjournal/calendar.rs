@@ -11,17 +11,37 @@ use crate::{Entry, EntryDraft, ModifyEntryError};
 const PRODID: &str = "-//tui-journal//EN";
 const ICAL_DATE_TIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 const ICAL_DATE_FMT: &str = "%Y%m%d";
+pub const LOCKED_COMPONENT: &str = "X-TUI-JOURNAL-LOCKED";
+const PROTECTION_PROPERTY: &str = "X-TUI-JOURNAL-PROTECTION";
+
+pub fn is_journal(component: &Component) -> bool {
+    matches!(component.name.as_str(), "VJOURNAL" | LOCKED_COMPONENT)
+}
 
 /// Parse a string as a VCALENDAR component.
 pub fn parse_vcalendar(content: &str) -> anyhow::Result<Component> {
-    let component =
-        parse_component(content).map_err(|e| anyhow!("Failed to parse iCalendar: {e}"))?;
+    let mut component =
+        parse_component(content).map_err(|_| anyhow!("Failed to parse iCalendar"))?;
+    normalize_names(&mut component);
     ensure!(
         component.name == "VCALENDAR",
         "Expected VCALENDAR, got {}",
         component.name,
     );
     Ok(component)
+}
+
+fn normalize_names(component: &mut Component) {
+    component.name.make_ascii_uppercase();
+    for (_, properties) in std::mem::take(&mut component.props) {
+        for mut property in properties {
+            property.name.make_ascii_uppercase();
+            component.push(property);
+        }
+    }
+    for child in &mut component.subcomponents {
+        normalize_names(child);
+    }
 }
 
 /// Wrap a single VJOURNAL component inside a new VCALENDAR.
@@ -35,20 +55,27 @@ pub fn build_vcalendar(vjournal: Component) -> Component {
 
 /// Extract the unescaped UID from a VJOURNAL component.
 pub fn get_uid(component: &Component) -> Option<String> {
-    component.get_only("UID").map(Property::value_as_string)
+    component
+        .get_only("UID")
+        .map(text_value)
+        .filter(|uid| !uid.is_empty())
+}
+
+pub fn set_uid(component: &mut Component, uid: &str) {
+    component.set(text_property("UID", uid));
 }
 
 /// Build an [`Entry`] from a VJOURNAL [`Component`].
 pub fn component_to_entry(component: &Component, id: u32) -> anyhow::Result<Entry> {
     let title = component
         .get_only("SUMMARY")
-        .map(|p| p.value_as_string())
+        .map(text_value)
         .unwrap_or_else(|| "UNTITLED".into());
 
     let content = component
         .get_all("DESCRIPTION")
         .first()
-        .map(|p| p.value_as_string())
+        .map(text_value)
         .unwrap_or_default();
 
     let date = component
@@ -62,12 +89,23 @@ pub fn component_to_entry(component: &Component, id: u32) -> anyhow::Result<Entr
                 .map(|timestamp| date_at_utc_midnight(timestamp.date_naive()))
         })
         .unwrap_or_else(|| date_at_utc_midnight(Utc::now().date_naive()));
+    let date = if component.name == LOCKED_COMPONENT {
+        DateTime::parse_from_rfc3339(
+            &component
+                .get_only("X-TUI-JOURNAL-DATE")
+                .context("Missing encrypted note date")?
+                .value_as_string(),
+        )?
+        .to_utc()
+    } else {
+        date
+    };
 
     let tags: Vec<String> = component
         .get_all("CATEGORIES")
         .iter()
         .flat_map(|p| split_text_list(&p.raw_value))
-        .map(|s| vobject::unescape_chars(s.trim()))
+        .map(|s| unescape_text(s.trim()))
         .filter(|s| !s.is_empty())
         .collect();
 
@@ -77,14 +115,29 @@ pub fn component_to_entry(component: &Component, id: u32) -> anyhow::Result<Entr
         .transpose()?
         .flatten();
 
-    Ok(Entry {
+    let protection = if component.name == LOCKED_COMPONENT {
+        Some(
+            serde_json::from_str(&text_value(
+                component
+                    .get_only(PROTECTION_PROPERTY)
+                    .context("Missing encrypted note envelope")?,
+            ))
+            .context("Invalid encrypted note envelope")?,
+        )
+    } else {
+        None
+    };
+    let entry = Entry {
         id,
         date,
         title,
         content,
         tags,
         priority,
-    })
+        protection,
+    };
+    entry.validate_protection()?;
+    Ok(entry)
 }
 
 /// Splits an iCalendar TEXT list without treating escaped commas as delimiters.
@@ -111,9 +164,25 @@ pub fn apply_entry_to_component(
     uid: &str,
     existing: Option<Component>,
 ) -> Component {
+    if let Some(protection) = &entry.protection {
+        let mut component = Component::new(LOCKED_COMPONENT);
+        component.set(text_property("UID", uid));
+        component.set(text_property("SUMMARY", &entry.title));
+        component.set(Property::new("X-TUI-JOURNAL-DATE", entry.date.to_rfc3339()));
+        component.set(Property::new("DTSTAMP", format_ical_datetime(&Utc::now())));
+        let mut dtstart = Property::new("DTSTART", entry.date.format(ICAL_DATE_FMT).to_string());
+        dtstart.params.insert("VALUE".into(), "DATE".into());
+        component.set(dtstart);
+        component.set(text_property(
+            PROTECTION_PROPERTY,
+            &serde_json::to_string(protection)
+                .expect("encrypted note contains serializable fields"),
+        ));
+        return component;
+    }
     let mut comp = existing.unwrap_or_else(|| {
         let mut component = Component::new("VJOURNAL");
-        component.set(Property::new("UID", uid));
+        component.set(text_property("UID", uid));
         component
     });
 
@@ -122,12 +191,12 @@ pub fn apply_entry_to_component(
     comp.set(Property::new("DTSTAMP", dtstamp));
 
     // SUMMARY <-> title
-    comp.set(Property::new("SUMMARY", &entry.title));
+    comp.set(text_property("SUMMARY", &entry.title));
 
     // DESCRIPTION <-> content
     comp.remove("DESCRIPTION");
     if !entry.content.is_empty() {
-        comp.push(Property::new("DESCRIPTION", &entry.content));
+        comp.push(text_property("DESCRIPTION", &entry.content));
     }
 
     // DTSTART <-> date
@@ -141,7 +210,7 @@ pub fn apply_entry_to_component(
         let raw_value = entry
             .tags
             .iter()
-            .map(|t| vobject::escape_chars(t))
+            .map(|t| escape_text(t))
             .collect::<Vec<_>>()
             .join(",");
         comp.push(Property {
@@ -160,6 +229,80 @@ pub fn apply_entry_to_component(
     }
 
     comp
+}
+
+pub fn restore_entry_to_component(
+    entry: &EntryDraft,
+    uid: &str,
+    original: Component,
+) -> anyhow::Result<Component> {
+    let before = component_to_entry(&original, 0)?;
+    let mut restored = apply_entry_to_component(entry, uid, Some(original.clone()));
+    // Unchanged fields retain native parameters, extra descriptions, and recurrence timestamps.
+    for (property, unchanged) in [
+        ("SUMMARY", before.title == entry.title),
+        ("DESCRIPTION", before.content == entry.content),
+        (
+            "DTSTART",
+            before.date == entry.date && original.get_only("DTSTART").is_some(),
+        ),
+        ("CATEGORIES", before.tags == entry.tags),
+        ("PRIORITY", before.priority == entry.priority),
+    ] {
+        if unchanged {
+            restored.remove(property);
+            for value in original.get_all(property) {
+                restored.push(value.clone());
+            }
+        }
+    }
+    Ok(restored)
+}
+
+// A single pass is necessary: vobject's chained replacements turn literal
+// JSON backslash escapes into newlines before JSON decoding.
+fn text_value(property: &Property) -> String {
+    unescape_text(&property.raw_value)
+}
+
+fn unescape_text(text: &str) -> String {
+    let mut value = String::new();
+    let mut chars = text.chars();
+    while let Some(character) = chars.next() {
+        if character == '\\' {
+            match chars.next() {
+                Some('n' | 'N') => value.push('\n'),
+                Some('r') => value.push('\r'),
+                Some(next @ ('\\' | ',' | ';')) => value.push(next),
+                Some(next) => {
+                    value.push('\\');
+                    value.push(next);
+                }
+                None => value.push('\\'),
+            }
+        } else {
+            value.push(character);
+        }
+    }
+    value
+}
+
+fn text_property(name: &str, value: &str) -> Property {
+    Property {
+        name: name.into(),
+        params: BTreeMap::new(),
+        raw_value: escape_text(value),
+        prop_group: None,
+    }
+}
+
+fn escape_text(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
 }
 
 /// Parses an iCalendar date or date-time and normalizes its calendar date to UTC midnight.
@@ -231,6 +374,39 @@ pub fn normalize_entry_priority(priority: Option<u32>) -> Result<Option<u32>, Mo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn protected_component_round_trips_exact_date_and_envelope() {
+        let entry = Entry::from_draft(
+            3,
+            EntryDraft::new(
+                DateTime::parse_from_rfc3339("2025-01-02T03:04:05.123456789Z")
+                    .unwrap()
+                    .to_utc(),
+                "Public \\n \\N title: 日本語,;\r\n".into(),
+                vec![],
+                None,
+            ),
+        )
+        .with_protection(crate::EncryptedNote {
+            version: 1,
+            identity: age::x25519::Identity::generate().to_public().to_string(),
+            ciphertext:
+                "-----BEGIN AGE ENCRYPTED FILE-----\ndGVzdA==\n-----END AGE ENCRYPTED FILE-----\n"
+                    .into(),
+        });
+        let calendar = build_vcalendar(apply_entry_to_component(
+            &EntryDraft::from_entry(entry.clone()),
+            "uid",
+            None,
+        ));
+        let text = vobject::component::write_component(&calendar);
+        let parsed = parse_vcalendar(&text).unwrap();
+        assert_eq!(
+            component_to_entry(&parsed.subcomponents[0], 3).unwrap(),
+            entry
+        );
+    }
 
     #[test]
     fn native_priorities_keep_their_values() {

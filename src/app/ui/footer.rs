@@ -83,6 +83,10 @@ fn get_standard_text<D: DataProvider>(ui_components: &UIComponents, app: &App<D>
         get_keymap_text(close_keymap),
         get_keymap_text(enter_editor_keymap),
     ];
+    footer_parts.push("Note security: L".into());
+    if app.has_sealed_drafts() {
+        footer_parts.push("Encrypted unsaved draft: unlock to save".into());
+    }
 
     if ui_components.active_control == ControlType::EntriesList {
         if app.filter.is_none() {

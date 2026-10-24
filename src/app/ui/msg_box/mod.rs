@@ -80,7 +80,7 @@ impl MsgBox {
             .direction(Direction::Vertical)
             .horizontal_margin(3)
             .vertical_margin(2)
-            .constraints([Constraint::Min(2), Constraint::Length(1)].as_ref())
+            .constraints([Constraint::Min(2), Constraint::Length(1)])
             .split(area);
 
         let text_paragraph = Paragraph::new(Span::raw(text))

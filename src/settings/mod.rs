@@ -39,6 +39,8 @@ mod auto_title;
 pub mod document;
 mod export;
 mod external_editor;
+mod security;
+pub use security::SecuritySettings;
 
 #[derive(Debug, Clone)]
 pub struct ConfigContext {
@@ -53,6 +55,8 @@ const DEFAULT_SCROLL_PER_PAGE: usize = 5;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub security: SecuritySettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
     #[serde(default)]
@@ -98,6 +102,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            security: Default::default(),
             theme: None,
             export: Default::default(),
             backend_type: Default::default(),
@@ -223,6 +228,7 @@ impl Settings {
         // This check is to ensure that all added fields to settings struct are considered here
         #[cfg(debug_assertions)]
         let Settings {
+            security: _,
             theme: _,
             backend_type: _,
             #[cfg(feature = "json")]

@@ -1,4 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use zeroize::Zeroize;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
@@ -31,7 +33,46 @@ pub struct TagsPopup {
     selected_tags: BTreeSet<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct TagsSnapshot {
+    tags: Vec<String>,
+    selected_tags: Vec<String>,
+    selected_index: Option<usize>,
+}
+
+impl Drop for TagsSnapshot {
+    fn drop(&mut self) {
+        self.tags.zeroize();
+        self.selected_tags.zeroize();
+    }
+}
+
 impl TagsPopup {
+    pub(super) fn snapshot(&self) -> TagsSnapshot {
+        TagsSnapshot {
+            tags: self.tags.clone(),
+            selected_tags: self.selected_tags.iter().cloned().collect(),
+            selected_index: self.state.selected(),
+        }
+    }
+
+    pub(super) fn from_snapshot(mut snapshot: TagsSnapshot) -> Self {
+        let mut state = ListState::default();
+        state.select(
+            snapshot
+                .selected_index
+                .filter(|index| *index < snapshot.tags.len()),
+        );
+        Self {
+            state,
+            tags: std::mem::take(&mut snapshot.tags),
+            selected_tags: std::mem::take(&mut snapshot.selected_tags)
+                .into_iter()
+                .collect(),
+        }
+    }
+
     pub fn new(tags_text: &str, mut tags: Vec<String>) -> Self {
         let state = ListState::default();
 
@@ -84,7 +125,7 @@ impl TagsPopup {
             .direction(Direction::Vertical)
             .horizontal_margin(1)
             .vertical_margin(1)
-            .constraints([Constraint::Min(3), Constraint::Length(footer_height)].as_ref())
+            .constraints([Constraint::Min(3), Constraint::Length(footer_height)])
             .split(area);
 
         if self.tags.is_empty() {
