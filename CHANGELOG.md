@@ -18,6 +18,8 @@ All notable changes to this project are documented in this file.
 - Prevent older transfer readers from silently importing encrypted notes as empty plaintext entries
 - Preserve unchanged native VJOURNAL properties when removing protection, and report malformed protected records instead of hiding them
 - Check all selected notes for encrypted drafts before starting bulk deletion
+- Clear the visible screen and reset the cursor when exiting on a Linux TTY, preserving scrollback and avoiding leftover journal content behind the shell prompt
+- Restore each terminal session only once so panic cleanup cannot erase diagnostics during unwinding
 
 ## 0.18.0+debplus.4 - 2026-10-24
 
