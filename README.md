@@ -119,10 +119,10 @@ To install or upgrade from a workflow build:
 2. Open [Build Debian packages](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml) and select a successful run matching that release's commit.
 3. Download `tui-journal-deb-amd64` or `tui-journal-deb-arm64`, matching the output of `dpkg --print-architecture`, and extract the ZIP file.
 
-From the extracted directory, install the package. For the first fork release:
+From the extracted directory, install the package. For this release:
 
 ```bash
-version='0.18.0+debplus.1'
+version='0.18.0+debplus.2'
 arch="$(dpkg --print-architecture)"
 sudo apt install "./tui-journal_${version}-1_${arch}.deb"
 tjournal --version
@@ -141,7 +141,7 @@ then run:
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential dpkg-dev git liblzma-dev pkg-config
-version='0.18.0+debplus.1'
+version='0.18.0+debplus.2'
 git clone --depth 1 --branch "v$version" \
   https://github.com/sebiimaks/tui-journal-deb-plus.git \
   "tui-journal-deb-plus-$version"
@@ -157,8 +157,8 @@ The locally built package remains in `target/debian/`, with its version taken
 from `Cargo.toml`.
 
 Fork releases use `0.18.0+debplus.N`, incrementing `N` for each release based on
-upstream 0.18.0. This first release's Debian version is
-`0.18.0+debplus.1-1`, which sorts after `0.18.0-1`. The final `-1` is the Debian
+upstream 0.18.0. This release's Debian version is
+`0.18.0+debplus.2-1`, which sorts after `0.18.0+debplus.1-1` and `0.18.0-1`. The final `-1` is the Debian
 packaging revision. Future releases will retain increasing Debian versions so
 APT can recognize upgrades.
 

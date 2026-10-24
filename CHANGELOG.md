@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.18.0+debplus.2 - 2026-10-24
+
+### Added
+
+- Add selectable named themes with activation, copying, and a full theme editor in the `!` configuration popup
+- Include Tui (default) plus ten Dark and Light themes, with missing TOML files generated on interactive startup
+- Add `theme write-new [NAME...]` to create a theme from the original Tui values; unnamed themes use `theme_tui_custom.toml`, then `_01`, `_02`, and so on
+- Allow an empty name in the in-app theme copy prompt to use the same automatic filename sequence
+- Make tag colors editable per theme and apply palette changes immediately
+
+### Changed
+
+- Replace `theme write-defaults` with `theme write-new`; keep `theme print-path` pointing to the themes directory and `theme print-default` printing the original Tui values
+- Preserve existing theme files, customizations, and legacy selections when generating defaults; saving an inactive theme does not activate it
+- Use periods in journal-list dates
+- Retain configurable `auto_title`, safe editable word wrap, the adjustable divider, and all four local backends
+
+### Fixed
+
+- Apply the selected theme's text-selection colors when word wrap is disabled
+- Protect theme creation and editing against duplicate names and external file changes with atomic saves
+- Keep journaling and other configuration tabs usable when theme initialization fails
+
+### Debian upgrade
+
+This release contains source code only. The [Build Debian packages workflow](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml) builds and installs both amd64 and arm64 packages, retaining them as workflow artifacts for 30 days. No binaries are attached to the release.
+
+Download and extract the artifact matching your architecture from the successful run for tag `v0.18.0+debplus.2`, then run from the extracted directory:
+
+```bash
+arch="$(dpkg --print-architecture)"
+sudo apt install "./tui-journal_0.18.0+debplus.2-1_${arch}.deb"
+tjournal --version
+```
+
+APT upgrades the previous `0.18.0+debplus.1-1` package while preserving your journals and settings. Close the app before upgrading. If artifacts have expired, rebuild from the source tag using the [Debian instructions](https://github.com/sebiimaks/tui-journal-deb-plus/blob/v0.18.0%2Bdebplus.2/README.md#debian-and-ubuntu).
+
 ## 0.18.0+debplus.1 - 2026-10-23
 
 ### Added
