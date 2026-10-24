@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.18.0+debplus.5 - 2026-10-25
 
 ### Added
 
@@ -20,6 +20,20 @@ All notable changes to this project are documented in this file.
 - Check all selected notes for encrypted drafts before starting bulk deletion
 - Clear the visible screen and reset the cursor when exiting on a Linux TTY, preserving scrollback and avoiding leftover journal content behind the shell prompt
 - Restore each terminal session only once so panic cleanup cannot erase diagnostics during unwinding
+
+### Debian upgrade
+
+This release contains source code only. The [Build Debian packages workflow](https://github.com/sebiimaks/tui-journal-deb-plus/actions/workflows/deb.yml) builds and installs both amd64 and arm64 packages, retaining them as workflow artifacts for 30 days. No binaries are attached to the release.
+
+Download and extract the artifact matching your architecture from the successful run for tag `v0.18.0+debplus.5`, then close the app and run from the extracted directory:
+
+```bash
+arch="$(dpkg --print-architecture)"
+sudo apt install "./tui-journal_0.18.0+debplus.5-1_${arch}.deb"
+tjournal --version
+```
+
+APT upgrades earlier fork packages while preserving journals, settings, and existing theme files. If artifacts have expired, rebuild from the source tag using the [Debian instructions](https://github.com/sebiimaks/tui-journal-deb-plus/blob/v0.18.0%2Bdebplus.5/README.md#debian-and-ubuntu).
 
 ## 0.18.0+debplus.4 - 2026-10-24
 

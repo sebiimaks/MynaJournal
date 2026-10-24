@@ -3313,7 +3313,7 @@ dependencies = [
 
 [[package]]
 name = "tui-journal"
-version = "0.18.0+debplus.4"
+version = "0.18.0+debplus.5"
 dependencies = [
  "age",
  "aho-corasick",
