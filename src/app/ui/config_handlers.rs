@@ -53,6 +53,7 @@ impl UIComponents<'_> {
                     Styles::deserialize(&document.text()).context("Invalid appearance settings")?;
                 document.save()?;
                 if is_active {
+                    app.set_tag_palette(&styles.tags.palette);
                     self.styles = styles.clone();
                 }
                 popup.mark_appearance_saved(&styles);
@@ -64,6 +65,7 @@ impl UIComponents<'_> {
                     .save_field_preserving_draft(&["theme"], Some(id.clone().into()))?;
                 app.settings.theme = Some(id.clone());
                 self.active_theme_id = Some(id.clone());
+                app.set_tag_palette(&styles.tags.palette);
                 self.styles = styles;
                 popup.mark_theme_activated(&id);
             }

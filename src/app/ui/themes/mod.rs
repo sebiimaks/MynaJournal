@@ -4,6 +4,7 @@ mod journals_list_styles;
 mod msgbox;
 mod store;
 mod style;
+mod tags;
 
 use anyhow::Context;
 use ratatui::style::Color;
@@ -15,6 +16,7 @@ pub use journals_list_styles::JournalsListStyles;
 pub use msgbox::MsgBoxColors;
 pub use store::{ThemeDocument, ThemeInfo, ThemeStore};
 pub use style::Style;
+pub use tags::{TagColors, TagsColors};
 
 const ACTIVE_CONTROL_COLOR: Color = Color::Reset;
 const INACTIVE_CONTROL_COLOR: Color = Color::Rgb(170, 170, 200);
@@ -34,6 +36,8 @@ pub struct Styles {
     pub editor: EditorStyles,
     #[serde(default)]
     pub msgbox: MsgBoxColors,
+    #[serde(default)]
+    pub tags: TagsColors,
 }
 
 impl Styles {
@@ -66,6 +70,18 @@ mod tests {
         assert_eq!(styles.journals_list, JournalsListStyles::default());
         assert_eq!(styles.editor, EditorStyles::default());
         assert_eq!(styles.msgbox, MsgBoxColors::default());
+        assert_eq!(styles.tags, TagsColors::default());
+    }
+
+    #[test]
+    fn serialize_default_writes_the_builtin_tag_palette() {
+        let text = Styles::serialize_default().unwrap();
+        let value: toml::Value = toml::from_str(&text).unwrap();
+
+        assert_eq!(
+            value["tags"]["palette"],
+            toml::Value::try_from(TagsColors::default().palette).unwrap()
+        );
     }
 
     #[test]
@@ -112,6 +128,7 @@ modifiers = ""
         assert_eq!(style.journals_list, JournalsListStyles::default());
         assert_eq!(style.editor, EditorStyles::default());
         assert_eq!(style.msgbox, MsgBoxColors::default());
+        assert_eq!(style.tags, TagsColors::default());
     }
 
     #[test]
@@ -140,6 +157,7 @@ modifiers = ""
         assert_eq!(style.journals_list, JournalsListStyles::default());
         assert_eq!(style.editor, EditorStyles::default());
         assert_eq!(style.msgbox, MsgBoxColors::default());
+        assert_eq!(style.tags, TagsColors::default());
     }
 
     #[test]
@@ -193,6 +211,7 @@ modifiers = ""
         assert_eq!(style.journals_list, JournalsListStyles::default());
         assert_eq!(style.editor, EditorStyles::default());
         assert_eq!(style.msgbox, MsgBoxColors::default());
+        assert_eq!(style.tags, TagsColors::default());
     }
 
     #[test]
@@ -224,6 +243,7 @@ fg = "Reset"
         assert_eq!(style.general, GeneralStyles::default());
         assert_eq!(style.editor, EditorStyles::default());
         assert_eq!(style.msgbox, MsgBoxColors::default());
+        assert_eq!(style.tags, TagsColors::default());
     }
 
     #[test]
@@ -249,6 +269,7 @@ fg = "Red"
         assert_eq!(style.journals_list, JournalsListStyles::default());
         assert_eq!(style.general, GeneralStyles::default());
         assert_eq!(style.msgbox, MsgBoxColors::default());
+        assert_eq!(style.tags, TagsColors::default());
     }
 
     #[test]
@@ -270,6 +291,76 @@ warning = "Blue"
         assert_eq!(style.general, GeneralStyles::default());
         assert_eq!(style.journals_list, JournalsListStyles::default());
         assert_eq!(style.editor, EditorStyles::default());
+        assert_eq!(style.tags, TagsColors::default());
+    }
+
+    #[test]
+    fn part_tags_only() {
+        let text = r##"
+[tags]
+palette = [
+    { fg = "White", bg = "#3A5F8F" },
+    { bg = "LightYellow" },
+]
+        "##;
+
+        let style = Styles::deserialize(text).unwrap();
+        assert_eq!(
+            style.tags.palette,
+            [
+                TagColors::new(Color::White, Color::Rgb(0x3A, 0x5F, 0x8F)),
+                TagColors::new(Color::Reset, Color::LightYellow),
+            ]
+        );
+
+        assert_eq!(style.general, GeneralStyles::default());
+        assert_eq!(style.journals_list, JournalsListStyles::default());
+        assert_eq!(style.editor, EditorStyles::default());
+        assert_eq!(style.msgbox, MsgBoxColors::default());
+    }
+
+    #[test]
+    fn tag_palette_tables_keep_their_order() {
+        let text = r##"
+[[tags.palette]]
+fg = "Black"
+bg = "LightGreen"
+
+[[tags.palette]]
+fg = "Yellow"
+bg = "Blue"
+        "##;
+
+        let style = Styles::deserialize(text).unwrap();
+        assert_eq!(
+            style.tags.palette,
+            [
+                TagColors::new(Color::Black, Color::LightGreen),
+                TagColors::new(Color::Yellow, Color::Blue),
+            ]
+        );
+    }
+
+    #[test]
+    fn tag_palette_replaces_the_builtin_one_whole() {
+        let without_palette = Styles::deserialize("[tags]\n").unwrap();
+        assert_eq!(without_palette.tags, TagsColors::default());
+
+        let empty = Styles::deserialize("[tags]\npalette = []\n").unwrap();
+        assert!(empty.tags.palette.is_empty());
+
+        let single =
+            Styles::deserialize("[tags]\npalette = [{ fg = 'Red', bg = 'Black' }]\n").unwrap();
+        assert_eq!(
+            single.tags.palette,
+            [TagColors::new(Color::Red, Color::Black)]
+        );
+    }
+
+    #[test]
+    fn invalid_tag_color_makes_the_theme_invalid() {
+        assert!(Styles::deserialize("[tags]\npalette = [{ fg = 'not-a-color' }]\n").is_err());
+        assert!(Styles::deserialize("[tags]\npalette = 'Black on Blue'\n").is_err());
     }
 
     #[test]
@@ -301,6 +392,9 @@ fg = "Red"
 [msgbox]
 error = "Red"
 warning = "Blue"
+
+[tags]
+palette = [{ fg = "Black", bg = "Yellow" }]
         "##;
 
         // General
@@ -346,5 +440,11 @@ warning = "Blue"
 
         assert_eq!(style.msgbox.info, def_msg.info);
         assert_eq!(style.msgbox.question, def_msg.question);
+
+        // Tags
+        assert_eq!(
+            style.tags.palette,
+            [TagColors::new(Color::Black, Color::Yellow)]
+        );
     }
 }

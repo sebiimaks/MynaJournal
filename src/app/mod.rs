@@ -16,6 +16,7 @@ use std::{
     fs::File,
     path::PathBuf,
 };
+use ui::themes::TagsColors;
 
 mod colored_tags;
 mod external_editor;
@@ -34,7 +35,7 @@ pub use runner::HandleInputReturnType;
 pub use runner::run;
 pub use ui::UIComponents;
 
-pub use colored_tags::TagColors;
+pub use ui::themes::TagColors;
 
 pub struct App<D>
 where
@@ -55,6 +56,8 @@ where
     /// Keeps history of the changes on entries, enabling undo & redo operations
     history: HistoryManager,
     colored_tags: Option<ColoredTagsManager>,
+    /// Tag colors of the active theme, kept while colored tags are disabled too.
+    tag_palette: Vec<TagColors>,
 }
 
 impl<D> App<D>
@@ -66,7 +69,10 @@ where
         let selected_entries = HashSet::new();
         let filtered_out_entries = HashSet::new();
         let history = HistoryManager::new(settings.history_limit);
-        let colored_tags = settings.colored_tags.then(ColoredTagsManager::new);
+        let tag_palette = TagsColors::default().palette;
+        let colored_tags = settings
+            .colored_tags
+            .then(|| ColoredTagsManager::new(&tag_palette));
 
         Self {
             data_provide,
@@ -81,6 +87,7 @@ where
             state: Default::default(),
             history,
             colored_tags,
+            tag_palette,
         }
     }
 
@@ -96,7 +103,21 @@ where
         self.settings.datum_visibility = saved.datum_visibility;
         if self.settings.colored_tags != saved.colored_tags {
             self.settings.colored_tags = saved.colored_tags;
-            self.colored_tags = saved.colored_tags.then(ColoredTagsManager::new);
+            self.colored_tags = saved
+                .colored_tags
+                .then(|| ColoredTagsManager::new(&self.tag_palette));
+            self.update_colored_tags();
+        }
+    }
+
+    /// Uses the given theme palette for the tags, reassigning their colors in order if it changed.
+    pub fn set_tag_palette(&mut self, palette: &[TagColors]) {
+        if self.tag_palette == palette {
+            return;
+        }
+        self.tag_palette = palette.to_vec();
+        if self.colored_tags.is_some() {
+            self.colored_tags = Some(ColoredTagsManager::new(&self.tag_palette));
             self.update_colored_tags();
         }
     }

@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, style::Color};
 
 use crate::{
-    app::{history::HistoryStack, keymap::Input},
+    app::{TagColors, history::HistoryStack, keymap::Input},
     settings::{ConfigContext, Settings},
 };
 
@@ -128,6 +128,31 @@ async fn appearance(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>) 
     for _ in 0..4 {
         press(ui, app, KeyCode::Tab).await;
     }
+}
+
+fn rendered_tag_colors(
+    ui: &mut UIComponents<'_>,
+    app: &App<NoAccessProvider>,
+    tag: &str,
+) -> TagColors {
+    // The highlighted row would paint over the chip colors.
+    ui.entries_list.state.select(None);
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| ui.render_ui(frame, app)).unwrap();
+    let buffer = terminal.backend().buffer();
+    for y in 0..buffer.area.height {
+        for x in 0..=buffer.area.width - tag.len() as u16 {
+            if tag
+                .chars()
+                .zip(x..)
+                .all(|(character, x)| buffer[(x, y)].symbol() == character.to_string())
+            {
+                let cell = &buffer[(x, y)];
+                return TagColors::new(cell.fg, cell.bg);
+            }
+        }
+    }
+    panic!("tag {tag:?} is not rendered");
 }
 
 #[tokio::test]
@@ -554,6 +579,109 @@ async fn saving_colored_tags_rebuilds_the_existing_journal_tag_cache() {
     ui.save_config(ConfigAction::SaveSettings, &mut app)
         .unwrap();
     assert!(app.get_color_for_tag("work").is_none());
+}
+
+#[tokio::test]
+async fn activating_theme_recolors_rendered_tag_chips_without_restart() {
+    let (dir, mut app, mut ui) = setup("colored_tags = true\n");
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    fs::write(
+        themes.join("theme_night.toml"),
+        "[tags]\npalette = [{ fg = 'White', bg = 'Blue' }]\n",
+    )
+    .unwrap();
+    let builtin = TagColors::new(Color::Black, Color::LightCyan);
+    assert_eq!(rendered_tag_colors(&mut ui, &app, "work"), builtin);
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Down).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+
+    assert!(!ui.has_popup());
+    assert_eq!(ui.active_theme_id.as_deref(), Some("night"));
+    assert_eq!(
+        rendered_tag_colors(&mut ui, &app, "work"),
+        TagColors::new(Color::White, Color::Blue)
+    );
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Up).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+
+    assert_eq!(ui.active_theme_id.as_deref(), Some("tui"));
+    assert_eq!(rendered_tag_colors(&mut ui, &app, "work"), builtin);
+}
+
+#[tokio::test]
+async fn saving_tag_palette_recolors_tags_only_for_the_active_theme() {
+    let (dir, mut app, mut ui) = setup("colored_tags = true\n");
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    fs::write(themes.join("theme_night.toml"), "").unwrap();
+    let builtin = Some(TagColors::new(Color::Black, Color::LightCyan));
+    let white_on_blue = Some(TagColors::new(Color::White, Color::Blue));
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Down).await;
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
+    press(&mut ui, &mut app, KeyCode::End).await;
+    edit_text(&mut ui, &mut app, "White on Blue").await;
+    control(&mut ui, &mut app, 's').await;
+    assert_eq!(app.get_color_for_tag("work"), builtin);
+
+    press(&mut ui, &mut app, KeyCode::Esc).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    assert_eq!(ui.active_theme_id.as_deref(), Some("night"));
+    assert_eq!(app.get_color_for_tag("work"), white_on_blue);
+
+    press(&mut ui, &mut app, KeyCode::Char('e')).await;
+    press(&mut ui, &mut app, KeyCode::End).await;
+    edit_text(&mut ui, &mut app, "Black on Yellow").await;
+    assert_eq!(app.get_color_for_tag("work"), white_on_blue);
+    control(&mut ui, &mut app, 's').await;
+    assert_eq!(
+        app.get_color_for_tag("work"),
+        Some(TagColors::new(Color::Black, Color::Yellow))
+    );
+    let saved =
+        Styles::deserialize(&fs::read_to_string(themes.join("theme_night.toml")).unwrap()).unwrap();
+    assert_eq!(
+        saved.tags.palette,
+        [TagColors::new(Color::Black, Color::Yellow)]
+    );
+}
+
+#[tokio::test]
+async fn enabling_colored_tags_uses_the_active_theme_palette() {
+    let (dir, mut app, mut ui) = setup("colored_tags = false\n");
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    fs::write(
+        themes.join("theme_night.toml"),
+        "[tags]\npalette = [{ fg = 'White', bg = 'Blue' }]\n",
+    )
+    .unwrap();
+
+    press(&mut ui, &mut app, KeyCode::Char('!')).await;
+    appearance(&mut ui, &mut app).await;
+    press(&mut ui, &mut app, KeyCode::Down).await;
+    press(&mut ui, &mut app, KeyCode::Enter).await;
+    assert_eq!(ui.active_theme_id.as_deref(), Some("night"));
+    assert!(app.get_color_for_tag("work").is_none());
+
+    set_setting(&mut ui, &["colored_tags"], true.into());
+    ui.save_config(ConfigAction::SaveSettings, &mut app)
+        .unwrap();
+    assert_eq!(
+        app.get_color_for_tag("work"),
+        Some(TagColors::new(Color::White, Color::Blue))
+    );
 }
 
 #[tokio::test]

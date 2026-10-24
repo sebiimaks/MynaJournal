@@ -207,7 +207,7 @@ fn appearance_schema_exposes_every_style_component_and_message_color() {
         .iter()
         .filter(|field| field.tab == Tab::Appearance)
         .collect();
-    assert_eq!(appearance.len(), (7 + 10 + 8) * 4 + 4);
+    assert_eq!(appearance.len(), (7 + 10 + 8) * 4 + 4 + 1);
     for group in ["general", "journals_list", "editor"] {
         for name in popup.default_themes[group].as_table().unwrap().keys() {
             for property in ["fg", "bg", "modifiers", "underline_color"] {
@@ -218,6 +218,73 @@ fn appearance_schema_exposes_every_style_component_and_message_color() {
                 );
             }
         }
+    }
+    assert!(
+        appearance
+            .iter()
+            .any(|field| field.keys() == ["tags", "palette"])
+    );
+}
+
+#[test]
+fn tag_palette_field_edits_all_pairs_as_one_line() {
+    let (_directory, mut popup) = popup("", &Styles::serialize_default().unwrap());
+    select(&mut popup, Tab::Appearance, &["tags", "palette"]);
+    let field = popup.current_field().clone();
+    assert_eq!(
+        editable_value(&field.kind, popup.value(&field).as_ref()),
+        "Black on LightCyan, Black on LightRed, Black on LightGreen, Reset on DarkGray, \
+         Black on LightYellow, Reset on Red, Yellow on Blue, Red on Cyan, Black on LightMagenta"
+    );
+
+    let value = parse_input(&field.kind, " white ON #3a5f8f,Black on light yellow, ").unwrap();
+    popup.apply_value(&field, value).unwrap();
+    let text = popup.themes_document.as_ref().unwrap().text();
+    assert!(!text.contains("[[tags.palette]]"));
+    assert_eq!(
+        Styles::deserialize(&text).unwrap().tags.palette,
+        [
+            TagColors::new(Color::White, Color::Rgb(0x3A, 0x5F, 0x8F)),
+            TagColors::new(Color::Black, Color::LightYellow),
+        ]
+    );
+    assert_eq!(
+        display_value(&field.kind, popup.value(&field).as_ref()),
+        "White on #3A5F8F, Black on LightYellow"
+    );
+
+    let empty = parse_input(&field.kind, "").unwrap();
+    popup.apply_value(&field, empty).unwrap();
+    assert_eq!(
+        display_value(&field.kind, popup.value(&field).as_ref()),
+        "(none)"
+    );
+
+    popup.restore_default();
+    assert_eq!(
+        Styles::deserialize(&popup.themes_document.as_ref().unwrap().text())
+            .unwrap()
+            .tags,
+        Styles::default().tags
+    );
+}
+
+#[test]
+fn tag_palette_field_rejects_pairs_without_two_colors() {
+    for input in [
+        "Black",
+        "Black on",
+        "on Blue",
+        "Black Blue",
+        "Black on Blue on Red",
+        "Black on not-a-color",
+        "Black on Blue; White on Red",
+        "inherit on Blue",
+    ] {
+        assert!(
+            parse_input(&Kind::TagPalette, input).is_err(),
+            "accepted {input:?}"
+        );
     }
 }
 
