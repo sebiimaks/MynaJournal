@@ -333,7 +333,7 @@ mod tests {
     fn write_new_rejects_invalid_names_without_creating_files() {
         let mut settings = Settings::default();
         let directory = tempfile::tempdir().unwrap();
-        for name in ["../escape", "a/b", "Tui", "Legacy", "Dark Abyssal", "."] {
+        for name in ["../escape", "a/b", "Tui", "Legacy", "."] {
             assert!(
                 CliCommand::Theme(Themes::WriteNew {
                     name: vec![name.into()]
@@ -343,6 +343,36 @@ mod tests {
             );
         }
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn write_new_accepts_former_bundled_theme_names() {
+        let mut settings = Settings::default();
+        let directory = tempfile::tempdir().unwrap();
+        for (name, id) in [
+            ("Dark Abyssal", "dark_abyssal"),
+            ("Light Sorbet", "light_sorbet"),
+        ] {
+            let result = CliCommand::Theme(Themes::WriteNew {
+                name: vec![name.into()],
+            })
+            .exec(&mut settings, Some(&directory.path().to_path_buf()))
+            .unwrap();
+            assert_eq!(result, CliResult::Return);
+            let text = fs::read_to_string(directory.path().join(format!("themes/theme_{id}.toml")))
+                .unwrap();
+            assert_eq!(
+                toml::Value::try_from(Styles::deserialize(&text).unwrap()).unwrap(),
+                toml::Value::try_from(Styles::default()).unwrap()
+            );
+        }
+        assert_eq!(
+            fs::read_dir(directory.path().join("themes"))
+                .unwrap()
+                .count(),
+            2
+        );
+        assert!(!directory.path().join("themes/theme_tui.toml").exists());
     }
 
     #[test]

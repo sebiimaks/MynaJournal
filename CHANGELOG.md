@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Include only Tui (default) in new installations and generate only `theme_tui.toml` on interactive startup; preserve existing custom themes and previously generated theme files
+
 ## 0.18.0+debplus.2 - 2026-10-24
 
 ### Added

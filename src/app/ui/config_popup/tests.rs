@@ -525,7 +525,21 @@ fn select_theme(popup: &mut ConfigPopup, id: &str) {
 }
 
 fn lazy_popup() -> (tempfile::TempDir, ConfigPopup) {
+    popup_with_saved_themes(&[])
+}
+
+fn popup_with_saved_themes(themes: &[(&str, &str)]) -> (tempfile::TempDir, ConfigPopup) {
     let directory = tempfile::tempdir().unwrap();
+    if !themes.is_empty() {
+        fs::create_dir(directory.path().join("themes")).unwrap();
+        for (id, text) in themes {
+            fs::write(
+                directory.path().join(format!("themes/theme_{id}.toml")),
+                text,
+            )
+            .unwrap();
+        }
+    }
     let popup = ConfigPopup::new(
         ConfigDocument::load(directory.path().join("config.toml")).unwrap(),
         ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
@@ -542,7 +556,7 @@ fn lazy_popup() -> (tempfile::TempDir, ConfigPopup) {
 fn browsing_activating_and_cancelling_builtin_theme_creates_no_files() {
     let (directory, mut popup) = lazy_popup();
     appearance(&mut popup);
-    assert_eq!(popup.theme_catalog.len(), 11);
+    assert_eq!(popup.theme_catalog.len(), 1);
     assert_eq!(popup.theme_catalog[0].label, "Tui (default)");
     assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::ActivateTheme);
     let (id, styles) = popup.selected_theme().unwrap();
@@ -561,8 +575,45 @@ fn browsing_activating_and_cancelling_builtin_theme_creates_no_files() {
 }
 
 #[test]
-fn bundled_theme_catalog_is_sorted_and_every_theme_can_be_opened_without_creating_files() {
-    let (directory, mut popup) = lazy_popup();
+fn initialized_popup_lists_only_tui_by_default() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = ThemeStore::from_directory(directory.path().join("themes")).unwrap();
+    store.initialize().unwrap();
+    let mut popup = ConfigPopup::new(
+        ConfigDocument::load(directory.path().join("config.toml")).unwrap(),
+        store,
+        &Settings::default(),
+        &Styles::default(),
+        Some("tui"),
+        37,
+    )
+    .unwrap();
+    appearance(&mut popup);
+    assert_eq!(popup.theme_catalog.len(), 1);
+    assert_eq!(popup.theme_catalog[0].id, "tui");
+    assert_eq!(popup.theme_catalog[0].label, "Tui (default)");
+    assert!(directory.path().join("themes/theme_tui.toml").is_file());
+    assert_eq!(
+        fs::read_dir(directory.path().join("themes"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::ActivateTheme);
+    assert_eq!(popup.selected_theme().unwrap().0, "tui");
+}
+
+#[test]
+fn saved_theme_catalog_is_sorted_and_browsing_preserves_files() {
+    let themes = [
+        ("night_sky", "[theme]\nname = 'Night Sky'\n"),
+        ("amber", "[theme]\nname = 'Amber'\n"),
+        (
+            "dark_borealis",
+            "[theme]\nname = 'Dark Borealis'\n[general.input_block_active]\nfg = 'Magenta'\n",
+        ),
+    ];
+    let (directory, mut popup) = popup_with_saved_themes(&themes);
     appearance(&mut popup);
     let catalog: Vec<_> = popup
         .theme_catalog
@@ -573,16 +624,9 @@ fn bundled_theme_catalog_is_sorted_and_every_theme_can_be_opened_without_creatin
         catalog,
         [
             ("tui", "Tui (default)"),
-            ("dark_abyssal", "Dark Abyssal"),
+            ("amber", "Amber"),
             ("dark_borealis", "Dark Borealis"),
-            ("dark_fernwood", "Dark Fernwood"),
-            ("dark_kiln", "Dark Kiln"),
-            ("dark_night_market", "Dark Night Market"),
-            ("light_cyanotype", "Light Cyanotype"),
-            ("light_lido", "Light Lido"),
-            ("light_matcha", "Light Matcha"),
-            ("light_riso", "Light Riso"),
-            ("light_sorbet", "Light Sorbet"),
+            ("night_sky", "Night Sky"),
         ]
     );
     let ids: Vec<_> = popup
@@ -599,7 +643,20 @@ fn bundled_theme_catalog_is_sorted_and_every_theme_can_be_opened_without_creatin
         assert!(!popup.theme_dirty());
         key(&mut popup, KeyCode::Esc);
         assert!(popup.themes_document.is_none());
-        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert!(!directory.path().join("themes/theme_tui.toml").exists());
+        assert_eq!(
+            fs::read_dir(directory.path().join("themes"))
+                .unwrap()
+                .count(),
+            themes.len()
+        );
+        for (id, text) in themes {
+            assert_eq!(
+                fs::read_to_string(directory.path().join(format!("themes/theme_{id}.toml")))
+                    .unwrap(),
+                text
+            );
+        }
     }
     let mut terminal = Terminal::new(TestBackend::new(60, 16)).unwrap();
     terminal
@@ -612,7 +669,7 @@ fn bundled_theme_catalog_is_sorted_and_every_theme_can_be_opened_without_creatin
         .iter()
         .map(|cell| cell.symbol())
         .collect();
-    assert!(text.contains("Light Sorbet"));
+    assert!(text.contains("Night Sky"));
     assert!(text.contains("Enter/a Activate"));
 }
 
@@ -671,7 +728,7 @@ fn new_theme_validates_name_and_stays_lazy_until_saved() {
     let (directory, mut popup) = lazy_popup();
     appearance(&mut popup);
     key(&mut popup, KeyCode::Char('n'));
-    for name in ["../bad", "Dark Abyssal", "DARK_ABYSSAL", "light_sorbet"] {
+    for name in ["../bad", "Tui", "TUI", "Legacy"] {
         popup.editor = Some(TextArea::new(vec![name.into()]));
         key(&mut popup, KeyCode::Enter);
         assert!(popup.error, "{name}");
@@ -687,19 +744,20 @@ fn new_theme_validates_name_and_stays_lazy_until_saved() {
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
     key(&mut popup, KeyCode::Esc);
     key(&mut popup, KeyCode::Char('y'));
-    assert_eq!(popup.theme_catalog.len(), 11);
+    assert_eq!(popup.theme_catalog.len(), 1);
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
 }
 
 #[test]
 fn blank_theme_name_stages_selected_styles_and_keeps_other_drafts() {
     for input in ["", "   "] {
-        let (directory, mut popup) = lazy_popup();
+        let source = "[general.input_block_active]\nfg = 'Magenta'\n[tags]\npalette = [{ fg = 'White', bg = 'Blue' }]\n";
+        let (directory, mut popup) = popup_with_saved_themes(&[("night", source)]);
         key(&mut popup, KeyCode::Enter);
         let settings_draft = popup.settings_document.text();
         popup.divider = 45;
         appearance(&mut popup);
-        select_theme(&mut popup, "dark_borealis");
+        select_theme(&mut popup, "night");
         let source_styles = Value::try_from(popup.selected_theme().unwrap().1).unwrap();
 
         key(&mut popup, KeyCode::Char('n'));
@@ -720,7 +778,16 @@ fn blank_theme_name_stages_selected_styles_and_keeps_other_drafts() {
         );
         assert_eq!(popup.settings_document.text(), settings_draft);
         assert_eq!(popup.divider, 45);
-        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(
+            fs::read_dir(directory.path().join("themes"))
+                .unwrap()
+                .count(),
+            1
+        );
+        assert_eq!(
+            fs::read_to_string(directory.path().join("themes/theme_night.toml")).unwrap(),
+            source
+        );
     }
 }
 

@@ -514,19 +514,13 @@ The `VJOURNAL` back-end stores journal entries as iCalendar `.ics` files in the 
 ## Themes
 
 Press `!` and choose Appearance to activate, edit, or duplicate a theme. Every
-installation includes **Tui (default)** plus ten themes:
-
-- **Dark:** Abyssal, Borealis, Fernwood, Kiln, and Night Market.
-- **Light:** Cyanotype, Lido, Matcha, Riso, and Sorbet.
-
-These themes are embedded in the application and available immediately on macOS,
-Linux, and Debian. Tui remains the default. The first interactive launch creates
-the `themes` directory and all eleven TOML files under the app's configuration
-directory, such as `themes/theme_dark_abyssal.toml`. Later launches restore any
-missing bundled files and preserve existing files and edits. A local file replaces
-the bundled theme with the same ID. An existing
-`themes.toml` remains available as **Legacy** and is kept intact when its edits are
-saved to `themes/theme_legacy.toml`.
+installation includes **Tui (default)** as its only built-in theme. The first
+interactive launch creates `themes/theme_tui.toml` under the app's configuration
+directory. Later launches restore that file if missing and preserve existing
+files and edits. Previously generated Dark and Light theme files remain usable
+as custom themes; remove unwanted files from the themes directory manually.
+An existing `themes.toml` remains available as **Legacy** and is kept intact when
+its edits are saved to `themes/theme_legacy.toml`.
 
 `tjournal theme print-path` prints the themes directory, `theme print-default`
 prints the original built-in Tui styles, and `theme write-new Night Blue` creates
@@ -534,8 +528,8 @@ prints the original built-in Tui styles, and `theme write-new Night Blue` create
 form the name. Without a name, it creates `theme_tui_custom.toml`, then
 `theme_tui_custom_01.toml`, `theme_tui_custom_02.toml`, and so on. Existing files are
 never overwritten, and creation does not change the active theme. These commands
-do not initialize the full theme collection. See [Themes](THEMES.md) for naming, keyboard controls, and the
-complete file format.
+do not create `theme_tui.toml`. See [Themes](THEMES.md) for naming, keyboard
+controls, and the complete file format.
 
 ## Documentation
 

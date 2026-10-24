@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     let initialization_warning = theme_store
         .initialize()
         .err()
-        .map(|error| format!("Could not install all default theme files: {error:#}"));
+        .map(|error| format!("Could not install the default Tui theme: {error:#}"));
     let mut loaded_theme = theme_store.resolve(settings.theme.as_deref());
     if let Some(warning) = initialization_warning {
         loaded_theme.warning = Some(match loaded_theme.warning {

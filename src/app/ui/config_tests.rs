@@ -929,9 +929,14 @@ async fn activating_theme_keeps_settings_layout_and_journal_drafts_independent()
 }
 
 #[tokio::test]
-async fn activating_bundled_theme_preserves_unsaved_settings_and_journal_without_theme_files() {
+async fn activating_saved_former_bundled_theme_preserves_settings_journal_and_theme_file() {
     let original = "# Keep my preferences\ncolored_tags = true\nauto_title = { kind = 'date' }\n";
     let (dir, mut app, mut ui) = setup(original);
+    let source = "# Keep this saved theme\n[general.input_block_active]\nfg = 'Magenta'\n[tags]\npalette = [{ fg = 'White', bg = 'Blue' }]\n";
+    let themes = dir.path().join("themes");
+    fs::create_dir(&themes).unwrap();
+    let theme_path = themes.join("theme_dark_borealis.toml");
+    fs::write(&theme_path, source).unwrap();
     let original_auto_title = app.settings.auto_title.clone();
     let original_entries = app.entries.clone();
     ui.editor.set_entry_content("Unsaved journal 世界", &app);
@@ -945,14 +950,11 @@ async fn activating_bundled_theme_preserves_unsaved_settings_and_journal_without
     assert_eq!(app.settings.theme.as_deref(), Some("dark_borealis"));
     assert_eq!(
         ui.styles.general.input_block_active.fg,
-        Some(Color::Rgb(110, 243, 165))
+        Some(Color::Magenta)
     );
     assert_eq!(
         app.get_color_for_tag("work"),
-        Some(TagColors::new(
-            Color::Rgb(154, 247, 192),
-            Color::Rgb(54, 94, 71)
-        ))
+        Some(TagColors::new(Color::White, Color::Blue))
     );
     assert!(app.settings.colored_tags);
     assert_eq!(app.settings.auto_title, original_auto_title);
@@ -970,19 +972,26 @@ async fn activating_bundled_theme_preserves_unsaved_settings_and_journal_without
     );
     assert_eq!(saved, toml::from_str::<toml::Value>(original).unwrap());
     assert!(saved_text.contains("# Keep my preferences"));
-    assert!(!dir.path().join("themes").exists());
+    assert_eq!(fs::read_to_string(&theme_path).unwrap(), source);
+    assert_eq!(fs::read_dir(&themes).unwrap().count(), 1);
 
     press(&mut ui, &mut app, KeyCode::Esc).await;
     press(&mut ui, &mut app, KeyCode::Char('y')).await;
     assert!(!ui.has_popup());
     assert_eq!(ui.editor.get_content(), "Unsaved journal 世界");
-    assert!(!dir.path().join("themes").exists());
+    assert_eq!(fs::read_to_string(&theme_path).unwrap(), source);
+    assert_eq!(fs::read_dir(&themes).unwrap().count(), 1);
 }
 
 #[tokio::test]
-async fn saving_bundled_theme_is_lazy_until_modified_and_override_survives_restart() {
+async fn saving_existing_theme_writes_only_when_modified_and_survives_restart() {
     let (dir, mut app, mut ui) = setup("");
     let store = ThemeStore::from_directory(dir.path().join("themes")).unwrap();
+    let source = "# Keep this saved theme\n[general.input_block_active]\nfg = 'Magenta'\n";
+    fs::create_dir(store.directory()).unwrap();
+    let theme_path = store.directory().join("theme_light_sorbet.toml");
+    fs::write(&theme_path, source).unwrap();
+    let modified = fs::metadata(&theme_path).unwrap().modified().unwrap();
     press(&mut ui, &mut app, KeyCode::Char('!')).await;
     appearance(&mut ui, &mut app).await;
     select_theme(&mut ui, &mut app, "light_sorbet").await;
@@ -991,7 +1000,11 @@ async fn saving_bundled_theme_is_lazy_until_modified_and_override_survives_resta
     let saved_config = fs::read_to_string(dir.path().join("config.toml")).unwrap();
     press(&mut ui, &mut app, KeyCode::Char('e')).await;
     control(&mut ui, &mut app, 's').await;
-    assert!(!dir.path().join("themes").exists());
+    assert_eq!(fs::read_to_string(&theme_path).unwrap(), source);
+    assert_eq!(
+        fs::metadata(&theme_path).unwrap().modified().unwrap(),
+        modified
+    );
     assert!(!popup(&mut ui).themes_document_mut().unwrap().is_dirty());
     assert_eq!(toml::Value::try_from(&ui.styles).unwrap(), original_styles);
 
@@ -1076,6 +1089,10 @@ async fn initialized_profile_saves_automatic_theme_copies_without_changing_other
     let (dir, mut app, mut ui) = setup(config);
     let store = ThemeStore::from_directory(dir.path().join("themes")).unwrap();
     store.initialize().unwrap();
+    store.create("Night Sky", "[general.input_block_active]\nfg = 'Magenta'\n[tags]\npalette = [{ fg = 'White', bg = 'Blue' }]\n")
+        .unwrap()
+        .save()
+        .unwrap();
     let original_themes: Vec<_> = store
         .list()
         .unwrap()
@@ -1086,9 +1103,9 @@ async fn initialized_profile_saves_automatic_theme_copies_without_changing_other
             (path, bytes)
         })
         .collect();
-    assert_eq!(original_themes.len(), 11);
+    assert_eq!(original_themes.len(), 2);
     let source_styles = toml::Value::try_from(
-        Styles::deserialize(&store.load("dark_borealis").unwrap().text()).unwrap(),
+        Styles::deserialize(&store.load("night_sky").unwrap().text()).unwrap(),
     )
     .unwrap();
     let original_styles = toml::Value::try_from(&ui.styles).unwrap();
@@ -1106,7 +1123,7 @@ async fn initialized_profile_saves_automatic_theme_copies_without_changing_other
         .into_iter()
         .enumerate()
     {
-        select_theme(&mut ui, &mut app, "dark_borealis").await;
+        select_theme(&mut ui, &mut app, "night_sky").await;
         press(&mut ui, &mut app, KeyCode::Char('n')).await;
         if index == 0 {
             press(&mut ui, &mut app, KeyCode::Enter).await;
@@ -1139,7 +1156,7 @@ async fn initialized_profile_saves_automatic_theme_copies_without_changing_other
         assert_eq!(popup(&mut ui).selected_theme().unwrap().0, id);
     }
 
-    assert_eq!(fs::read_dir(dir.path().join("themes")).unwrap().count(), 14);
+    assert_eq!(fs::read_dir(dir.path().join("themes")).unwrap().count(), 5);
     for (path, original) in original_themes {
         assert_eq!(fs::read(path).unwrap(), original);
     }
