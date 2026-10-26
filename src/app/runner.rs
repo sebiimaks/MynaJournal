@@ -171,6 +171,7 @@ where
     }
 
     ui_components.set_current_entry(app.entries.first().map(|entry| entry.id), &mut app);
+    ui_components.show_startup_artwork();
 
     draw_ui(terminal, &mut app, &mut ui_components)?;
 
@@ -294,7 +295,11 @@ async fn handle_input<D: DataProvider>(
     {
         return Ok(HandleInputReturnType::Ignore);
     }
-    match event {
+    let user_action = matches!(&event, Event::Key(key) if key.kind == KeyEventKind::Press)
+        || matches!(&event, Event::Mouse(mouse) if !matches!(mouse.kind, crossterm::event::MouseEventKind::Moved))
+        || matches!(&event, Event::Paste(_));
+    let dismissed_artwork = user_action && ui_components.dismiss_startup_artwork();
+    let result = match event {
         Event::Key(key) => match key.kind {
             KeyEventKind::Press => {
                 let input = Input::from(&key);
@@ -308,6 +313,11 @@ async fn handle_input<D: DataProvider>(
             Ok(HandleInputReturnType::NotFound)
         }
         _ => Ok(HandleInputReturnType::NotFound),
+    };
+    if dismissed_artwork && matches!(result, Ok(HandleInputReturnType::Ignore)) {
+        Ok(HandleInputReturnType::NotFound)
+    } else {
+        result
     }
 }
 

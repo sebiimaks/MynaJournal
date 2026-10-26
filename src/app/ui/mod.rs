@@ -29,7 +29,7 @@ use anyhow::Result;
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::Color,
     widgets::Paragraph,
 };
@@ -41,6 +41,7 @@ mod config_popup;
 mod config_tests;
 mod divider;
 mod editor;
+mod empty_note;
 mod entries_list;
 mod entry_popup;
 mod export_popup;
@@ -99,6 +100,7 @@ pub struct UIComponents<'a> {
     pending_command: Option<UICommand>,
     pane_split: Option<divider::PaneSplit>,
     divider_drag: Option<divider::DividerDrag>,
+    startup_artwork_visible: bool,
     privacy_shield: bool,
     shielded_popups: Vec<Popup<'a>>,
 }
@@ -129,6 +131,7 @@ impl UIComponents<'_> {
             pending_command: None,
             pane_split: None,
             divider_drag: None,
+            startup_artwork_visible: false,
             privacy_shield: false,
             shielded_popups: Vec::new(),
         }
@@ -140,6 +143,14 @@ impl UIComponents<'_> {
 
     pub fn set_active_theme(&mut self, id: Option<String>) {
         self.active_theme_id = id;
+    }
+
+    pub fn show_startup_artwork(&mut self) {
+        self.startup_artwork_visible = true;
+    }
+
+    pub fn dismiss_startup_artwork(&mut self) -> bool {
+        std::mem::take(&mut self.startup_artwork_visible)
     }
 
     pub fn set_current_entry<D: DataProvider>(&mut self, entry_id: Option<u32>, app: &mut App<D>) {
@@ -203,7 +214,7 @@ impl UIComponents<'_> {
                     );
                 }
                 ControlType::EntryContentTxt => {
-                    self.editor.render_widget(f, chunks[0], &self.styles);
+                    self.render_note_pane(f, chunks[0], app);
                 }
             }
         } else {
@@ -221,7 +232,7 @@ impl UIComponents<'_> {
                 &self.entries_list_keymaps,
                 &self.styles,
             );
-            self.editor.render_widget(f, split.editor, &self.styles);
+            self.render_note_pane(f, split.editor, app);
             if self.divider_drag.is_some() {
                 for y in split.area.y..split.area.bottom() {
                     for x in [split.list.right() - 1, split.editor.x] {
@@ -232,6 +243,21 @@ impl UIComponents<'_> {
         }
 
         self.render_popup(f);
+    }
+
+    fn render_note_pane<D: DataProvider>(&mut self, f: &mut Frame, area: Rect, app: &App<D>) {
+        if self.startup_artwork_visible
+            || (app.current_entry_id.is_none() && self.editor.get_content().is_empty())
+        {
+            empty_note::render(
+                f,
+                area,
+                &self.styles,
+                self.active_control == ControlType::EntryContentTxt,
+            );
+        } else {
+            self.editor.render_widget(f, area, &self.styles);
+        }
     }
 
     pub fn render_popup(&mut self, f: &mut Frame) {
