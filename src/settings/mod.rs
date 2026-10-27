@@ -1,18 +1,9 @@
-use std::{
-    convert::Infallible,
-    fmt,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow, bail, ensure};
 use clap::ValueEnum;
 use directories::{BaseDirs, UserDirs};
-use serde::{
-    Deserialize, Deserializer, Serialize,
-    de::{self, MapAccess, Visitor},
-};
+use serde::{Deserialize, Serialize};
 
 use crate::app::state::AppState;
 
@@ -63,7 +54,7 @@ pub struct Settings {
     pub export: ExportSettings,
     #[serde(default)]
     pub backend_type: Option<BackendType>,
-    #[serde(default, deserialize_with = "string_or_struct")]
+    #[serde(default, deserialize_with = "external_editor::deserialize_config")]
     pub external_editor: ExternalEditor,
     #[cfg(feature = "json")]
     #[serde(default)]
@@ -79,6 +70,8 @@ pub struct Settings {
     pub file_backend: FileBackend,
     #[serde(default)]
     pub default_journal_priority: Option<u32>,
+    #[serde(default = "default_show_entry_priority")]
+    pub show_entry_priority: bool,
     #[serde(default)]
     pub auto_title: Option<AutoTitle>,
     #[serde(default)]
@@ -116,6 +109,7 @@ impl Default for Settings {
             #[cfg(feature = "file")]
             file_backend: Default::default(),
             default_journal_priority: Default::default(),
+            show_entry_priority: default_show_entry_priority(),
             auto_title: Default::default(),
             scroll_per_page: Default::default(),
             sync_os_clipboard: Default::default(),
@@ -170,6 +164,10 @@ const fn default_history_limit() -> usize {
 }
 
 const fn default_editor_word_wrap() -> bool {
+    true
+}
+
+const fn default_show_entry_priority() -> bool {
     true
 }
 
@@ -242,6 +240,7 @@ impl Settings {
             export: _,
             external_editor: _,
             default_journal_priority: _,
+            show_entry_priority: _,
             auto_title: _,
             scroll_per_page: _,
             sync_os_clipboard: _,
@@ -294,7 +293,7 @@ impl Settings {
 
 pub fn settings_default_dir_path() -> anyhow::Result<PathBuf> {
     BaseDirs::new()
-        .map(|base_dirs| base_dirs.config_dir().join("tui-journal"))
+        .map(|base_dirs| base_dirs.config_dir().join("myna-journal"))
         .context("Config directory path couldn't be retrieved")
 }
 
@@ -308,55 +307,9 @@ fn get_default_data_dir() -> anyhow::Result<PathBuf> {
             user_dirs
                 .document_dir()
                 .unwrap_or(user_dirs.home_dir())
-                .join("tui-journal")
+                .join("myna-journal")
         })
         .context("Default entries directory path couldn't be retrieved")
-}
-
-/// This function is copied from serde documentations for the use case when the data can be string
-/// or a struct
-fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
-where
-    T: Deserialize<'de> + FromStr<Err = Infallible>,
-    D: Deserializer<'de>,
-{
-    // This is a Visitor that forwards string types to T's `FromStr` impl and
-    // forwards map types to T's `Deserialize` impl. The `PhantomData` is to
-    // keep the compiler from complaining about T being an unused generic type
-    // parameter. We need T in order to know the Value type for the Visitor
-    // impl.
-    struct StringOrStruct<T>(PhantomData<fn() -> T>);
-
-    impl<'de, T> Visitor<'de> for StringOrStruct<T>
-    where
-        T: Deserialize<'de> + FromStr<Err = Infallible>,
-    {
-        type Value = T;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("string or map")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<T, E>
-        where
-            E: de::Error,
-        {
-            Ok(FromStr::from_str(value).unwrap())
-        }
-
-        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
-        where
-            M: MapAccess<'de>,
-        {
-            // `MapAccessDeserializer` is a wrapper that turns a `MapAccess`
-            // into a `Deserializer`, allowing it to be used as the input to T's
-            // `Deserialize` implementation. T then deserializes itself using
-            // the entries from the map visitor.
-            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
-        }
-    }
-
-    deserializer.deserialize_any(StringOrStruct(PhantomData))
 }
 
 #[cfg(test)]
@@ -371,6 +324,18 @@ mod tests {
         let dir = Builder::new().prefix("settings").tempdir().unwrap();
         fs::write(dir.path().join("config.toml"), content).unwrap();
         dir
+    }
+
+    #[test]
+    fn default_config_and_journal_directories_use_myna_journal() {
+        assert_eq!(
+            settings_default_dir_path().unwrap().file_name().unwrap(),
+            "myna-journal"
+        );
+        assert_eq!(
+            get_default_data_dir().unwrap().file_name().unwrap(),
+            "myna-journal"
+        );
     }
 
     #[tokio::test]
@@ -474,6 +439,46 @@ temp_file_extension = "md"
     }
 
     #[test]
+    fn external_editor_partial_tables_and_legacy_strings_preserve_defaults() {
+        for config in [
+            "external_editor = {}",
+            "external_editor = { future_option = true }",
+        ] {
+            let settings: Settings = toml::from_str(config).unwrap();
+            assert_eq!(settings.external_editor.command, None);
+            assert!(!settings.external_editor.auto_save);
+            assert_eq!(settings.external_editor.temp_file_extension, "txt");
+        }
+
+        for command in ["", "nvim -f", "éditeur --wait"] {
+            let encoded = toml::Value::String(command.to_owned());
+            let settings: Settings =
+                toml::from_str(&format!("external_editor = {encoded}")).unwrap();
+            assert_eq!(settings.external_editor.command.as_deref(), Some(command));
+            assert!(!settings.external_editor.auto_save);
+            assert_eq!(settings.external_editor.temp_file_extension, "txt");
+        }
+    }
+
+    #[test]
+    fn external_editor_rejects_non_string_non_table_and_invalid_field_types() {
+        for value in [
+            "true",
+            "42",
+            "[]",
+            "[\"vim\", true, \"md\"]",
+            "{ command = 42 }",
+            "{ auto_save = \"yes\" }",
+            "{ temp_file_extension = false }",
+        ] {
+            assert!(
+                toml::from_str::<Settings>(&format!("external_editor = {value}")).is_err(),
+                "accepted invalid external editor: {value}"
+            );
+        }
+    }
+
+    #[test]
     fn auto_title_accepts_literal_string() {
         let settings: Settings = toml::from_str(r#"auto_title = "Daily Note""#).unwrap();
 
@@ -514,6 +519,21 @@ kind = "date"
         assert!(toml::from_str::<Settings>("").unwrap().editor_word_wrap);
         let settings: Settings = toml::from_str("editor_word_wrap = false").unwrap();
         assert!(!settings.editor_word_wrap);
+    }
+
+    #[test]
+    fn entry_priority_field_defaults_visible_and_can_be_disabled() {
+        assert!(Settings::default().show_entry_priority);
+        assert!(toml::from_str::<Settings>("").unwrap().show_entry_priority);
+        let mut settings: Settings = toml::from_str("show_entry_priority = false").unwrap();
+        settings.complete_missing_options().unwrap();
+        assert!(!settings.show_entry_priority);
+        let serialized = settings.get_as_text().unwrap();
+        assert!(
+            !toml::from_str::<Settings>(&serialized)
+                .unwrap()
+                .show_entry_priority
+        );
     }
 
     #[test]

@@ -1,0 +1,5 @@
+# Preserve audited upstream notice bytes, including their original whitespace.
+THIRD_PARTY_NOTICES.txt -text -whitespace
+licenses/runtime/*.txt -text -whitespace
+# The supplied fixed-width artwork includes intentional padding.
+assets/myna_journal.txt -text -whitespace

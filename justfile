@@ -7,6 +7,7 @@ check:
     cargo check --all-targets --no-default-features -F json
     cargo check --all-targets --no-default-features -F sqlite
     cargo check --all-targets --no-default-features -F vjournal
+    cargo check --all-targets --no-default-features -F file
 
 # Run all tests
 test:
@@ -16,6 +17,10 @@ test:
 clippy:
     cargo clippy --all-targets --all-features -- -D warnings
 
-# Install tjournal; extra args go to cargo install, e.g. `just install --no-default-features -F sqlite`
+# Verify the dependency/license snapshot and distributable notices without network access
+licenses:
+    python3 scripts/generate-notices.py --check
+
+# Install mjournal; extra args go to cargo install, e.g. `just install --no-default-features -F sqlite`
 install *args:
     cargo install --path . --locked {{ args }}

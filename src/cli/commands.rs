@@ -11,6 +11,8 @@ use super::*;
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum CliCommand {
+    /// Print the app license, attribution, and third-party notices without opening any data files.
+    Licenses,
     /// Print the current settings including the paths for the back-end files.
     #[clap(visible_alias = "pc")]
     PrintConfig,
@@ -65,6 +67,10 @@ impl CliCommand {
         custom_config_dir: Option<&PathBuf>,
     ) -> anyhow::Result<CliResult> {
         match self {
+            CliCommand::Licenses => {
+                print_licenses()?;
+                Ok(CliResult::Return)
+            }
             CliCommand::PrintConfig => exec_print_config(settings),
             CliCommand::ImportJournals { file_path: path } => Ok(CliResult::PendingCommand(
                 PendingCliCommand::ImportJournals(path),
@@ -81,6 +87,24 @@ impl CliCommand {
             },
         }
     }
+}
+
+pub fn print_licenses() -> anyhow::Result<()> {
+    use std::io::Write;
+
+    let mut output = std::io::stdout().lock();
+    output.write_all(
+        concat!(
+            "MynaJournal license\n\n",
+            include_str!("../../LICENSE"),
+            "\n\n",
+            include_str!("../../ATTRIBUTION.md"),
+            "\n\n",
+            include_str!("../../THIRD_PARTY_NOTICES.txt"),
+        )
+        .as_bytes(),
+    )?;
+    Ok(())
 }
 
 fn exec_print_config(settings: &mut Settings) -> anyhow::Result<CliResult> {
@@ -131,11 +155,19 @@ mod tests {
     use crate::cli::Cli;
 
     #[test]
+    fn licenses_command_parses() {
+        assert_eq!(
+            Cli::parse_from(["mjournal", "licenses"]).command,
+            Some(CliCommand::Licenses)
+        );
+    }
+
+    #[test]
     fn aliases_parse() {
-        let print = Cli::parse_from(["tjournal", "pc"]);
-        let import = Cli::parse_from(["tjournal", "imj", "--path", "/tmp/in.json"]);
-        let priority = Cli::parse_from(["tjournal", "ap", "7"]);
-        let theme = Cli::parse_from(["tjournal", "style", "path"]);
+        let print = Cli::parse_from(["mjournal", "pc"]);
+        let import = Cli::parse_from(["mjournal", "imj", "--path", "/tmp/in.json"]);
+        let priority = Cli::parse_from(["mjournal", "ap", "7"]);
+        let theme = Cli::parse_from(["mjournal", "style", "path"]);
 
         assert_eq!(print.command, Some(CliCommand::PrintConfig));
         assert_eq!(
@@ -212,7 +244,7 @@ mod tests {
             vec!["-Night", "--Blue"],
             vec!["Night", "--config", "Blue"],
         ] {
-            let mut command = vec!["tjournal", "theme", "write-new"];
+            let mut command = vec!["mjournal", "theme", "write-new"];
             command.extend(&args);
             let cli = Cli::try_parse_from(command).unwrap();
             assert_eq!(
@@ -226,13 +258,13 @@ mod tests {
 
     #[test]
     fn write_new_replaces_write_defaults_and_keeps_the_write_alias() {
-        assert!(Cli::try_parse_from(["tjournal", "theme", "write-defaults"]).is_err());
+        assert!(Cli::try_parse_from(["mjournal", "theme", "write-defaults"]).is_err());
         assert_eq!(
-            Cli::parse_from(["tjournal", "style", "write"]).command,
+            Cli::parse_from(["mjournal", "style", "write"]).command,
             Some(CliCommand::Theme(Themes::WriteNew { name: vec![] }))
         );
         assert_eq!(
-            Cli::try_parse_from(["tjournal", "theme", "--help"])
+            Cli::try_parse_from(["mjournal", "theme", "--help"])
                 .unwrap_err()
                 .kind(),
             clap::error::ErrorKind::DisplayHelp
@@ -310,7 +342,7 @@ mod tests {
             "theme_tui_custom_01.toml",
             "theme_tui_custom_02.toml",
         ] {
-            let cli = Cli::parse_from(["tjournal", "theme", "write-new"]);
+            let cli = Cli::parse_from(["mjournal", "theme", "write-new"]);
             assert_eq!(
                 cli.command
                     .unwrap()

@@ -2,6 +2,50 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.19.0 - 2026-10-27
+
+### MynaJournal
+
+- Rename the fork to **MynaJournal**, the package to `myna-journal`, and the launch command to `mjournal`
+- Use `myna-journal` for the default journal, configuration, state and cache directories; preserve existing storage-format identifiers for compatibility
+- Document the differences from upstream TUI-Journal, installation, daily usage and migration; testing is limited to macOS and Debian
+- Publish a macOS Apple Silicon archive, Debian 12 amd64/arm64 packages, and `SHA256SUMS` alongside GitHub's source archives
+
+### Added and improved
+
+- Show centered MynaJournal artwork in empty note panes and at startup until the first user action
+- Rename the left pane to Entries and simplify the main menu, highlighting command keys in the same style as Help
+- Add **Show priority field** in Config → Entries; hiding the field preserves existing priorities and configured new-entry defaults
+- Preserve unrelated files and source state when copying legacy state, and avoid overwriting an existing destination
+- Retain editable word wrap, the adjustable divider, `auto_title`, named themes, local note locking and all four backends
+
+### Licensing and distribution
+
+- Retain the original upstream MIT license and clarify contributor, library and AI-artwork attribution
+- Include reviewed third-party notices and required MPL source in packages and the executable, available with `mjournal licenses` without opening journal or configuration files
+- Replace an inherited documentation-derived configuration helper while preserving string/table compatibility, and use direct terminal-output regression tests for Linux console styling
+- Check notice integrity and package contents before publishing; Mac binaries bundle libgit2/zlib and use only system runtime libraries
+
+### Upgrading from TUI-Journal / Deb Plus
+
+The Debian package is now named `myna-journal`; installing it replaces the old
+`tui-journal` package and command. Existing journals and settings are not deleted,
+but the new default directory names mean they are **not automatically loaded or
+migrated**. Close the app, back up your files, and follow the
+[migration instructions](https://github.com/sebiimaks/MynaJournal/blob/v0.19.0/README.md#upgrading-from-tjournal)
+before first launch. Explicit paths saved in your configuration keep their values.
+
+After downloading the package matching `dpkg --print-architecture`:
+
+```bash
+sudo apt install ./myna-journal_0.19.0-1_amd64.deb
+mjournal --version
+```
+
+Use the `arm64` package instead on Debian ARM64. Binaries are now attached to
+releases as well as retained as workflow artifacts; earlier releases remain
+source-only.
+
 ## 0.18.0+debplus.5 - 2026-10-25
 
 ### Added

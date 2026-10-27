@@ -1,14 +1,14 @@
 use backend::DataProvider;
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
-    style::Style,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    layout::Rect,
+    text::{Line, Span},
+    widgets::{Paragraph, Wrap},
 };
 
 use crate::app::{App, keymap::Keymap};
 
-use super::{ControlType, UICommand, UIComponents};
+use super::{ControlType, UICommand, UIComponents, ui_functions::menu_key_style};
 
 const SEPARATOR: &str = " | ";
 
@@ -17,8 +17,9 @@ pub fn get_footer_height<D: DataProvider>(
     ui_components: &UIComponents,
     app: &App<D>,
 ) -> u16 {
-    let footer_text = get_footer_text(ui_components, app);
-    footer_text.len() as u16 / width + 1
+    footer(ui_components, app)
+        .line_count(width)
+        .min(u16::MAX as usize) as u16
 }
 
 pub fn render_footer<D: DataProvider>(
@@ -27,158 +28,115 @@ pub fn render_footer<D: DataProvider>(
     ui_components: &UIComponents,
     app: &App<D>,
 ) {
-    let footer_text = get_footer_text(ui_components, app);
-    let footer = Paragraph::new(footer_text)
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: false })
-        .block(
-            Block::default()
-                .borders(Borders::NONE)
-                .style(Style::default()),
-        );
-
-    frame.render_widget(footer, area);
+    frame.render_widget(footer(ui_components, app), area);
 }
 
-fn get_footer_text<D: DataProvider>(ui_components: &UIComponents, app: &App<D>) -> String {
-    let (editor_mode, multi_select_mode) = (
-        ui_components.editor.is_insert_mode(),
-        ui_components.entries_list.multi_select_mode,
-    );
-    match (editor_mode, multi_select_mode) {
-        (true, false) => get_editor_mode_text(ui_components),
-        (false, true) => get_multi_select_text(ui_components),
-        _ => get_standard_text(ui_components, app),
-    }
-}
-
-fn get_editor_mode_text(ui_components: &UIComponents) -> String {
-    let exit_editor_mode_keymap: Vec<_> = ui_components
-        .editor_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::BackEditorNormalMode)
-        .collect();
-
-    format!(
-        "{}{} Edit using Emacs motions",
-        get_keymap_text(exit_editor_mode_keymap),
-        SEPARATOR
-    )
-}
-
-fn get_standard_text<D: DataProvider>(ui_components: &UIComponents, app: &App<D>) -> String {
-    let close_keymap: Vec<_> = ui_components
-        .global_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::Quit)
-        .collect();
-
-    let enter_editor_keymap: Vec<_> = ui_components
-        .global_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::StartEditEntryContent)
-        .collect();
-
-    let mut footer_parts = vec![
-        get_keymap_text(close_keymap),
-        get_keymap_text(enter_editor_keymap),
-    ];
-    footer_parts.push("Note security: L".into());
-    if app.has_sealed_drafts() {
-        footer_parts.push("Encrypted unsaved draft: unlock to save".into());
-    }
-
-    if ui_components.active_control == ControlType::EntriesList {
-        if app.filter.is_none() {
-            let show_filter_keymap: Vec<_> = ui_components
-                .entries_list_keymaps
-                .iter()
-                .filter(|keymap| keymap.command == UICommand::ShowFilter)
-                .collect();
-
-            footer_parts.push(get_keymap_text(show_filter_keymap));
-        } else {
-            let reset_filter_keymap: Vec<_> = ui_components
-                .entries_list_keymaps
-                .iter()
-                .filter(|keymap| keymap.command == UICommand::ResetFilter)
-                .collect();
-
-            footer_parts.push(get_keymap_text(reset_filter_keymap));
+fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static> {
+    let text = match (
+        ui.editor.is_insert_mode(),
+        ui.entries_list.multi_select_mode,
+    ) {
+        (true, false) => {
+            let command = UICommand::BackEditorNormalMode;
+            let mut line = command_text(&command.get_info().name, &ui.editor_keymaps, command);
+            line.push_span(Span::raw(SEPARATOR));
+            line.push_span(Span::raw("Edit using Emacs motions"));
+            line
         }
-
-        let sort_keymap = ui_components
-            .entries_list_keymaps
-            .iter()
-            .filter(|keymap| keymap.command == UICommand::ShowSortOptions)
-            .collect();
-
-        footer_parts.push(get_keymap_text(sort_keymap));
-    }
-
-    if app.state.full_screen {
-        let full_screen_keymap: Vec<_> = ui_components
-            .global_keymaps
-            .iter()
-            .filter(|keymap| keymap.command == UICommand::ToggleFullScreenMode)
-            .collect();
-        footer_parts.push(get_keymap_text(full_screen_keymap));
-    }
-
-    let help_keymap: Vec<_> = ui_components
-        .global_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::ShowHelp)
-        .collect();
-
-    footer_parts.push(get_keymap_text(help_keymap));
-    let config_keymap = ui_components
-        .global_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::ShowConfig && keymap.key.modifiers.is_empty())
-        .collect();
-    footer_parts.push(get_keymap_text(config_keymap));
-
-    footer_parts.join(SEPARATOR)
+        (false, true) => {
+            let command = UICommand::LeaveMultiSelectMode;
+            join_parts(vec![
+                command_text(&command.get_info().name, &ui.multi_select_keymaps, command),
+                command_text("Help", &ui.multi_select_keymaps, UICommand::ShowHelp),
+                command_text("Config", &ui.multi_select_keymaps, UICommand::ShowConfig),
+            ])
+        }
+        _ => standard_text(ui, app),
+    };
+    Paragraph::new(text).wrap(Wrap { trim: false })
 }
 
-fn get_multi_select_text(ui_components: &UIComponents) -> String {
-    let leave_keymap: Vec<_> = ui_components
-        .multi_select_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::LeaveMultiSelectMode)
-        .collect();
-
-    let help_keymap: Vec<_> = ui_components
-        .multi_select_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::ShowHelp)
-        .collect();
-
-    let config_keymap = ui_components
-        .multi_select_keymaps
-        .iter()
-        .filter(|keymap| keymap.command == UICommand::ShowConfig && keymap.key.modifiers.is_empty())
-        .collect();
-    let parts = [
-        get_keymap_text(leave_keymap),
-        get_keymap_text(help_keymap),
-        get_keymap_text(config_keymap),
+fn standard_text<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Line<'static> {
+    let mut parts = vec![
+        command_text("Exit", &ui.global_keymaps, UICommand::Quit),
+        command_text(
+            "Edit content",
+            &ui.global_keymaps,
+            UICommand::StartEditEntryContent,
+        ),
+        command_text(
+            "Entry security",
+            &ui.global_keymaps,
+            UICommand::ShowSecurity,
+        ),
     ];
-
-    parts.join(SEPARATOR)
+    if ui.active_control == ControlType::EntriesList {
+        let mut filter = command_text(
+            "Filter open",
+            &ui.entries_list_keymaps,
+            UICommand::ShowFilter,
+        );
+        filter.push_span(Span::raw("  "));
+        filter
+            .spans
+            .extend(command_text("reset", &ui.entries_list_keymaps, UICommand::ResetFilter).spans);
+        parts.push(filter);
+        parts.push(command_text(
+            "Sort options",
+            &ui.entries_list_keymaps,
+            UICommand::ShowSortOptions,
+        ));
+    }
+    if app.state.full_screen {
+        let command = UICommand::ToggleFullScreenMode;
+        parts.push(command_text(
+            &command.get_info().name,
+            &ui.global_keymaps,
+            command,
+        ));
+    }
+    parts.push(command_text(
+        "Help",
+        &ui.global_keymaps,
+        UICommand::ShowHelp,
+    ));
+    parts.push(command_text(
+        "Config",
+        &ui.global_keymaps,
+        UICommand::ShowConfig,
+    ));
+    if app.has_sealed_drafts() {
+        parts.push(Line::raw("Encrypted unsaved draft: unlock to save"));
+    }
+    join_parts(parts)
 }
 
-fn get_keymap_text(keymaps: Vec<&Keymap>) -> String {
-    let cmd_text = keymaps
-        .first()
-        .map(|keymap| keymap.command.get_info().name)
-        .expect("Keymaps shouldn't be empty");
-
-    let keys: Vec<String> = keymaps
+fn command_text(label: &str, keymaps: &[Keymap], command: UICommand) -> Line<'static> {
+    let mut spans = vec![Span::raw(format!("{label}: "))];
+    for (index, keymap) in keymaps
         .iter()
-        .map(|keymap| format!("'{}'", keymap.key))
-        .collect();
+        .filter(|keymap| keymap.command == command)
+        .filter(|keymap| {
+            !matches!(command, UICommand::ShowConfig | UICommand::ShowSecurity)
+                || keymap.key.modifiers.is_empty()
+        })
+        .enumerate()
+    {
+        if index > 0 {
+            spans.push(Span::raw(", "));
+        }
+        spans.push(Span::styled(keymap.key.to_string(), menu_key_style()));
+    }
+    Line::from(spans)
+}
 
-    format!("{}: {}", cmd_text, keys.join(","))
+fn join_parts(parts: Vec<Line<'static>>) -> Line<'static> {
+    let mut line = Line::default();
+    for (index, part) in parts.into_iter().enumerate() {
+        if index > 0 {
+            line.push_span(Span::raw(SEPARATOR));
+        }
+        line.spans.extend(part.spans);
+    }
+    line
 }

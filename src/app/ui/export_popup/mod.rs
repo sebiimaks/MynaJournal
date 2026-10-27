@@ -18,7 +18,7 @@ type ExportPopupInputReturn = PopupReturn<(PathBuf, Option<u32>)>;
 
 const FOOTER_TEXT: &str = "Enter: confirm | Esc or <Ctrl-c>: Cancel";
 const FOOTER_MARGINE: u16 = 8;
-const DEFAULT_FILE_NAME: &str = "tjournal_export.json";
+const DEFAULT_FILE_NAME: &str = "mjournal_export.json";
 
 pub struct ExportPopup<'a> {
     path_txt: TextArea<'a>,

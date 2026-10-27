@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn parse_backend_and_config() {
         let cli = Cli::parse_from([
-            "tjournal",
+            "mjournal",
             "--backend-type",
             "json",
             "--config",
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn parse_rejects_bad_backend() {
-        let err = Cli::try_parse_from(["tjournal", "--backend-type", "bogus"]).unwrap_err();
+        let err = Cli::try_parse_from(["mjournal", "--backend-type", "bogus"]).unwrap_err();
 
         assert!(err.to_string().contains("invalid value"));
     }
@@ -258,7 +258,7 @@ mod tests {
         let dir = Builder::new().prefix("cli-log").tempdir().unwrap();
         let mut settings = Settings::default();
         let cli = Cli::parse_from([
-            "tjournal",
+            "mjournal",
             "--log",
             dir.path().join("journal.log").to_str().unwrap(),
         ]);
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn file_cli_path_and_explicit_backend_are_visible_as_launch_overrides() {
         let cli = Cli::parse_from([
-            "tjournal",
+            "mjournal",
             "--file-dir-path",
             "notes",
             "--backend-type",

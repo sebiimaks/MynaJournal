@@ -97,6 +97,7 @@ where
 
     /// Apply preferences that do not replace session storage or discard undo history.
     pub fn apply_live_settings(&mut self, saved: Settings) {
+        self.settings.show_entry_priority = saved.show_entry_priority;
         self.settings.export = saved.export;
         self.settings.external_editor = saved.external_editor;
         self.settings.default_journal_priority = saved.default_journal_priority;

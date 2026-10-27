@@ -1,11 +1,11 @@
 [package]
-name = "tui-journal"
-version = "0.18.0+debplus.5"
+name = "myna-journal"
+version = "0.19.0"
 edition = "2024"
 authors = ["Ammar Abou Zor"]
 license = "MIT"
-description = "Tui app allows writing and managing journals/notes from within the terminal With different local back-ends"
-repository = "https://github.com/sebiimaks/tui-journal-deb-plus"
+description = "MynaJournal: a terminal journal and note manager with four local backends"
+repository = "https://github.com/sebiimaks/MynaJournal"
 readme = "README.md"
 categories = ["command-line-utilities"]
 keywords = ["tui", "terminal-app", "journal", "cli", "ui"]
@@ -15,14 +15,20 @@ rust-version = "1.92.0"
 maintainer = "sebiimaks <sebiimaks@users.noreply.github.com>"
 license-file = ["LICENSE", "0"]
 depends = "$auto"
+conflicts = "tui-journal"
+replaces = "tui-journal"
 section = "utils"
 priority = "optional"
 extended-description = "A terminal journal and note manager with plain-text/Markdown files, JSON, SQLite, and iCalendar VJOURNAL back-ends."
 assets = [
-    ["target/release/tjournal", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/tui-journal/README.md", "644"],
-    ["THEMES.md", "usr/share/doc/tui-journal/THEMES.md", "644"],
-    ["NOTE-LOCKING.md", "usr/share/doc/tui-journal/NOTE-LOCKING.md", "644"],
+    ["target/release/mjournal", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/myna-journal/README.md", "644"],
+    ["CONFIGURATION.md", "usr/share/doc/myna-journal/CONFIGURATION.md", "644"],
+    ["FILE-BACKEND.md", "usr/share/doc/myna-journal/FILE-BACKEND.md", "644"],
+    ["THEMES.md", "usr/share/doc/myna-journal/THEMES.md", "644"],
+    ["NOTE-LOCKING.md", "usr/share/doc/myna-journal/NOTE-LOCKING.md", "644"],
+    ["ATTRIBUTION.md", "usr/share/doc/myna-journal/ATTRIBUTION.md", "644"],
+    ["THIRD_PARTY_NOTICES.txt", "usr/share/doc/myna-journal/THIRD_PARTY_NOTICES.txt", "644"],
 ]
 
 [dependencies]
@@ -56,7 +62,7 @@ path-absolutize = "4.0"
 tui-textarea = "0.7"
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
-ratatui = { version = "0.29", features = ["all-widgets", "serde"]}
+ratatui = { version = "0.29", features = ["all-widgets", "serde", "unstable-rendered-line-info"]}
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"]}
 age = { version = "0.12.1", default-features = false, features = ["armor"] }
 zeroize = "1.8"
@@ -69,7 +75,7 @@ vjournal = ["dep:vobject", "dep:uuid"]
 file = ["dep:serde-saphyr", "dep:uuid"]
 
 [[bin]]
-name = "tjournal"
+name = "mjournal"
 path = "src/main.rs"
 
 [lib]

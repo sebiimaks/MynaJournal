@@ -19,7 +19,10 @@ use self::{
     multi_select_bindings::MultiSelectBindings,
 };
 
-use super::{commands::CommandInfo, ui_functions::centered_rect};
+use super::{
+    commands::CommandInfo,
+    ui_functions::{centered_rect, menu_key_style},
+};
 
 mod global_bindings;
 mod keybindings_table;
@@ -29,8 +32,6 @@ const KEY_PERC: u16 = 18;
 const NAME_PERC: u16 = 27;
 const DESCRIPTION_PERC: u16 = 100 - NAME_PERC - KEY_PERC;
 const MARGIN: u16 = 8;
-
-const TAB_LETTER_HIGHLIGHT_COLOR: Color = Color::LightGreen;
 
 const EDITOR_HINT_TEXT: &str = r"The editor has three modes:
  - Normal-Mode: In this mode Vim keybindings are used to navigate the text and to enter edit mode via (i, I, a , A, o, O).
@@ -62,9 +63,7 @@ impl KeybindingsTabs {
     }
 
     fn get_headers<'a>() -> Vec<Line<'a>> {
-        let highlight_style = Style::default()
-            .fg(TAB_LETTER_HIGHLIGHT_COLOR)
-            .add_modifier(Modifier::BOLD);
+        let highlight_style = menu_key_style();
 
         vec![
             Line::from(vec![Span::styled("G", highlight_style), Span::raw("lobal")]),

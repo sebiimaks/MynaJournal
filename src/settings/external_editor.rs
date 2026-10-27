@@ -1,6 +1,6 @@
 use std::{convert::Infallible, str::FromStr};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 // In older version the external editor was a string only referring to the command.
 // To keep the configuration compatible, deserialize is implemented to accept either string or struct
@@ -27,6 +27,26 @@ impl Default for ExternalEditor {
 
 fn default_temp_file_extension() -> String {
     String::from("txt")
+}
+
+pub(super) fn deserialize_config<'de, D>(deserializer: D) -> Result<ExternalEditor, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Config {
+        Command(String),
+        Options(toml::Table),
+    }
+
+    match Config::deserialize(deserializer)? {
+        Config::Command(command) => Ok(ExternalEditor {
+            command: Some(command),
+            ..Default::default()
+        }),
+        Config::Options(options) => options.try_into().map_err(serde::de::Error::custom),
+    }
 }
 
 impl FromStr for ExternalEditor {

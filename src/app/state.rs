@@ -1,4 +1,4 @@
-use std::{fs, io::Write};
+use std::{fs, io::Write, path::Path};
 
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
@@ -81,11 +81,9 @@ impl AppState {
     }
 
     pub fn load(settings: &Settings) -> anyhow::Result<Self> {
-        // Move state file from legacy data directory to the new state directory
-        // to avoid breaking changes on users.
-        // TODO: Remove this after three releases.
+        // Retain the old state file and any unrelated contents when importing legacy state.
         if settings.app_state_dir.is_none() {
-            Self::move_legacy_state();
+            Self::copy_legacy_state();
         }
 
         let state_path = Self::get_persist_path(settings)?;
@@ -164,82 +162,56 @@ impl AppState {
                 base_dirs
                     .state_dir()
                     .unwrap_or_else(|| base_dirs.data_dir())
-                    .join("tui-journal")
+                    .join("myna-journal")
             })
             .context("Config file path couldn't be retrieved")
     }
 
-    /// Move app state from legacy path to the new one if the legacy exists and the new doesn't.
-    fn move_legacy_state() {
-        // Return early if operating system doesn't support `state_dir()`
-        let state_path = match BaseDirs::new()
-            .map(|base_dirs| base_dirs.state_dir().map(|state| state.join("tui-journal")))
-        {
-            Some(Some(state)) => state,
-            _ => return,
+    /// Import app state from the old data location without removing any source files.
+    fn copy_legacy_state() {
+        let Some(base_dirs) = BaseDirs::new() else {
+            return;
         };
-
-        // Gets legacy path which was used to store the state previously.
-        let legacy_data_dir =
-            match BaseDirs::new().map(|base_dirs| base_dirs.data_dir().join("tui-journal")) {
-                Some(path) => path,
-                None => return,
-            };
-        // Legacy already removed -> Done
-        if !legacy_data_dir.exists() {
+        let Some(state_dir) = base_dirs.state_dir() else {
             return;
+        };
+        let source = base_dirs
+            .data_dir()
+            .join("myna-journal")
+            .join(STATE_FILE_NAME);
+        let destination = state_dir.join("myna-journal").join(STATE_FILE_NAME);
+        if let Err(error) = copy_legacy_state_file(&source, &destination) {
+            log::error!("Importing legacy app state failed: {error:#}");
         }
+    }
+}
 
-        let legacy_state_file = legacy_data_dir.join(STATE_FILE_NAME);
-        if !legacy_state_file.exists() {
-            // Legacy dir exists but it has no files -> remove it -> Done.
-            if let Err(err) = std::fs::remove_dir_all(&legacy_data_dir) {
-                log::error!(
-                    "Legacy State: Removing legacy directory failed. path: {}, Error {err}",
-                    legacy_data_dir.display()
-                );
-            }
-            return;
-        }
-
-        let new_state_file = state_path.join(STATE_FILE_NAME);
-        if new_state_file.exists() {
-            // New state file exists somehow -> Remove old state directory to avoid running this
-            // again.
-            if let Err(err) = std::fs::remove_dir_all(&legacy_data_dir) {
-                log::error!(
-                    "Legacy State: Removing legacy directory failed. path: {}, Error {err}",
-                    legacy_data_dir.display()
-                );
-            }
-
-            return;
-        }
-
-        if !state_path.exists() {
-            // Create new state directory if not exists.
-            if let Err(err) = std::fs::create_dir_all(&state_path) {
-                log::error!(
-                    "Legacy State: Creating state dir filed. Path: {}, Error {err}",
-                    state_path.display()
-                );
-                return;
-            }
-        }
-
-        // Move state file.
-        if let Err(err) = std::fs::rename(legacy_state_file, new_state_file) {
-            log::error!("Legacy State: Moving legacy state file failed. Error {err}");
-            return;
-        }
-
-        // Finally remove legacy state directory.
-        if let Err(err) = std::fs::remove_dir_all(&legacy_data_dir) {
-            log::error!(
-                "Legacy State: Removing legacy directory failed. path: {}, Error {err}",
-                legacy_data_dir.display()
-            );
-        }
+fn copy_legacy_state_file(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    match fs::symlink_metadata(destination) {
+        Ok(_) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let mut source = match fs::File::open(source) {
+        Ok(source) => source,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let metadata = source.metadata()?;
+    anyhow::ensure!(metadata.is_file(), "Legacy state is not a regular file");
+    let parent = destination
+        .parent()
+        .context("State file has no parent directory")?;
+    fs::create_dir_all(parent)?;
+    let mut staged = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::copy(&mut source, &mut staged)?;
+    staged.as_file().set_permissions(metadata.permissions())?;
+    staged.flush()?;
+    staged.as_file().sync_all()?;
+    match staged.persist_noclobber(destination) {
+        Ok(_) => Ok(()),
+        Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -248,6 +220,98 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    #[test]
+    fn state_defaults_to_the_myna_journal_directory() {
+        assert_eq!(
+            AppState::default_persist_dir()
+                .unwrap()
+                .file_name()
+                .unwrap(),
+            "myna-journal"
+        );
+    }
+
+    #[test]
+    fn legacy_state_import_preserves_source_and_unrelated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_dir = dir.path().join("data/myna-journal");
+        let destination = dir.path().join("state/myna-journal/state.json");
+        fs::create_dir_all(&old_dir).unwrap();
+        let source = old_dir.join("state.json");
+        let content = serde_json::to_string(&AppState::default()).unwrap();
+        fs::write(&source, &content).unwrap();
+        fs::write(old_dir.join("journal.txt"), "keep this journal").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&source, fs::Permissions::from_mode(0o640)).unwrap();
+        }
+
+        copy_legacy_state_file(&source, &destination).unwrap();
+
+        assert_eq!(fs::read_to_string(&destination).unwrap(), content);
+        assert_eq!(fs::read_to_string(&source).unwrap(), content);
+        assert_eq!(
+            fs::read_to_string(old_dir.join("journal.txt")).unwrap(),
+            "keep this journal"
+        );
+        assert_eq!(
+            fs::metadata(&destination).unwrap().permissions(),
+            fs::metadata(&source).unwrap().permissions()
+        );
+    }
+
+    #[test]
+    fn missing_legacy_state_leaves_other_files_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_dir = dir.path().join("data");
+        let destination = dir.path().join("state/state.json");
+        fs::create_dir(&old_dir).unwrap();
+        fs::write(old_dir.join("keep"), "unrelated data").unwrap();
+
+        copy_legacy_state_file(&old_dir.join("state.json"), &destination).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(old_dir.join("keep")).unwrap(),
+            "unrelated data"
+        );
+        assert!(!destination.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn legacy_state_import_never_replaces_existing_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old.json");
+        let destination = dir.path().join("new.json");
+        fs::write(&source, "old state").unwrap();
+        fs::write(&destination, "new state").unwrap();
+
+        copy_legacy_state_file(&source, &destination).unwrap();
+
+        assert_eq!(fs::read_to_string(&source).unwrap(), "old state");
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "new state");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_state_import_preserves_dangling_destination_symlink() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old.json");
+        let destination = dir.path().join("state.json");
+        fs::write(&source, "old state").unwrap();
+        symlink("missing.json", &destination).unwrap();
+
+        copy_legacy_state_file(&source, &destination).unwrap();
+
+        assert_eq!(
+            fs::read_link(&destination).unwrap(),
+            PathBuf::from("missing.json")
+        );
+        assert!(!dir.path().join("missing.json").exists());
+        assert_eq!(fs::read_to_string(&source).unwrap(), "old state");
+    }
 
     #[test]
     fn missing_state_loads_default() {

@@ -159,92 +159,6 @@ mod tests {
 
     use super::*;
 
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    enum Intensity {
-        Normal,
-        Bold,
-        Half,
-    }
-
-    fn rgb_intensity([red, green, blue]: [u16; 3]) -> Intensity {
-        let maximum = red.max(green).max(blue);
-        let gray = red > maximum / 2 && green > maximum / 2 && blue > maximum / 2;
-        if (gray && maximum <= 85) || maximum > 170 {
-            Intensity::Bold
-        } else {
-            Intensity::Normal
-        }
-    }
-
-    fn palette_rgb(index: u16) -> [u16; 3] {
-        match index {
-            0..=15 => [1, 2, 4].map(|bit| {
-                let component = if index & bit != 0 { 170 } else { 0 };
-                component + if index >= 8 { 85 } else { 0 }
-            }),
-            16..=231 => {
-                let index = index - 16;
-                [index / 36, (index / 6) % 6, index % 6].map(|value| value * 255 / 6)
-            }
-            232..=255 => [index * 10 - 2312; 3],
-            _ => panic!("Invalid palette index: {index}"),
-        }
-    }
-
-    // Follows csi_m, rgb_from_256 and rgb_foreground in Linux v6.18 drivers/tty/vt/vt.c.
-    fn console_intensities(output: &[u8]) -> Vec<(char, Intensity)> {
-        let mut chars = std::str::from_utf8(output).unwrap().chars();
-        let mut intensity = Intensity::Normal;
-        let mut printed = Vec::new();
-        while let Some(ch) = chars.next() {
-            if ch != '\x1b' {
-                printed.push((ch, intensity));
-                continue;
-            }
-            assert_eq!(chars.next(), Some('['));
-            let mut params = String::new();
-            let final_byte = loop {
-                match chars.next().unwrap() {
-                    c @ ('0'..='9' | ';') => params.push(c),
-                    c => break c,
-                }
-            };
-            if final_byte != 'm' {
-                continue;
-            }
-            let mut codes = params.split(';').map(|code| {
-                if code.is_empty() {
-                    0
-                } else {
-                    code.parse::<u16>().unwrap()
-                }
-            });
-            while let Some(code) = codes.next() {
-                match code {
-                    0 | 22 => intensity = Intensity::Normal,
-                    1 => intensity = Intensity::Bold,
-                    2 => intensity = Intensity::Half,
-                    38 | 48 => {
-                        let rgb = match codes.next().unwrap() {
-                            5 => palette_rgb(codes.next().unwrap()),
-                            2 => [
-                                codes.next().unwrap(),
-                                codes.next().unwrap(),
-                                codes.next().unwrap(),
-                            ],
-                            mode => panic!("Unexpected colour mode: {mode}"),
-                        };
-                        if code == 38 {
-                            intensity = rgb_intensity(rgb);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        printed
-    }
-
     fn cell(symbol: &'static str, style: Style) -> Cell {
         let mut cell = Cell::new(symbol);
         cell.set_style(style);
@@ -309,14 +223,17 @@ mod tests {
     }
 
     #[test]
-    fn first_plain_cell_resets_inherited_terminal_intensity() {
+    fn first_plain_cell_resets_inherited_terminal_style() {
         for inherited in [b"\x1b[1m", b"\x1b[2m"] {
             let mut output = inherited.to_vec();
             let cells = [cell("a", Style::new())];
             ConsoleBackend::new(&mut output, true)
                 .draw(positioned(&cells))
                 .unwrap();
-            assert_eq!(console_intensities(&output), [('a', Intensity::Normal)]);
+            assert_eq!(
+                output,
+                [inherited.as_slice(), b"\x1b[1;1H\x1b[0ma\x1b[0m"].concat()
+            );
         }
     }
 
@@ -352,26 +269,24 @@ mod tests {
         let cells = [cell("b", Style::new())];
         backend.draw(positioned(&cells)).unwrap();
         assert_eq!(
-            console_intensities(&writer.output),
-            [('A', Intensity::Bold), ('b', Intensity::Normal)]
+            writer.output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;9mA\x1b[1;1H\x1b[0mb\x1b[0m"
         );
     }
 
     #[test]
-    fn rgb_and_palette_colours_apply_intensity_before_modifiers() {
-        for (color, intensity) in [
-            (Color::Indexed(196), Intensity::Bold),
-            (Color::Indexed(88), Intensity::Normal),
-            (Color::Indexed(232), Intensity::Bold),
-            (Color::Indexed(244), Intensity::Normal),
-            (Color::Rgb(255, 0, 0), Intensity::Bold),
-            (Color::Rgb(100, 100, 100), Intensity::Normal),
-        ] {
-            for (modifier, expected) in [
-                (Modifier::empty(), intensity),
-                (Modifier::BOLD, Intensity::Bold),
-                (Modifier::DIM, Intensity::Half),
-                (Modifier::BOLD | Modifier::DIM, Intensity::Half),
+    fn rgb_and_all_palette_colours_precede_modifiers_and_repeated_styles_are_reused() {
+        let palette = (0..=255).map(|index| (Color::Indexed(index), format!("38;5;{index}")));
+        let rgb = [
+            (Color::Rgb(255, 0, 0), "38;2;255;0;0".to_owned()),
+            (Color::Rgb(100, 100, 100), "38;2;100;100;100".to_owned()),
+        ];
+        for (color, color_code) in palette.chain(rgb) {
+            for (modifier, modifier_codes) in [
+                (Modifier::empty(), ""),
+                (Modifier::BOLD, "\x1b[1m"),
+                (Modifier::DIM, "\x1b[2m"),
+                (Modifier::BOLD | Modifier::DIM, "\x1b[1m\x1b[2m"),
             ] {
                 let cells = [
                     cell("a", Style::new().fg(color).add_modifier(modifier)),
@@ -379,8 +294,10 @@ mod tests {
                     cell("c", Style::new().bg(Color::LightRed)),
                 ];
                 assert_eq!(
-                    console_intensities(&draw(&cells, true)),
-                    [('a', expected), ('b', expected), ('c', Intensity::Normal),],
+                    draw(&cells, true),
+                    format!(
+                        "\x1b[1;1H\x1b[0m\x1b[{color_code}m{modifier_codes}ab\x1b[0m\x1b[48;5;9mc\x1b[0m"
+                    ).as_bytes(),
                     "{color:?} {modifier:?}"
                 );
             }
@@ -404,15 +321,14 @@ mod tests {
         let cells = [cell("b", Style::new())];
         backend.draw(positioned(&cells)).unwrap();
         assert_eq!(
-            console_intensities(&output),
-            [('A', Intensity::Half), ('b', Intensity::Normal)]
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;9;48;5;4m\x1b[2mA\x1b[0m\x1b[0m\x1b[1;1H\x1b[0mb\x1b[0m"
         );
         assert_eq!(draw(&[], true), b"\x1b[0m");
-        assert!(output.ends_with(b"\x1b[0m"));
     }
 
     #[test]
-    fn default_foreground_after_light_colour_is_drawn_at_normal_intensity() {
+    fn default_foreground_after_light_colour_gets_a_full_reset() {
         let cells = [
             cell("A", Style::new().fg(Color::LightRed)),
             cell("b", Style::new()),
@@ -421,21 +337,11 @@ mod tests {
 
         let output = draw(&cells, true);
 
-        let text = String::from_utf8(output.clone()).unwrap();
-        assert!(text[text.find('A').unwrap()..text.find('b').unwrap()].contains("\x1b[0m"));
-        assert!(text.contains("bc"));
-        assert_eq!(
-            console_intensities(&output),
-            [
-                ('A', Intensity::Bold),
-                ('b', Intensity::Normal),
-                ('c', Intensity::Normal)
-            ]
-        );
+        assert_eq!(output, b"\x1b[1;1H\x1b[0m\x1b[38;5;9mA\x1b[0mbc\x1b[0m");
     }
 
     #[test]
-    fn default_foreground_with_background_after_light_colour_is_drawn_at_normal_intensity() {
+    fn background_is_reapplied_after_resetting_a_light_foreground_to_default() {
         let cells = [
             cell("A", Style::new().fg(Color::LightRed).bg(Color::Blue)),
             cell("b", Style::new().bg(Color::Blue)),
@@ -444,13 +350,13 @@ mod tests {
         let output = draw(&cells, true);
 
         assert_eq!(
-            console_intensities(&output),
-            [('A', Intensity::Bold), ('b', Intensity::Normal)]
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;9;48;5;4mA\x1b[0m\x1b[48;5;4mb\x1b[0m"
         );
     }
 
     #[test]
-    fn bold_default_foreground_after_colour_stays_bold() {
+    fn bold_is_reapplied_when_foreground_returns_to_default() {
         let bold = Style::new().add_modifier(Modifier::BOLD);
         let cells = [
             cell("A", bold.fg(Color::Red)),
@@ -461,24 +367,27 @@ mod tests {
 
         let output = draw(&cells, true);
 
-        let text = String::from_utf8(output.clone()).unwrap();
-        assert!(text[text.find('C').unwrap()..text.find('d').unwrap()].contains("\x1b[1m"));
-        assert_eq!(console_intensities(&output)[1], ('b', Intensity::Bold));
-        assert_eq!(console_intensities(&output)[3], ('d', Intensity::Bold));
+        assert_eq!(
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;1m\x1b[1mA\x1b[0m\x1b[1mb\x1b[0m\x1b[38;5;9m\x1b[1mC\x1b[0m\x1b[1md\x1b[0m"
+        );
     }
 
     #[test]
-    fn dim_default_foreground_after_light_colour_stays_dim() {
+    fn dim_is_reapplied_when_light_foreground_returns_to_default() {
         let dim = Style::new().add_modifier(Modifier::DIM);
         let cells = [cell("A", dim.fg(Color::LightRed)), cell("b", dim)];
 
         let output = draw(&cells, true);
 
-        assert_eq!(console_intensities(&output)[1], ('b', Intensity::Half));
+        assert_eq!(
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;9m\x1b[2mA\x1b[0m\x1b[2mb\x1b[0m"
+        );
     }
 
     #[test]
-    fn bold_normal_colour_is_bright_whether_or_not_the_colour_changed() {
+    fn bold_is_applied_after_colours_even_when_only_modifiers_change() {
         let bold = Style::new().add_modifier(Modifier::BOLD);
         let cells = [
             cell("a", Style::new().fg(Color::Red)),
@@ -490,18 +399,13 @@ mod tests {
         let output = draw(&cells, true);
 
         assert_eq!(
-            console_intensities(&output),
-            [
-                ('a', Intensity::Normal),
-                ('B', Intensity::Bold),
-                ('C', Intensity::Bold),
-                ('D', Intensity::Bold)
-            ]
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;1ma\x1b[0m\x1b[38;5;1m\x1b[1mB\x1b[0m\x1b[38;5;2m\x1b[1mC\x1b[0m\x1b[38;5;1;48;5;4m\x1b[1mD\x1b[0m"
         );
     }
 
     #[test]
-    fn dim_colour_is_half_bright_whether_or_not_the_colour_changed() {
+    fn dim_is_reused_for_matching_styles_and_reapplied_after_colour_changes() {
         let dim = Style::new().add_modifier(Modifier::DIM);
         let cells = [
             cell("a", dim.fg(Color::Red)),
@@ -512,17 +416,13 @@ mod tests {
         let output = draw(&cells, true);
 
         assert_eq!(
-            console_intensities(&output),
-            [
-                ('a', Intensity::Half),
-                ('b', Intensity::Half),
-                ('c', Intensity::Half)
-            ]
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;1m\x1b[2mab\x1b[0m\x1b[38;5;10m\x1b[2mc\x1b[0m"
         );
     }
 
     #[test]
-    fn light_colour_stays_bright_when_bold_is_removed() {
+    fn light_colour_is_reapplied_after_removing_bold() {
         let cells = [
             cell(
                 "A",
@@ -536,8 +436,8 @@ mod tests {
         let output = draw(&cells, true);
 
         assert_eq!(
-            console_intensities(&output),
-            [('A', Intensity::Bold), ('B', Intensity::Bold)]
+            output,
+            b"\x1b[1;1H\x1b[0m\x1b[38;5;9m\x1b[1mA\x1b[0m\x1b[38;5;9mB\x1b[0m"
         );
     }
 

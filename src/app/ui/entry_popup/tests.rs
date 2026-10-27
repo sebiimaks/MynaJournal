@@ -14,7 +14,7 @@ async fn editing_metadata_preserves_the_full_original_timestamp() {
         .await
         .unwrap();
 
-    let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap());
+    let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
     popup.title_txt = TextArea::new(vec!["Edited title".into()]);
     popup.tags_txt = TextArea::new(vec!["first, second".into()]);
     popup.priority_txt = TextArea::new(vec!["3".into()]);
@@ -37,7 +37,7 @@ async fn changing_the_calendar_date_uses_midnight_on_the_new_day() {
     let mut app = create_default_app();
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
-    let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap());
+    let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
     popup.date_txt = TextArea::new(vec!["23-10-2026".into()]);
     popup.handle_confirm(&mut app).await.unwrap();
     assert_eq!(
@@ -52,7 +52,7 @@ async fn failed_metadata_save_can_retry_without_losing_the_timestamp() {
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     let original = app.get_current_entry().unwrap().clone();
-    let mut popup = EntryPopup::from_entry(&original);
+    let mut popup = EntryPopup::from_entry(&original, &app.settings);
     popup.title_txt = TextArea::new(vec!["Retry title".into()]);
     app.data_provide.set_return_err(true);
     assert!(popup.handle_confirm(&mut app).await.is_err());
@@ -85,14 +85,17 @@ async fn new_entries_keep_auto_title_and_calendar_date_behavior() {
 
 #[test]
 fn encrypted_draft_snapshot_preserves_partial_form_and_tag_picker_without_history() {
-    let mut popup = EntryPopup::from_entry(&Entry::new(
-        7,
-        Utc::now(),
-        "Original".into(),
-        "Body".into(),
-        vec!["private tag".into()],
-        Some(3),
-    ));
+    let mut popup = EntryPopup::from_entry(
+        &Entry::new(
+            7,
+            Utc::now(),
+            "Original".into(),
+            "Body".into(),
+            vec!["private tag".into()],
+            Some(3),
+        ),
+        &Settings::default(),
+    );
     popup.title_txt = TextArea::new(vec!["Unsaved private title".into()]);
     popup.title_txt.move_cursor(CursorMove::Jump(0, 6));
     popup.title_txt.set_yank_text("private clipboard history");
@@ -160,4 +163,135 @@ fn malformed_form_snapshots_fail_without_exposing_their_private_values() {
         .unwrap()
         .replacen("\"version\":1", "\"version\":999", 1);
     assert!(EntryPopup::from_snapshot(&snapshot).is_err());
+}
+
+#[tokio::test]
+async fn hidden_priority_is_not_rendered_or_focused_in_new_and_edit_dialogs() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    app.settings.show_entry_priority = false;
+    for mut popup in [
+        EntryPopup::new_entry(&app.settings),
+        EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings),
+    ] {
+        let priority = popup.priority_txt.lines().to_vec();
+        for code in [KeyCode::Tab, KeyCode::Down] {
+            popup
+                .handle_input(&Input::new(code, KeyModifiers::NONE), &mut app)
+                .await
+                .unwrap();
+        }
+        assert_eq!(popup.active_txt, ActiveText::Tags);
+        popup
+            .handle_input(
+                &Input::new(KeyCode::Char('z'), KeyModifiers::NONE),
+                &mut app,
+            )
+            .await
+            .unwrap();
+        assert!(popup.tags_txt.lines()[0].ends_with('z'));
+        assert_eq!(popup.priority_txt.lines(), priority);
+        popup
+            .handle_input(&Input::new(KeyCode::Up, KeyModifiers::NONE), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(popup.active_txt, ActiveText::Date);
+        for size in [(100, 30), (60, 18)] {
+            let mut terminal = Terminal::new(TestBackend::new(size.0, size.1)).unwrap();
+            terminal
+                .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+                .unwrap();
+            let text: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(text.contains("Title"));
+            assert!(text.contains("Date"));
+            assert!(text.contains("Tags"));
+            assert!(!text.contains("Priority"));
+        }
+    }
+    app.settings.show_entry_priority = true;
+    let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+    for _ in 0..2 {
+        popup
+            .handle_input(&Input::new(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+            .await
+            .unwrap();
+    }
+    assert_eq!(popup.active_txt, ActiveText::Priority);
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains("Priority"));
+}
+
+#[tokio::test]
+async fn hidden_priority_survives_metadata_edits_and_encrypted_form_restoration() {
+    for priority in [None, Some(0), Some(37), Some(u32::MAX)] {
+        let mut app = create_default_app();
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(1);
+        let original = app.get_current_entry().unwrap().clone();
+        app.update_current_entry_attributes(
+            original.title.clone(),
+            original.date,
+            original.tags.clone(),
+            priority,
+        )
+        .await
+        .unwrap();
+        app.settings.show_entry_priority = false;
+        let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+        popup.title_txt = TextArea::new(vec!["Renamed entry".into()]);
+        popup.tags_txt = TextArea::new(vec!["updated tag".into()]);
+        let mut restored = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+        assert!(!restored.show_priority);
+        assert_eq!(
+            restored.handle_confirm(&mut app).await.unwrap(),
+            EntryPopupInputReturn::UpdateCurrentEntry
+        );
+        app.load_entries().await.unwrap();
+        let saved = app.get_current_entry().unwrap();
+        assert_eq!(saved.priority, priority);
+        assert_eq!(saved.title, "Renamed entry");
+        assert_eq!(saved.tags, ["updated tag"]);
+        assert_eq!(saved.date, original.date);
+        assert_eq!(saved.content, original.content);
+    }
+}
+
+#[tokio::test]
+async fn hidden_priority_keeps_new_entry_defaults_and_auto_title() {
+    for priority in [None, Some(0), Some(5)] {
+        let mut app = create_default_app();
+        app.settings =
+            toml::from_str("show_entry_priority = false\nauto_title = 'Daily journal'").unwrap();
+        app.settings.default_journal_priority = priority;
+        let popup = EntryPopup::new_entry(&app.settings);
+        let mut popup = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+        assert!(!popup.show_priority);
+        let EntryPopupInputReturn::AddEntry(id) = popup.handle_confirm(&mut app).await.unwrap()
+        else {
+            panic!("valid new entry was not added");
+        };
+        app.load_entries().await.unwrap();
+        let saved = app.get_entry(id).unwrap();
+        assert_eq!(saved.title, "Daily journal");
+        assert_eq!(saved.priority, priority);
+    }
 }

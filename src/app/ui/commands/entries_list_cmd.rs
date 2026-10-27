@@ -165,7 +165,10 @@ fn edit_current_entry<D: DataProvider>(ui_components: &mut UIComponents, app: &m
     if let Some(entry) = app.get_current_entry() {
         ui_components
             .popup_stack
-            .push(Popup::Entry(Box::new(EntryPopup::from_entry(entry))));
+            .push(Popup::Entry(Box::new(EntryPopup::from_entry(
+                entry,
+                &app.settings,
+            ))));
     }
 }
 
@@ -316,7 +319,7 @@ pub async fn edit_in_external_editor<D: DataProvider>(
     // The event loop cannot enforce idle locking while waiting for another editor.
     app.lock_all_saved_notes();
     if let Some(entry) = app.get_current_entry() {
-        const TEMP_FILENAME: &str = "tui_journal";
+        const TEMP_FILENAME: &str = "myna_journal";
         let temp_extension = &app.settings.external_editor.temp_file_extension;
 
         let mut builder = tempfile::Builder::new();
@@ -332,7 +335,7 @@ pub async fn edit_in_external_editor<D: DataProvider>(
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .map(|runtime_dir| {
-                let app_dir = runtime_dir.join("tui-journal");
+                let app_dir = runtime_dir.join("myna-journal");
 
                 if fs::create_dir(&app_dir).is_ok()
                     || fs::metadata(&app_dir).is_ok_and(|metadata| metadata.is_dir())

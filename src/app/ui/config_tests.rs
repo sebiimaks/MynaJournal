@@ -127,6 +127,32 @@ async fn security_preferences_save_and_apply_without_touching_journals_or_auto_t
     assert_eq!(saved.security, app.settings.security);
 }
 
+#[tokio::test]
+async fn priority_visibility_saves_and_applies_without_touching_entries_or_defaults() {
+    let (dir, mut app, mut ui) =
+        setup("# Keep\ndefault_journal_priority = 3\nauto_title = 'Daily'\n");
+    let original = app.get_current_entry().unwrap().clone();
+    let original_title = app.settings.auto_title.clone();
+    ui.show_config(&app).unwrap();
+    set_setting(
+        &mut ui,
+        &["show_entry_priority"],
+        toml::Value::Boolean(false),
+    );
+    control(&mut ui, &mut app, 's').await;
+    assert!(!app.settings.show_entry_priority);
+    assert_eq!(app.settings.default_journal_priority, Some(3));
+    assert_eq!(app.settings.auto_title, original_title);
+    assert_eq!(app.get_current_entry(), Some(&original));
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("# Keep"));
+    assert!(text.contains("auto_title = 'Daily'"));
+    let reloaded = Settings::new(Some(dir.path().to_path_buf())).await.unwrap();
+    assert!(!reloaded.show_entry_priority);
+    assert_eq!(reloaded.default_journal_priority, Some(3));
+    assert_eq!(reloaded.auto_title, original_title);
+}
+
 async fn press(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>, code: KeyCode) {
     ui.handle_input(&key(code), app).await.unwrap();
 }

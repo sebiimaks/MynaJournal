@@ -18,6 +18,11 @@ mod terminal_session;
 async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
+    if matches!(cli.command, Some(cli::CliCommand::Licenses)) {
+        cli::commands::print_licenses()?;
+        return Ok(());
+    }
+
     let custom_config = cli.config_path.clone();
     let mut settings = Settings::new(custom_config.clone()).await?;
     let launch_details = cli.launch_details();

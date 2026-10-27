@@ -18,7 +18,7 @@ use backend::DataProvider;
 use crate::app::App;
 use crate::{app::keymap::Keymap, settings::DatumVisibility};
 
-use super::{Styles, UICommand};
+use super::{Styles, UICommand, ui_functions::menu_key_style};
 
 const LIST_INNER_MARGIN: usize = 5;
 
@@ -247,19 +247,25 @@ impl EntriesList {
         has_filter: bool,
         styles: &Styles,
     ) {
-        let keys_text: Vec<String> = list_keymaps
-            .iter()
-            .filter(|keymap| keymap.command == UICommand::CreateEntry)
-            .map(|keymap| format!("'{}'", keymap.key))
-            .collect();
-
         let place_holder_text = if self.multi_select_mode {
-            String::from("\nNo entries to select")
+            Line::raw("No entries to select")
         } else {
-            format!("\n Use {} to create new entry ", keys_text.join(","))
+            let mut spans = vec![Span::raw("Use ")];
+            for (index, keymap) in list_keymaps
+                .iter()
+                .filter(|keymap| keymap.command == UICommand::CreateEntry)
+                .enumerate()
+            {
+                if index > 0 {
+                    spans.push(Span::raw(", "));
+                }
+                spans.push(Span::styled(keymap.key.to_string(), menu_key_style()));
+            }
+            spans.push(Span::raw(" to create new journal entry"));
+            Line::from(spans)
         };
 
-        let place_holder = Paragraph::new(place_holder_text)
+        let place_holder = Paragraph::new(vec![Line::default(), place_holder_text])
             .wrap(Wrap { trim: false })
             .alignment(Alignment::Center)
             .block(self.get_list_block(has_filter, None, styles));
@@ -274,10 +280,10 @@ impl EntriesList {
         styles: &Styles,
     ) -> Block<'a> {
         let title = match (self.multi_select_mode, has_filter) {
-            (true, true) => "Journals - Multi-Select - Filtered",
-            (true, false) => "Journals - Multi-Select",
-            (false, true) => "Journals - Filtered",
-            (false, false) => "Journals",
+            (true, true) => "Entries - Multi-Select - Filtered",
+            (true, false) => "Entries - Multi-Select",
+            (false, true) => "Entries - Filtered",
+            (false, false) => "Entries",
         };
 
         let border_style = match (self.is_active, self.multi_select_mode) {

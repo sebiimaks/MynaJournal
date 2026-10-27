@@ -7,7 +7,7 @@ use ratatui::{
 
 use super::Styles;
 
-const ART: &str = include_str!("../../../assets/myna_notes.txt");
+const ART: &str = include_str!("../../../assets/myna_journal.txt");
 
 pub(super) fn render(frame: &mut Frame, area: Rect, styles: &Styles, active: bool) {
     let style = if active {

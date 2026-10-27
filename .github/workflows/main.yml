@@ -44,6 +44,11 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.9.2
 
+      - name: Verify distribution notices
+        run: |
+          python3 scripts/generate-notices.py --check
+          python3 scripts/test-generate-notices.py
+
       - name: Check General
         run: cargo check --locked --verbose
 

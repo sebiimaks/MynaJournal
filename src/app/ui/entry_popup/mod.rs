@@ -33,6 +33,7 @@ pub struct EntryPopup<'a> {
     date_txt: TextArea<'a>,
     tags_txt: TextArea<'a>,
     priority_txt: TextArea<'a>,
+    show_priority: bool,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
     active_txt: ActiveText,
@@ -90,6 +91,7 @@ impl EntryPopup<'_> {
             date_txt,
             tags_txt,
             priority_txt,
+            show_priority: settings.show_entry_priority,
             is_edit_entry: false,
             original_date: None,
             active_txt: ActiveText::Title,
@@ -101,7 +103,7 @@ impl EntryPopup<'_> {
         }
     }
 
-    pub fn from_entry(entry: &Entry) -> Self {
+    pub fn from_entry(entry: &Entry, settings: &Settings) -> Self {
         let mut title_txt = TextArea::new(vec![entry.title.to_owned()]);
         title_txt.move_cursor(CursorMove::End);
 
@@ -127,6 +129,7 @@ impl EntryPopup<'_> {
             date_txt,
             tags_txt,
             priority_txt,
+            show_priority: settings.show_entry_priority,
             is_edit_entry: true,
             original_date: Some(entry.date),
             active_txt: ActiveText::Title,
@@ -144,7 +147,8 @@ impl EntryPopup<'_> {
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
         let bounds = area;
-        let mut area = centered_rect_exact_height(70, 17, area);
+        let height = if self.show_priority { 17 } else { 14 };
+        let mut area = centered_rect_exact_height(70, height, area);
 
         const FOOTER_LEN: u16 = FOOTER_TEXT.len() as u16 + FOOTER_MARGIN;
 
@@ -171,7 +175,7 @@ impl EntryPopup<'_> {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Length(3),
-                Constraint::Length(3),
+                Constraint::Length(if self.show_priority { 3 } else { 0 }),
                 Constraint::Length(3),
                 Constraint::Min(1),
             ])
@@ -315,7 +319,9 @@ impl EntryPopup<'_> {
 
         frame.render_widget(&self.title_txt, chunks[0]);
         frame.render_widget(&self.date_txt, chunks[1]);
-        frame.render_widget(&self.priority_txt, chunks[2]);
+        if self.show_priority {
+            frame.render_widget(&self.priority_txt, chunks[2]);
+        }
         frame.render_widget(&self.tags_txt, chunks[3]);
 
         let footer = Paragraph::new(FOOTER_TEXT)
@@ -407,7 +413,8 @@ impl EntryPopup<'_> {
             KeyCode::Tab | KeyCode::Down => {
                 self.active_txt = match self.active_txt {
                     ActiveText::Title => ActiveText::Date,
-                    ActiveText::Date => ActiveText::Priority,
+                    ActiveText::Date if self.show_priority => ActiveText::Priority,
+                    ActiveText::Date => ActiveText::Tags,
                     ActiveText::Priority => ActiveText::Tags,
                     ActiveText::Tags => ActiveText::Title,
                 };
@@ -418,7 +425,8 @@ impl EntryPopup<'_> {
                     ActiveText::Title => ActiveText::Tags,
                     ActiveText::Date => ActiveText::Title,
                     ActiveText::Priority => ActiveText::Date,
-                    ActiveText::Tags => ActiveText::Priority,
+                    ActiveText::Tags if self.show_priority => ActiveText::Priority,
+                    ActiveText::Tags => ActiveText::Date,
                 };
                 Ok(EntryPopupInputReturn::KeepPopup)
             }

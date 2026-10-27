@@ -45,8 +45,8 @@ pub fn get_default_path() -> anyhow::Result<PathBuf> {
         .map(|base_dir| {
             base_dir
                 .cache_dir()
-                .join("tui-journal")
-                .join("tui-journal.log")
+                .join("myna-journal")
+                .join("myna-journal.log")
         })
         .ok_or_else(|| anyhow!("Log file path couldn't be retrieved"))
 }
@@ -57,5 +57,15 @@ fn u8_to_level(num: u8) -> LevelFilter {
         1 => LevelFilter::Info,
         2 => LevelFilter::Debug,
         _ => LevelFilter::Trace,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn default_log_uses_myna_journal_folder_and_filename() {
+        let path = super::get_default_path().unwrap();
+        assert_eq!(path.file_name().unwrap(), "myna-journal.log");
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "myna-journal");
     }
 }

@@ -1,91 +1,166 @@
-name: release
+name: Release MynaJournal
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
-    if: github.repository == 'AmmarAbouZor/tui-journal'
-    name: build-release
-    runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Asset names are referenced by the Homebrew formula.
-        include:
-          - os: ubuntu-latest
-            container: rust
-            target: x86_64-unknown-linux-gnu
-            asset: linux-gnu
-          - os: ubuntu-24.04-arm
-            container: rust
-            target: aarch64-unknown-linux-gnu
-            asset: linux-arm64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            asset: mac-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset: win
+  debian:
+    if: github.repository == 'sebiimaks/MynaJournal'
+    uses: ./.github/workflows/deb.yml
 
+  macos:
+    if: github.repository == 'sebiimaks/MynaJournal'
+    name: Build macOS Apple Silicon archive
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      LIBGIT2_NO_VENDOR: "0"
+      LIBZ_SYS_STATIC: "1"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Validate tag
-        shell: bash
+      - name: Install audited Rust toolchain
         run: |
-          [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(uname -m)" = arm64
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          rustup default 1.99.1
 
-      - name: Install Latest Rust
+      - name: Set up Python for notice checks
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Validate release version and notices
+        id: version
         run: |
-          rustup update --no-self-update stable
-          rustup default stable
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          test "$GITHUB_REF_NAME" = "v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          python3 scripts/generate-notices.py --check
 
-      # Explicit targets make a runner architecture change fail the build
-      # instead of publishing a binary under the wrong asset name.
-      - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: release-macos-arm64-vendored
 
-      - name: Package
-        if: runner.os != 'Windows'
+      - name: Test and build
         run: |
-          strip target/${{ matrix.target }}/release/tjournal
+          cargo test --locked --features git2/vendored-libgit2
+          cargo build --release --locked --features git2/vendored-libgit2 --target aarch64-apple-darwin
+
+      - name: Package and verify standalone archive
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          binary=target/aarch64-apple-darwin/release/mjournal
+          test "$(lipo -archs "$binary")" = arm64
+          # A release executable must not require Homebrew or a build-machine path.
+          otool -L "$binary" | awk 'NR > 1 { print $1 }' > linked-libraries.txt
+          while IFS= read -r library; do
+            case "$library" in
+              /usr/lib/*|/System/Library/*) ;;
+              *) echo "Unexpected runtime dependency: $library" >&2; exit 1 ;;
+            esac
+          done < linked-libraries.txt
+          stage="$(mktemp -d)"
+          install -m 755 "$binary" "$stage/mjournal"
+          install -m 644 LICENSE ATTRIBUTION.md THIRD_PARTY_NOTICES.txt README.md \
+            CONFIGURATION.md FILE-BACKEND.md THEMES.md NOTE-LOCKING.md "$stage/"
           mkdir -p release
-          tar -C target/${{ matrix.target }}/release -czvf release/tjournal-${{ matrix.asset }}.tar.gz tjournal
-
-      - name: Package Windows
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          mkdir -p release
-          7z -y a release/tjournal-${{ matrix.asset }}.zip target/${{ matrix.target }}/release/tjournal.exe
+          archive="release/myna-journal_${APP_VERSION}_macos-arm64.tar.gz"
+          COPYFILE_DISABLE=1 tar -C "$stage" -czf "$archive" .
+          extracted="$(mktemp -d)"
+          tar -xzf "$archive" -C "$extracted"
+          test "$("$extracted/mjournal" --version)" = "myna-journal $APP_VERSION"
+          "$extracted/mjournal" licenses > archive-licenses.txt
+          grep -F 'Copyright (c) 2023 Ammar Abou Zor' archive-licenses.txt
+          cmp THIRD_PARTY_NOTICES.txt "$extracted/THIRD_PARTY_NOTICES.txt"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.asset }}
-          path: release/*
+          name: myna-journal-macos-arm64
+          path: release/*.tar.gz
           if-no-files-found: error
+          retention-days: 30
 
-  # Publishes once after all builds succeed, so a release never misses assets.
   publish:
-    needs: build
+    name: Publish complete release
+    if: github.repository == 'sebiimaks/MynaJournal'
+    needs: [debian, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@v8
         with:
+          pattern: myna-journal-*
           path: release
           merge-multiple: true
 
-      - name: release
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          tag_name: ${{ github.ref_name }}
-          files: release/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify asset set and prepare release notes
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          test "$RELEASE_TAG" = "v$version"
+          expected=(
+            "myna-journal_${version}-1_amd64.deb"
+            "myna-journal_${version}-1_arm64.deb"
+            "myna-journal_${version}_macos-arm64.tar.gz"
+          )
+          for name in "${expected[@]}"; do test -s "release/$name"; done
+          test "$(find release -type f | wc -l)" -eq "${#expected[@]}"
+          (
+            cd release
+            sha256sum "${expected[@]}" > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          awk -v version="$version" '
+            /^## / { if (found) exit; if ($2 == version) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+
+      # Upload into a draft first. An interrupted upload cannot expose a partial release.
+      - name: Publish source and binaries
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > release-state.txt; then
+            test "$(cat release-state.txt)" = true || {
+              echo "Refusing to replace an already published release." >&2
+              exit 1
+            }
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "MynaJournal ${RELEASE_TAG#v}" --notes-file release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" release/* --clobber
+          find release -type f -printf '%f\n' | LC_ALL=C sort > expected-assets.txt
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort > uploaded-assets.txt
+          cmp expected-assets.txt uploaded-assets.txt
+          gh release edit "$RELEASE_TAG" --draft=false --latest \
+            --title "MynaJournal ${RELEASE_TAG#v}" --notes-file release-notes.md

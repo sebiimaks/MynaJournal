@@ -1,0 +1,20 @@
+{
+  "components": [
+    {
+      "name": "Go and LLVM code referenced by Zig math/compiler runtime",
+      "version": "Zig 0.15.2 source references; LLVM revision 02d85149a05cb1f6dc49f0ba7a2ceca53718ae17",
+      "files": [
+        {
+          "path": "go.txt",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+          "source_url": "https://github.com/golang/go/blob/master/LICENSE"
+        },
+        {
+          "path": "llvm-compiler-rt.txt",
+          "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+          "source_url": "https://github.com/llvm/llvm-project/blob/02d85149a05cb1f6dc49f0ba7a2ceca53718ae17/compiler-rt/LICENSE.TXT"
+        }
+      ]
+    }
+  ]
+}

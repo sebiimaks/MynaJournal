@@ -47,6 +47,7 @@ struct EntrySnapshot {
     date: TextSnapshot,
     tags: TextSnapshot,
     priority: TextSnapshot,
+    show_priority: bool,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
     active: u8,
@@ -61,6 +62,7 @@ impl EntryPopup<'_> {
             date: TextSnapshot::capture(&self.date_txt),
             tags: TextSnapshot::capture(&self.tags_txt),
             priority: TextSnapshot::capture(&self.priority_txt),
+            show_priority: self.show_priority,
             is_edit_entry: self.is_edit_entry,
             original_date: self.original_date,
             active: match self.active_txt {
@@ -93,6 +95,7 @@ impl EntryPopup<'_> {
             date_txt: snapshot.date.restore()?,
             tags_txt: snapshot.tags.restore()?,
             priority_txt: snapshot.priority.restore()?,
+            show_priority: snapshot.show_priority,
             is_edit_entry: snapshot.is_edit_entry,
             original_date: snapshot.original_date,
             active_txt,

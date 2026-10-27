@@ -1,19 +1,21 @@
 # Parser settings.
 cff-version: 1.2.0
-message: Please cite this software using these information.
+message: Please cite MynaJournal using this metadata and acknowledge its TUI-Journal origin.
 
 # Version information.
-date-released: 2026-10-25
-version: 0.18.0+debplus.5
+date-released: 2026-10-27
+version: 0.19.0
 
 # Project information.
-abstract: Your journal app if you live in a terminal
+abstract: A terminal journal and note manager based on TUI-Journal by Ammar Abou Zor and contributors.
 authors:
+  - name: sebiimaks (MynaJournal maintainer)
+    website: https://github.com/sebiimaks
   - alias: AmmarAbouZor
     family-names: Abou Zor
     given-names: Ammar
 license: MIT
-repository-artifact: https://github.com/sebiimaks/tui-journal-deb-plus/releases
-repository-code: https://github.com/sebiimaks/tui-journal-deb-plus
-title: TUI-Journal (Debian Plus fork)
-url: https://github.com/sebiimaks/tui-journal-deb-plus
+repository-artifact: https://github.com/sebiimaks/MynaJournal/releases
+repository-code: https://github.com/sebiimaks/MynaJournal
+title: MynaJournal
+url: https://github.com/sebiimaks/MynaJournal

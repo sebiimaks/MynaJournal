@@ -100,6 +100,7 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         Field::new(General, &["datum_visibility"], "Entry dates", Choice(vec!["show", "hide", "empty_line"]), "Show dates, hide them, or reserve an empty line."),
         Field::new(General, &["scroll_per_page"], "Entries per page step", number(), "Number of entries moved by list page navigation. Zero disables list page movement."),
         Field::new(General, &["history_limit"], "Journal undo limit", number(), "Maximum saved journal changes in each undo/redo stack. Zero disables journal undo. Editor text undo is separate. Restart required.").restart(),
+        Field::new(Entries, &["show_entry_priority"], "Show priority field", Bool, "Show Priority in the entry dialog. Hiding it preserves existing priorities; the new-entry priority default still applies."),
         Field::new(Entries, &["default_journal_priority"], "New-entry priority", Number { min: 0, max: u32::MAX as u64 }, "Default priority for new entries; use default to leave it unset."),
         Field::new(Entries, &["auto_title"], "New-entry title mode", TitleMode, "None, current date, or a literal title. Applies to new entries."),
         Field::new(Entries, &["auto_title"], "Literal title", TitleLiteral, "Editing this value selects literal-title mode. Empty titles are allowed."),

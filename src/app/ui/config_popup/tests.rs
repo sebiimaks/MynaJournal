@@ -66,6 +66,34 @@ fn toggles_are_staged_and_closing_requires_explicit_discard() {
 }
 
 #[test]
+fn priority_visibility_toggle_is_available_in_entries_and_restores_default() {
+    let (_, mut popup) = popup("default_journal_priority = 3\nauto_title = 'Daily'\n", "");
+    select(&mut popup, Tab::Entries, &["show_entry_priority"]);
+    assert_eq!(popup.current_field().label, "Show priority field");
+    assert!(!popup.current_field().restart);
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(true))
+    );
+    assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::Keep);
+    let settings: Settings = toml::from_str(&popup.settings_document.text()).unwrap();
+    assert!(!settings.show_entry_priority);
+    assert_eq!(settings.default_journal_priority, Some(3));
+    assert!(settings.auto_title.is_some());
+    key(&mut popup, KeyCode::Char('d'));
+    assert!(
+        popup
+            .settings_document
+            .value(&["show_entry_priority"])
+            .is_none()
+    );
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(true))
+    );
+}
+
+#[test]
 fn invalid_field_keeps_text_and_previous_document_value() {
     let (_, mut popup) = popup("scroll_per_page = 5\n", "");
     select(&mut popup, Tab::General, &["scroll_per_page"]);

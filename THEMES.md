@@ -1,4 +1,4 @@
-# TUI-Journal Custom Themes
+# MynaJournal Custom Themes
 
 Themes control the app's colors and styles. Every installation includes **Tui
 (default)** as its only built-in theme. The first interactive launch creates the
@@ -26,23 +26,23 @@ The following commands work without launching the interface:
 
 | Command | Behavior |
 | --- | --- |
-| `tjournal theme print-path` | Prints the themes directory without creating it. Alias: `path`. |
-| `tjournal theme print-default` | Prints the original built-in Tui values, even if Tui has been customized or another theme is active. Alias: `default`. |
-| `tjournal theme write-new [NAME...]` | Creates a new theme containing the original Tui defaults. All following words form its name; an empty name uses the automatic custom naming sequence. Existing files and the active theme are unchanged. Alias: `write`. |
+| `mjournal theme print-path` | Prints the themes directory without creating it. Alias: `path`. |
+| `mjournal theme print-default` | Prints the original built-in Tui values, even if Tui has been customized or another theme is active. Alias: `default`. |
+| `mjournal theme write-new [NAME...]` | Creates a new theme containing the original Tui defaults. All following words form its name; an empty name uses the automatic custom naming sequence. Existing files and the active theme are unchanged. Alias: `write`. |
 
 `write-new` replaces the old `write-defaults` command. For example:
 
 ```sh
-tjournal theme write-new Night Blue
+mjournal theme write-new Night Blue
 # Creates themes/theme_night_blue.toml
-tjournal theme write-new
+mjournal theme write-new
 # Creates themes/theme_tui_custom.toml, then theme_tui_custom_01.toml, etc.
 ```
 
 Quoted and unquoted multiword names both work. All arguments after `write-new`
 are treated as name text, including words beginning with `-`; place launch options
 before `theme`. A standalone `--` immediately after `write-new` is the standard
-argument delimiter and is not part of the name. Use `tjournal theme --help` for
+argument delimiter and is not part of the name. Use `mjournal theme --help` for
 command help. These commands do not create `theme_tui.toml`. `write-new` always
 uses the original Tui styles, even when Tui's file has been customized.
 
@@ -50,7 +50,7 @@ Use `--config /path/to/config-directory` before `theme` to use a custom
 configuration directory. The directory itself must already exist. For example:
 
 ```sh
-tjournal --config /path/to/config-directory theme print-path
+mjournal --config /path/to/config-directory theme print-path
 ```
 
 ## Selecting and editing themes

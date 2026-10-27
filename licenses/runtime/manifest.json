@@ -1,0 +1,139 @@
+{
+  "components": [
+    {
+      "name": "Rust standard library (all-platform notice inventory)",
+      "version": "1.99.1",
+      "files": [
+        {
+          "path": "rust-library.txt",
+          "sha256": "90bd55625642ff6b59a197343e2a7082683df0b8784bbe365e2b20b3830eeb8f",
+          "source_url": "https://doc.rust-lang.org/1.99.1/COPYRIGHT-library.html",
+          "original_sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+        },
+        {
+          "path": "rust-Apache-2.0.txt",
+          "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/Apache-2.0.txt"
+        },
+        {
+          "path": "rust-BSD-2-Clause.txt",
+          "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/BSD-2-Clause.txt"
+        },
+        {
+          "path": "rust-CC-BY-SA-4.0.txt",
+          "sha256": "23ee78c8bae49cf08ea2f0c84945c66b987ebe4520881fb51b3dad4fb43d07c2",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/CC-BY-SA-4.0.txt"
+        },
+        {
+          "path": "rust-GCC-exception-3.1.txt",
+          "sha256": "a3966c9410ef94a1efbfa9ec04e9c1994026a70623fbf0885ce36737bfba3b54",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/GCC-exception-3.1.txt"
+        },
+        {
+          "path": "rust-GPL-2.0-only.txt",
+          "sha256": "54b212ba1f97f6948fa5486239ab505dd820b02e50cbfd296b4062c8609a70af",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/GPL-2.0-only.txt"
+        },
+        {
+          "path": "rust-GPL-3.0-or-later.txt",
+          "sha256": "05315fce6c35f79b8a35454828995fa26336f235895ac64557abc028f4ffcea2",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/GPL-3.0-or-later.txt"
+        },
+        {
+          "path": "rust-ISC.txt",
+          "sha256": "0ff61769b238634e042ab759dddfd104a8e69d091e3600ae3410e401a6164381",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/ISC.txt"
+        },
+        {
+          "path": "rust-LLVM-exception.txt",
+          "sha256": "e34c58338bd89d43e709e226610d8f32b3e3c47f4ad9a99a8dc1d4ac7842488e",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/LLVM-exception.txt"
+        },
+        {
+          "path": "rust-MIT.txt",
+          "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/MIT.txt"
+        },
+        {
+          "path": "rust-NCSA.txt",
+          "sha256": "39cb0234065c92b9e6cee3830cbb52b1aa289aa8fe9ba2e66730fec5cf05c630",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/NCSA.txt"
+        },
+        {
+          "path": "rust-OFL-1.1.txt",
+          "sha256": "8eea8287e5876b539670cadb82e99f9a7afddec6f6730811be1daf25d2e9bcfd",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/OFL-1.1.txt"
+        },
+        {
+          "path": "rust-Unicode-3.0.txt",
+          "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443",
+          "source_url": "https://doc.rust-lang.org/1.99.1/licenses/Unicode-3.0.txt"
+        },
+        {
+          "path": "rust-compiler-builtins.txt",
+          "sha256": "ab6eec6caf0fa5775e411c7a8bc6a45c4ef2956b0980b157ab74fc5cd62a928b",
+          "source_url": "https://github.com/rust-lang/rust/tree/1.99.1/library/compiler-builtins/LICENSE.txt"
+        },
+        {
+          "path": "rust-libm.txt",
+          "sha256": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7",
+          "source_url": "https://github.com/rust-lang/rust/tree/1.99.1/library/compiler-builtins/libm/LICENSE.txt"
+        },
+        {
+          "path": "rust-libunwind.txt",
+          "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+          "source_url": "https://github.com/rust-lang/rust/tree/1.99.1/src/llvm-project/libunwind/LICENSE.TXT"
+        }
+      ]
+    },
+    {
+      "name": "Zig runtime and libunwind (static Linux test builds)",
+      "version": "0.15.2",
+      "files": [
+        {
+          "path": "zig.txt",
+          "sha256": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177",
+          "source_url": "https://github.com/ziglang/zig/blob/0.15.2/LICENSE"
+        },
+        {
+          "path": "zig-libunwind.txt",
+          "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+          "source_url": "https://github.com/ziglang/zig/blob/0.15.2/lib/libunwind/LICENSE.TXT"
+        }
+      ]
+    },
+    {
+      "name": "musl (as bundled with Zig; static Linux test builds)",
+      "version": "0.15.2",
+      "files": [
+        {
+          "path": "musl.txt",
+          "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af",
+          "source_url": "https://github.com/ziglang/zig/tree/0.15.2/lib/libc/musl/COPYRIGHT"
+        },
+        {
+          "path": "musl-source-notices.txt",
+          "sha256": "fe06877dcc585abcee8572d68e98442cdd0469cf025c57790d09e7cc6307990b",
+          "source_url": "https://github.com/ziglang/zig/tree/0.15.2/lib/libc/musl"
+        }
+      ]
+    },
+    {
+      "name": "Go and LLVM code referenced by Zig math/compiler runtime",
+      "version": "Zig 0.15.2 source references; LLVM revision 02d85149a05cb1f6dc49f0ba7a2ceca53718ae17",
+      "files": [
+        {
+          "path": "go.txt",
+          "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+          "source_url": "https://github.com/golang/go/blob/master/LICENSE"
+        },
+        {
+          "path": "llvm-compiler-rt.txt",
+          "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+          "source_url": "https://github.com/llvm/llvm-project/blob/02d85149a05cb1f6dc49f0ba7a2ceca53718ae17/compiler-rt/LICENSE.TXT"
+        }
+      ]
+    }
+  ]
+}

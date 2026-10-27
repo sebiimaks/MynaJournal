@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root crate: `tui-journal` (binary `tjournal`) with source in `src/`.
+- Root crate: `myna-journal` (binary `mjournal`) with source in `src/`.
 - UI and app logic live under `src/app/` (state, keymaps, editor, popups, themes).
 - CLI parsing and subcommands are in `src/cli/`.
 - Settings/config handling is in `src/settings/`; startup/logging in `src/main.rs` and `src/logging.rs`.
