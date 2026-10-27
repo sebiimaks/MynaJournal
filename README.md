@@ -54,6 +54,25 @@ If you already use TUI-Journal or an earlier `tjournal` build of this fork, read
 
 ### macOS — Apple Silicon
 
+Install through the [MynaJournal Homebrew tap](https://github.com/sebiimaks/homebrew-tap):
+
+```sh
+brew install sebiimaks/tap/myna-journal
+mjournal
+```
+
+For later updates, close the app, then run `brew update` followed by
+`brew upgrade myna-journal`. Upgrades preserve your journals and settings.
+The tap checks for new stable releases daily; a new release may take up to a day
+to appear. This formula currently supports Apple Silicon Macs only.
+
+If you already installed `mjournal` manually, check `command -v mjournal` after
+installing with Homebrew. An older copy in `~/.local/bin` may take precedence.
+Verify `"$(brew --prefix myna-journal)/bin/mjournal" --version`, then move the old
+executable to a backup location outside your PATH. Keep your data directories.
+
+Alternatively, install the release archive manually:
+
 Download `myna-journal_0.19.0_macos-arm64.tar.gz` and `SHA256SUMS` into the same
 directory. In Terminal, change to that directory and verify the archive:
 
@@ -76,11 +95,11 @@ mjournal --version
 
 Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` if that directory is
 not already on your PATH. The release binary does not require Homebrew libraries.
-This project does not provide a MynaJournal Homebrew formula; the upstream
-TUI-Journal formula installs the upstream app. You can keep that installation while trying MynaJournal, but
-do not run both against the same journal store.
+The upstream TUI-Journal Homebrew formula installs the upstream app. You can keep
+that installation while trying MynaJournal, but do not run both against the same
+journal store.
 
-For later MynaJournal updates, repeat the binary installation with the new
+To update a manual installation, repeat the binary installation with the new
 archive. Replacing the executable does not remove your journals or settings.
 
 ### Debian
