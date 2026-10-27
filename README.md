@@ -29,11 +29,11 @@ base, rather than a claim about every future upstream version:
 | Editing | Editable soft word wrap, with cursor movement and selection following displayed rows while saved text keeps its original line breaks. |
 | Layout | A resizable divider, controlled by keyboard, mouse dragging or configuration, with its position remembered. |
 | Configuration | An in-app `!` panel for settings, storage paths, editor preferences, security, themes and layout. |
-| Themes | A named theme list with activation, editing and creation. Only **Tui (default)** is bundled. |
+| Themes | A named theme list with activation, editing and creation. Only Tui (default) is bundled. |
 | Storage | A fourth backend: one plain-text or Markdown file per entry, with YAML metadata and date/time filenames. JSON, SQLite and VJOURNAL remain available. |
 | Privacy | Password protection for individual entries across all four backends. Titles and dates stay visible; private contents are encrypted. |
 | Entry dialogs | An option to hide the Priority field without removing existing values. New titles are blank unless `auto_title` is configured. |
-| Interface | Myna artwork at startup and in empty note panes, clearer footer commands, an **Entries** heading, and period-separated list dates. |
+| Interface | Clearer footer commands, an Entries heading, and period-separated list dates. |
 | Linux console | Rendering, startup and exit fixes for Debian TTY sessions. |
 | Distribution | The `mjournal` command, `myna-journal` default directories, Debian packages, and accessible bundled license notices. |
 
@@ -83,7 +83,7 @@ do not run both against the same journal store.
 For later MynaJournal updates, repeat the binary installation with the new
 archive. Replacing the executable does not remove your journals or settings.
 
-### Debian 12
+### Debian
 
 Check your architecture:
 
@@ -117,12 +117,12 @@ Those artifacts expire after 30 days; tagged releases provide the release downlo
 ## Upgrading from tjournal
 
 The command changed from `tjournal` to `mjournal`, and default application
-directories changed from `tui-journal` to `myna-journal`. **The app does not
-automatically migrate those directories or merge two stores.**
+directories changed from `tui-journal` to `myna-journal`. The app does not
+automatically migrate those directories or merge two stores.
 
 1. Close the old app and back up its journals and configuration.
 2. Copy each existing old default directory to the corresponding new location
-   below, **only if the destination does not already exist**. Retain the old
+   below, only if the destination does not already exist. Retain the old
    copies until you have checked the new installation. If both locations exist,
    choose which store to use instead of merging or overwriting them.
 3. If your configuration contains explicit paths into an old default directory,
@@ -316,8 +316,7 @@ before distributing builds with changed dependencies or toolchains.
 
 ## Contributions and attribution
 
-Open an issue to discuss a proposed change before implementing it. Review and
-test contributions, including AI-assisted work, before submitting a pull request.
+Open an issue to discuss a proposed change before implementing it.
 Contribution guidelines do not add conditions to the MIT license.
 
 Thanks to Ammar Abou Zor and the TUI-Journal contributors, including Samuel K.
