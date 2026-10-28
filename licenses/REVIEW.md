@@ -74,7 +74,7 @@ project's own Apple SDK licensing qualification is retained in the notice
 bundle; this review does not resolve that upstream legal ambiguity.
 
 The initial corrections are included in MynaJournal 0.19.0. The dependency
-snapshot update described below remains local until a subsequent release.
+snapshot update described below is included in MynaJournal 0.20.0.
 These reviews do **not** retroactively
 change older tags, published source archives, workflow artifacts or existing
 installations; old releases should not be described as having passed this review.

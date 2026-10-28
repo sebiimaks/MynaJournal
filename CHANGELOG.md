@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.20.0 - 2026-10-28
 
 - Keep the highlighted entry, editor and actions consistent when applying or resetting filters
 - Prevent export filenames derived from titles from escaping the selected directory; confirm replacements and protect active journal/configuration files
@@ -16,6 +16,14 @@ All notable changes to this project are documented in this file.
 - Apply the same manifest size limit when creating and restoring backups
 - Add `Ctrl-L` to lock all open protected notes while retaining unsaved encrypted drafts
 - Update terminal/editor dependencies and add CI advisory checks with exact-version, expiring exceptions; retain all four backends and refresh distribution notices
+
+Close the app before upgrading. From Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.20.0-1_amd64.deb`.
+Existing MynaJournal journals and settings are preserved; no migration is needed
+from 0.19.0. See [Backups and recovery](https://github.com/sebiimaks/MynaJournal/blob/v0.20.0/BACKUPS.md)
+for the new local snapshot commands. Protected notes stay encrypted in backups;
+unprotected notes remain plaintext.
 
 ## 0.19.0 - 2026-10-27
 
