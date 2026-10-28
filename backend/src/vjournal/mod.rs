@@ -27,6 +27,16 @@ pub struct VjournalDataProvide {
     /// Internal state.
     state: VjournalState,
     baselines: HashMap<PathBuf, Snapshot>,
+    deleted: HashMap<u32, RestoreMetadata>,
+}
+
+#[derive(Clone)]
+struct RestoreMetadata {
+    path: PathBuf,
+    uid: String,
+    family: Vec<Component>,
+    calendar_shell: Component,
+    permissions: Permissions,
 }
 
 struct EntryLocation {
@@ -44,7 +54,7 @@ struct EntryLocation {
 /// File snapshots reject changes made by another editor until an explicit reload.
 struct VjournalState {
     /// The next available `tui-journal` ID.
-    next_id: u32,
+    next_id: u64,
     /// Map of the journal UID to `tui-journal` ID.
     uid_to_id: HashMap<String, u32>,
     /// Map of `tui-journal` ID to location within the store.
@@ -60,6 +70,7 @@ impl VjournalDataProvide {
             directory,
             state: VjournalState::new(),
             baselines: HashMap::new(),
+            deleted: HashMap::new(),
         }
     }
 }
@@ -120,7 +131,7 @@ impl DataProvider for VjournalDataProvide {
                     continue;
                 }
 
-                let id = self.state.assign_id(&uid, file_path, None);
+                let id = self.state.assign_id(&uid, file_path, None)?;
                 match component_to_entry(sub, id) {
                     Ok(entry) => {
                         entries.push(entry);
@@ -177,6 +188,16 @@ impl DataProvider for VjournalDataProvide {
             return Err(ModifyEntryError::ValidationError(message));
         }
 
+        entry.validate_protection()?;
+        if let Some(metadata) = self.deleted.get(&entry.id).cloned() {
+            return self
+                .restore_native_entry(entry, metadata)
+                .await
+                .map_err(Into::into);
+        }
+        if self.state.uid_to_id.values().any(|id| *id == entry.id) {
+            return Err(anyhow!("Restore metadata is no longer available for this journal").into());
+        }
         let id = Some(entry.id);
         self.write_entry(EntryDraft::from_entry(entry), id).await
     }
@@ -192,6 +213,29 @@ impl DataProvider for VjournalDataProvide {
         let uid = loc.uid.clone();
 
         let mut vcal = self.current_calendar(&file_path)?;
+        let mut calendar_shell = vcal.clone();
+        calendar_shell.subcomponents.clear();
+        let family = vcal
+            .subcomponents
+            .iter()
+            .filter(|component| {
+                is_journal(component) && get_uid(component).as_deref() == Some(&uid)
+            })
+            .cloned()
+            .collect();
+        let metadata = RestoreMetadata {
+            path: file_path.clone(),
+            uid: uid.clone(),
+            family,
+            calendar_shell,
+            permissions: self
+                .baselines
+                .get(&file_path)
+                .context("Missing calendar baseline")?
+                .identity
+                .permissions
+                .clone(),
+        };
 
         vcal.subcomponents.retain(|component| {
             !is_journal(component)
@@ -209,6 +253,7 @@ impl DataProvider for VjournalDataProvide {
         }
 
         self.state.remove_id(entry_id);
+        self.deleted.insert(entry_id, metadata);
 
         Ok(())
     }
@@ -383,6 +428,84 @@ impl DataProvider for VjournalDataProvide {
         Ok(EntriesDTO::new(entries))
     }
 
+    async fn import_entries(&mut self, entries_dto: EntriesDTO) -> anyhow::Result<()> {
+        entries_dto.validate()?;
+        if entries_dto.entries.is_empty() {
+            return Ok(());
+        }
+        let count = u64::try_from(entries_dto.entries.len())?;
+        ensure!(
+            self.state.next_id + count <= u64::from(u32::MAX) + 1,
+            "No journal IDs remain"
+        );
+        let lock = write_lock(&self.directory.join("import.ics"))?;
+        let canonical = fs::canonicalize(&self.directory)?;
+        let directory = File::open(&canonical)?;
+        let mut staged = Vec::new();
+        let mut imported = Vec::new();
+        for (offset, mut draft) in entries_dto.entries.into_iter().enumerate() {
+            if draft.protection.is_none() {
+                draft.date = date_at_utc_midnight(draft.date.date_naive());
+            }
+            draft.priority = normalize_entry_priority(draft.priority)?;
+            let uid = generate_uid();
+            let path = self.directory.join(format!("{uid}.ics"));
+            let calendar = build_vcalendar(apply_entry_to_component(&draft, &uid, None));
+            let bytes = write_component(&calendar).into_bytes();
+            let file = crate::persistence::StagedFile::new(path.clone(), &bytes)?;
+            let snapshot = Snapshot {
+                bytes,
+                identity: FileIdentity::new(&file.temporary.as_file().metadata()?),
+            };
+            staged.push(file);
+            imported.push((
+                uid,
+                path,
+                snapshot,
+                (self.state.next_id + offset as u64) as u32,
+            ));
+        }
+        crate::persistence::publish_new_files(staged, || {
+            ensure!(
+                fs::canonicalize(&self.directory)? == canonical,
+                "Import directory changed"
+            );
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let current = fs::metadata(&canonical)?;
+                let held = directory.metadata()?;
+                ensure!(
+                    current.dev() == held.dev() && current.ino() == held.ino(),
+                    "Import directory was replaced"
+                );
+            }
+            #[cfg(not(unix))]
+            ensure!(
+                fs::metadata(&canonical)?.created().ok() == directory.metadata()?.created().ok(),
+                "Import directory was replaced"
+            );
+            let current_lock = fs::symlink_metadata(canonical.join(".tui-journal.lock"))?;
+            ensure!(
+                current_lock.is_file()
+                    && FileIdentity::new(&current_lock) == FileIdentity::new(&lock.metadata()?),
+                "Calendar lock was replaced"
+            );
+            Ok(())
+        })?;
+        for (uid, path, snapshot, id) in imported {
+            self.state.assign_id(&uid, &path, Some(id))?;
+            self.baselines.insert(path, snapshot);
+        }
+        sync_parent(&self.directory.join("import.ics"));
+        Ok(())
+    }
+
+    fn retain_restore_metadata(&mut self, ids: &[u32]) {
+        let ids: HashSet<_> = ids.iter().copied().collect();
+        self.deleted.retain(|id, _| ids.contains(id));
+    }
+
     async fn assign_priority_to_entries(&mut self, priority: u32) -> anyhow::Result<()> {
         let Some(priority) = normalize_entry_priority(Some(priority))? else {
             return Ok(());
@@ -402,6 +525,76 @@ impl DataProvider for VjournalDataProvide {
 }
 
 impl VjournalDataProvide {
+    async fn restore_native_entry(
+        &mut self,
+        mut entry: Entry,
+        metadata: RestoreMetadata,
+    ) -> anyhow::Result<Entry> {
+        for path in scan_ics_files(&self.directory).await? {
+            if path == metadata.path {
+                continue;
+            }
+            let calendar = Snapshot::read(&path)?.calendar()?;
+            validate_family_uids(&calendar)?;
+            for component in calendar.subcomponents.iter().filter(|component| {
+                is_journal(component) && get_uid(component).as_deref() == Some(&metadata.uid)
+            }) {
+                ensure!(
+                    entry.protection.is_none()
+                        && component.name == "VJOURNAL"
+                        && !component.get_all("RECURRENCE-ID").is_empty(),
+                    "A conflicting journal family already exists; reload before restoring"
+                );
+            }
+        }
+        let mut calendar = if self.baselines.contains_key(&metadata.path) {
+            self.current_calendar(&metadata.path)?
+        } else {
+            check_destination(&metadata.path, None)?;
+            metadata.calendar_shell
+        };
+        ensure!(
+            !calendar.subcomponents.iter().any(|component| {
+                is_journal(component) && get_uid(component).as_deref() == Some(&metadata.uid)
+            }),
+            "Journal recurrence family already exists; reload before restoring"
+        );
+        let mut family = metadata.family;
+        let master = family
+            .iter_mut()
+            .find(|component| component.get_all("RECURRENCE-ID").is_empty())
+            .context("Deleted calendar has no recurrence master")?;
+        let previous = component_to_entry(master, entry.id)?;
+        ensure!(
+            previous.protection.is_some() == entry.protection.is_some(),
+            "Restore cannot change a note's protection state"
+        );
+        entry.priority = normalize_entry_priority(entry.priority)?;
+        if entry.protection.is_none() {
+            entry.date = date_at_utc_midnight(entry.date.date_naive());
+        }
+        if entry != previous {
+            let draft = EntryDraft::from_entry(entry.clone());
+            *master = if entry.protection.is_some() {
+                apply_entry_to_component(&draft, &metadata.uid, None)
+            } else {
+                restore_entry_to_component(&draft, &metadata.uid, master.clone())?
+            };
+        }
+        calendar.subcomponents.extend(family);
+        let snapshot = write_vcalendar_file(
+            &metadata.path,
+            &calendar,
+            self.baselines.get(&metadata.path),
+            Some(&metadata.permissions),
+        )?;
+        self.baselines.insert(metadata.path.clone(), snapshot);
+        self.state
+            .assign_id(&metadata.uid, &metadata.path, Some(entry.id))?;
+        self.deleted.remove(&entry.id);
+        Ok(entry)
+    }
+
     fn current_calendar(&self, path: &Path) -> anyhow::Result<Component> {
         let baseline = self
             .baselines
@@ -426,7 +619,7 @@ impl VjournalDataProvide {
         } else {
             None
         };
-        let snapshot = write_vcalendar_file(path, calendar, baseline)?;
+        let snapshot = write_vcalendar_file(path, calendar, baseline, None)?;
         self.baselines.insert(path.to_owned(), snapshot);
         Ok(())
     }
@@ -469,9 +662,12 @@ impl VjournalDataProvide {
         let file_name = format!("{uid}.ics");
         let file_path = self.directory.join(&file_name);
 
+        if id.is_none() {
+            u32::try_from(self.state.next_id).context("No journal IDs remain")?;
+        }
         self.save_calendar(&file_path, &vcal, false)?;
 
-        let id = self.state.assign_id(&uid, &file_path, id);
+        let id = self.state.assign_id(&uid, &file_path, id)?;
 
         Ok(Entry::from_draft(id, entry))
     }
@@ -513,6 +709,7 @@ fn write_vcalendar_file(
     path: &Path,
     vcal: &Component,
     baseline: Option<&Snapshot>,
+    restored_permissions: Option<&Permissions>,
 ) -> anyhow::Result<Snapshot> {
     let _lock = write_lock(path)?;
     check_destination(path, baseline)?;
@@ -522,10 +719,11 @@ fn write_vcalendar_file(
         .suffix(".tmp")
         .tempfile_in(path.parent().context("Missing calendar directory")?)?;
     temporary.write_all(content.as_bytes())?;
-    if let Some(baseline) = baseline {
-        temporary
-            .as_file()
-            .set_permissions(baseline.identity.permissions.clone())?;
+    if let Some(permissions) = baseline
+        .map(|snapshot| &snapshot.identity.permissions)
+        .or(restored_permissions)
+    {
+        temporary.as_file().set_permissions(permissions.clone())?;
     }
     temporary.as_file().sync_all()?;
     let snapshot = Snapshot {
@@ -622,7 +820,7 @@ fn check_destination(path: &Path, baseline: Option<&Snapshot>) -> anyhow::Result
 
 fn write_lock(path: &Path) -> anyhow::Result<File> {
     let parent = path.parent().context("Missing calendar directory")?;
-    fs::create_dir_all(parent)?;
+    crate::persistence::create_private_dirs(parent)?;
     let path = parent.join(".tui-journal.lock");
     if let Ok(metadata) = fs::symlink_metadata(&path) {
         ensure!(metadata.is_file(), "Calendar lock must be a regular file");
@@ -680,27 +878,31 @@ impl VjournalState {
 
     /// Return the existing id for `uid`, or assign a fresh one.  Either way
     /// the id-to-location mapping is updated to point at `file_path`.
-    fn assign_id(&mut self, uid: &str, file_path: &Path, given_id: Option<u32>) -> u32 {
-        let id = *self.uid_to_id.entry(uid.to_string()).or_insert_with(|| {
-            given_id.unwrap_or_else(|| {
-                let fresh_id = self.next_id;
-                self.next_id += 1;
-                fresh_id
-            })
-        });
-        self.next_id = self.next_id.max(id + 1);
-
+    fn assign_id(
+        &mut self,
+        uid: &str,
+        file_path: &Path,
+        given_id: Option<u32>,
+    ) -> anyhow::Result<u32> {
+        let id = if let Some(id) = self.uid_to_id.get(uid) {
+            *id
+        } else {
+            let id = given_id
+                .map(Ok)
+                .unwrap_or_else(|| u32::try_from(self.next_id).context("No journal IDs remain"))?;
+            self.uid_to_id.insert(uid.to_owned(), id);
+            id
+        };
+        self.next_id = self.next_id.max(u64::from(id) + 1);
         let location = EntryLocation {
             file_path: file_path.to_path_buf(),
             uid: uid.to_string(),
         };
         self.id_to_location.insert(id, location);
-        id
+        Ok(id)
     }
 
     fn remove_id(&mut self, id: u32) {
-        if let Some(loc) = self.id_to_location.remove(&id) {
-            self.uid_to_id.remove(&loc.uid);
-        }
+        self.id_to_location.remove(&id);
     }
 }

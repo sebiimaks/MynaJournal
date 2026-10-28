@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use backend::DataProvider;
 pub use themes::Styles;
 
@@ -54,6 +52,8 @@ mod security_handlers;
 mod security_popup;
 #[cfg(test)]
 mod security_tests;
+#[cfg(test)]
+mod selection_tests;
 mod sort_popup;
 pub mod themes;
 pub mod ui_functions;
@@ -103,6 +103,7 @@ pub struct UIComponents<'a> {
     startup_artwork_visible: bool,
     privacy_shield: bool,
     shielded_popups: Vec<Popup<'a>>,
+    lock_all_requested: bool,
 }
 
 impl UIComponents<'_> {
@@ -134,11 +135,16 @@ impl UIComponents<'_> {
             startup_artwork_visible: false,
             privacy_shield: false,
             shielded_popups: Vec::new(),
+            lock_all_requested: false,
         }
     }
 
     pub fn has_popup(&self) -> bool {
         !self.popup_stack.is_empty()
+    }
+
+    pub fn take_lock_all_request(&mut self) -> bool {
+        std::mem::take(&mut self.lock_all_requested)
     }
 
     pub fn set_active_theme(&mut self, id: Option<String>) {
@@ -161,10 +167,9 @@ impl UIComponents<'_> {
             app.lock_note(previous);
         }
         app.current_entry_id = entry_id;
-        if let Some(id) = entry_id {
-            let entry_index = app.get_active_entries().position(|entry| entry.id == id);
-            self.entries_list.state.select(entry_index);
-        }
+        let entry_index =
+            entry_id.and_then(|id| app.get_active_entries().position(|entry| entry.id == id));
+        self.entries_list.state.select(entry_index);
 
         self.editor.set_current_entry(entry_id, app);
     }
@@ -285,6 +290,13 @@ impl UIComponents<'_> {
         input: &Input,
         app: &mut App<D>,
     ) -> Result<HandleInputReturnType> {
+        if self
+            .global_keymaps
+            .iter()
+            .any(|keymap| keymap.key == *input && keymap.command == UICommand::LockAllNotes)
+        {
+            return UICommand::LockAllNotes.execute(self, app).await;
+        }
         if self.privacy_shield {
             if matches!(self.popup_stack.last(), Some(Popup::Security(_))) {
                 return self.handle_security_input(input, app).await;
@@ -418,8 +430,8 @@ impl UIComponents<'_> {
                             PopupReturn::Cancel => {
                                 self.popup_stack.pop().expect("popup stack isn't empty");
                             }
-                            PopupReturn::Apply((path, entry_id)) => {
-                                self.handle_export_popup_return(path, entry_id, app).await;
+                            PopupReturn::Apply((target, entry_id)) => {
+                                self.handle_export_popup_return(target, entry_id, app).await;
                             }
                         };
                     }
@@ -432,12 +444,7 @@ impl UIComponents<'_> {
                             app.apply_filter(filter);
                             self.popup_stack.pop().expect("popup stack isn't empty");
 
-                            // This fixes the bug: Entry will not be highlighted when the result of the filter is one entry only
-                            if app.get_active_entries().count() == 1 {
-                                let entry_id =
-                                    app.get_active_entries().next().map(|entry| entry.id);
-                                self.set_current_entry(entry_id, app);
-                            }
+                            self.update_current_entry(app);
                         }
                     },
                     Popup::FuzzFind(fuzz_find) => match fuzz_find.handle_input(input) {
@@ -475,19 +482,19 @@ impl UIComponents<'_> {
 
     async fn handle_export_popup_return<D: DataProvider>(
         &mut self,
-        path: PathBuf,
+        target: super::export::ExportTarget,
         entry_id: Option<u32>,
         app: &mut App<D>,
     ) {
-        let (result, confirmation_msg) = if self.entries_list.multi_select_mode {
-            let result = app.export_entries(path.clone()).await;
-            let msg = format!("Journal(s)  exported to file {}", path.display());
+        let path = target.path().to_path_buf();
+        let (result, confirmation_msg) = if let Some(entry_id) = entry_id {
+            let result = app.export_entry_content(entry_id, target).await;
+            let msg = format!("Journal content exported to file {}", path.display());
 
             (result, msg)
         } else {
-            let entry_id = entry_id.expect("entry id must have a value in normal mode");
-            let result = app.export_entry_content(entry_id, path.clone()).await;
-            let msg = format!("Journal content exported to file {}", path.display());
+            let result = app.export_entries(target).await;
+            let msg = format!("Journal(s)  exported to file {}", path.display());
 
             (result, msg)
         };
@@ -571,6 +578,11 @@ impl UIComponents<'_> {
         if app.get_current_entry().is_none() {
             let first_entry = app.get_active_entries().next().map(|entry| entry.id);
             self.set_current_entry(first_entry, app);
+        } else {
+            let selected = app
+                .get_active_entries()
+                .position(|entry| Some(entry.id) == app.current_entry_id);
+            self.entries_list.state.select(selected);
         }
     }
 }

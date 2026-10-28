@@ -22,9 +22,10 @@ impl Drop for TextSnapshot {
 
 impl TextSnapshot {
     fn capture(text: &TextArea<'_>) -> Self {
+        let tui_textarea::DataCursor(row, column) = text.cursor();
         Self {
             lines: text.lines().to_vec(),
-            cursor: text.cursor(),
+            cursor: (row, column),
         }
     }
 

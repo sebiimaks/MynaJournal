@@ -35,7 +35,10 @@ pub async fn run<B: Backend>(
     styles: Styles,
     pending_cmd: Option<PendingCliCommand>,
     config_context: ConfigContext,
-) -> Result<()> {
+) -> Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     match settings.backend_type.unwrap_or_default() {
         #[cfg(feature = "json")]
         BackendType::Json => {
@@ -146,6 +149,7 @@ async fn run_intern<B, D>(
 ) -> anyhow::Result<()>
 where
     B: Backend,
+    B::Error: Send + Sync + 'static,
     D: DataProvider,
 {
     // Some terminals keep the old display when entering the alternate screen.
@@ -203,6 +207,9 @@ where
         }
         match handle_input(event, &mut app, &mut ui_components).await {
             Ok(result) => {
+                if ui_components.take_lock_all_request() {
+                    auto_lock(terminal, &mut app, &mut ui_components).await?;
+                }
                 match result {
                     HandleInputReturnType::Handled => {
                         ui_components.update_current_entry(&mut app);
@@ -238,7 +245,10 @@ async fn exec_pending_cmd<B: Backend, D: DataProvider>(
     terminal: &mut Terminal<B>,
     app: &mut App<D>,
     pending_cmd: PendingCliCommand,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     match pending_cmd {
         PendingCliCommand::ImportJournals(file_path) => {
             terminal.draw(|f| render_message_centered(f, "Importing journals..."))?;
@@ -258,7 +268,10 @@ async fn auto_lock<B: Backend, D: DataProvider>(
     terminal: &mut Terminal<B>,
     app: &mut App<D>,
     ui: &mut UIComponents<'_>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     ui.hide_for_auto_lock();
     terminal.clear()?;
     draw_ui(terminal, app, ui)?;
@@ -272,7 +285,10 @@ fn draw_ui<B: Backend, D: DataProvider>(
     terminal: &mut Terminal<B>,
     app: &mut App<D>,
     ui_components: &mut UIComponents,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     if app.redraw_after_restore {
         app.redraw_after_restore = false;
         // Apply hide cursor again after closing the external editor
@@ -350,50 +366,116 @@ mod tests {
     }
 
     impl Backend for StartupBackend {
+        type Error = io::Error;
+
         fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
         where
             I: Iterator<Item = (u16, u16, &'a Cell)>,
         {
-            self.screen.draw(content)?;
+            self.screen.draw(content).unwrap();
             self.frames.push(self.screen.buffer().clone());
             // Stop before startup reaches the real terminal's event stream.
             Err(io::Error::other("stopped after frame"))
         }
 
         fn hide_cursor(&mut self) -> io::Result<()> {
-            self.screen.hide_cursor()
+            self.screen.hide_cursor().unwrap();
+            Ok(())
         }
 
         fn show_cursor(&mut self) -> io::Result<()> {
-            self.screen.show_cursor()
+            self.screen.show_cursor().unwrap();
+            Ok(())
         }
 
         fn get_cursor_position(&mut self) -> io::Result<Position> {
-            self.screen.get_cursor_position()
+            Ok(self.screen.get_cursor_position().unwrap())
         }
 
         fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> io::Result<()> {
-            self.screen.set_cursor_position(position)
+            self.screen.set_cursor_position(position).unwrap();
+            Ok(())
         }
 
         fn clear(&mut self) -> io::Result<()> {
             if self.fail_clear {
                 return Err(io::Error::other("clearing screen failed"));
             }
-            self.screen.clear()
+            self.screen.clear().unwrap();
+            Ok(())
+        }
+
+        fn clear_region(&mut self, clear_type: ratatui::backend::ClearType) -> io::Result<()> {
+            if self.fail_clear {
+                return Err(io::Error::other("clearing screen failed"));
+            }
+            self.screen.clear_region(clear_type).unwrap();
+            Ok(())
         }
 
         fn size(&self) -> io::Result<Size> {
-            self.screen.size()
+            Ok(self.screen.size().unwrap())
         }
 
         fn window_size(&mut self) -> io::Result<WindowSize> {
-            self.screen.window_size()
+            Ok(self.screen.window_size().unwrap())
         }
 
         fn flush(&mut self) -> io::Result<()> {
-            self.screen.flush()
+            self.screen.flush().unwrap();
+            Ok(())
         }
+    }
+
+    #[tokio::test]
+    async fn lock_all_hides_private_content_before_sealing_drafts() {
+        use crate::app::ui::UICommand;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = crate::app::test::create_default_app();
+        app.load_entries().await.unwrap();
+        app.protect_note(
+            0,
+            "test passphrase".to_owned().into(),
+            "Secret note body".into(),
+        )
+        .await
+        .unwrap();
+        app.unlock_note(0, "test passphrase".to_owned().into())
+            .await
+            .unwrap();
+        let mut ui = UIComponents::new(Styles::default());
+        ui.set_current_entry(Some(0), &mut app);
+        UICommand::StartEditEntryContent
+            .execute(&mut ui, &mut app)
+            .await
+            .unwrap();
+        handle_input(
+            Event::Key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)),
+            &mut app,
+            &mut ui,
+        )
+        .await
+        .unwrap();
+        assert!(ui.has_unsaved());
+        handle_input(
+            Event::Key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL)),
+            &mut app,
+            &mut ui,
+        )
+        .await
+        .unwrap();
+        assert!(ui.take_lock_all_request());
+        let mut terminal = Terminal::new(StartupBackend::dirty(100, 30)).unwrap();
+        assert!(auto_lock(&mut terminal, &mut app, &mut ui).await.is_err());
+        assert!(ui.is_privacy_shielded());
+        assert!(!app.is_locked(0));
+        assert!(ui.has_unsaved());
+        assert!(!app.has_sealed_drafts());
+        let frame = terminal.backend().frames.last().unwrap();
+        let text: String = frame.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(!text.contains("Secret note body"));
+        assert!(!text.contains('~'));
     }
 
     async fn startup(

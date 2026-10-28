@@ -1,9 +1,11 @@
-# Licensing and attribution review — 27 October 2026
+# Licensing and attribution review — 28 October 2026
 
 This review covers the current MynaJournal working tree, its inherited source
-and assets, the 422 external packages in `Cargo.lock`, and the Mac/Debian/static
-Linux distribution paths. It includes the uncommitted MynaJournal rename,
-artwork, menu and Priority changes. It is a technical compliance review, not a
+and assets, the 501 external packages in `Cargo.lock`, and the Mac/Debian/static
+Linux distribution paths. The initial review covered the MynaJournal rename,
+artwork, menu and Priority changes released in 0.19.0. This update covers the
+subsequent dependency changes in the local security and reliability work. It is
+a technical compliance review, not a
 legal opinion or a guarantee about third parties' underlying rights.
 
 ## Upstream permission and attribution
@@ -19,7 +21,10 @@ additional condition in the MIT license.
 
 [ATTRIBUTION.md](../ATTRIBUTION.md) records the original project, inherited
 contributors, adapted library code and assets. README dependency credits now
-name the actual editor library, tui-textarea. Citation metadata distinguishes
+name the actual editor library, ratatui-textarea. Its full MIT notice retains
+rhysd's copyright; the original tui-textarea 0.7.0 notice is also explicitly
+retained for the application's adapted clipboard mappings. Citation metadata
+distinguishes
 the fork maintainer from its upstream origin, and CODEOWNERS names the fork's
 maintainer without implying upstream responsibility.
 
@@ -68,7 +73,9 @@ gap. Dependency and runtime licenses retain their separate terms. The objc2
 project's own Apple SDK licensing qualification is retained in the notice
 bundle; this review does not resolve that upstream legal ambiguity.
 
-These corrections are included in MynaJournal 0.19.0. They do **not** retroactively
+The initial corrections are included in MynaJournal 0.19.0. The dependency
+snapshot update described below remains local until a subsequent release.
+These reviews do **not** retroactively
 change older tags, published source archives, workflow artifacts or existing
 installations; old releases should not be described as having passed this review.
 Following the maintainer's subsequent release request, 0.19.0 includes Mac and
@@ -79,7 +86,74 @@ Runtime coverage is version-specific: Rust 1.99.1 and Zig 0.15.2 where used.
 See [the maintenance procedure](README.md) before redistributing builds made
 with different toolchains, modified dependencies or additional native code.
 
-## Validation
+## Dependency snapshot update — 28 October 2026
+
+The locked inventory now contains 501 external packages: 91 package versions
+were added or updated and 12 former versions were removed. Every changed cached
+crate archive was checked against its SHA-256 in `Cargo.lock`. Notices and
+source-header excerpts were collected from those verified archives, including
+nested files. All 410 unchanged package records, the complete `option-ext`
+source appendix, and the native-runtime files remain unchanged.
+
+The update retains the following notices that package metadata or root licence
+files alone do not fully capture:
+
+- `lab`'s SIMD math includes the Zlib notices of Giovanni Garberoglio and
+  Julien Pommier. `minimal-lexical` retains Go's BSD-3-Clause notice for its
+  optional Bellerophon implementation, Sun's notices for its optional math
+  routines, and the provenance of its fast-float-derived implementation.
+- `termina` retains its README's Crossterm and TermWiz MIT grants and the
+  Alice Maz/rust-base64 notice embedded in its base64 implementation. Additional
+  source copyright notices are retained for `atomic`, `document-features`,
+  `euclid`, `memmem`, `memoffset`, `pest` and related crates, among others.
+- `termwiz` contains Unicode 16 tables, widecharwidth-derived code under CC0,
+  and a transformed Nerd Fonts codepoint-name mapping under its source-code
+  MIT grant. The original source headers, Unicode licence, widecharwidth
+  dedication, CC0 legal text, and complete Nerd Fonts licensing file are kept.
+  This mapping does not bundle font files. The font terms in the complete
+  upstream licence remain verbatim; `deltae`'s published documentation does
+  contain fonts, whose separate OFL notices are also retained conservatively.
+- `compact_str` retains provenance for its Rust-derived code and Unicode
+  tables; the native-runtime section already supplies Rust's full notices.
+  `ucd-trie`'s generated Unicode test-data notice is included, even though that
+  module is compiled only for that dependency's own tests. The `ratatui-widgets`
+  no-std math polyfills retain their micromath attribution and MIT grant.
+- `finl_unicode` declares `Unicode-DFS-2016` in its package metadata, but its
+  published `LICENSE-UNICODE` is explicitly Unicode License V3. The declared
+  metadata is preserved; the selected additional licence records `Unicode-3.0`.
+  Both its licence's 1991–2023 copyright and its README's 1991–2025 copyright
+  are retained without rewriting either. `wezterm-bidi`'s combined MIT and
+  Unicode-DFS-2016 notice remains under those stated terms.
+
+`ratatui-termina`, `vtparse` and `wezterm-input-types` omit their full licence
+files from the published crates. Their upstream files were retrieved at the
+exact commits recorded in each crate's `.cargo_vcs_info.json`, with immutable
+source URLs and text hashes in the snapshot. The complete WezTerm root notice
+mentions fonts shipped by WezTerm itself; those references do not mean that
+these smaller crates or MynaJournal include the WezTerm font distribution.
+
+Some input provenance cannot be reconstructed exactly from the published
+sources. Termwiz's generator downloads Nerd Fonts' `master/glyphnames.json`
+without recording its revision. Its widecharwidth header records generator
+object hashes and Unicode input hashes, but not a licence revision. The
+fast-float-rust and micromath adaptation references likewise omit the original
+revision. Their licence files were retained from immutable upstream commits
+resolved during this review, with the original adaptation references kept.
+These are licence snapshots, not assertions that the exact original input
+revision has been identified. No source code was changed or newly relicensed
+as part of the notice update.
+
+### Validation of this update
+
+- All 91 changed crate archives match their locked checksums.
+- The offline generator accepts all 501 package records, every notice hash,
+  the complete MPL source appendix, and unchanged native-runtime hashes.
+- All seven notice-integrity tests pass.
+- The CLI regression verifies that the executable prints the complete embedded
+  notices even with invalid configuration, without creating settings, logs,
+  themes or journal files.
+
+## Initial release validation — 27 October 2026
 
 - 551 Rust tests and seven notice-integrity tests passed.
 - Clippy with warnings denied, formatting, and all four individual-backend

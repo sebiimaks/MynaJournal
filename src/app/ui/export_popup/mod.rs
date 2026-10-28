@@ -10,11 +10,11 @@ use ratatui::{
 };
 use tui_textarea::{CursorMove, TextArea};
 
-use crate::app::{App, keymap::Input};
+use crate::app::{App, export::ExportTarget, keymap::Input};
 
 use super::{PopupReturn, Styles, ui_functions::centered_rect_exact_height};
 
-type ExportPopupInputReturn = PopupReturn<(PathBuf, Option<u32>)>;
+type ExportPopupInputReturn = PopupReturn<(ExportTarget, Option<u32>)>;
 
 const FOOTER_TEXT: &str = "Enter: confirm | Esc or <Ctrl-c>: Cancel";
 const FOOTER_MARGINE: u16 = 8;
@@ -25,6 +25,7 @@ pub struct ExportPopup<'a> {
     path_err_msg: String,
     entry_id: Option<u32>,
     paragraph_text: String,
+    replacement: Option<ExportTarget>,
 }
 
 impl ExportPopup<'_> {
@@ -38,9 +39,8 @@ impl ExportPopup<'_> {
             env::current_dir()?
         };
 
-        // Add filename if it's not already defined
-        if default_path.extension().is_none() {
-            default_path.push(format!("{}.txt", entry.title.as_str()));
+        if default_path.is_dir() || has_trailing_separator(&default_path) {
+            default_path.push(suggested_filename(entry));
         }
 
         let mut path_txt = TextArea::new(vec![default_path.to_string_lossy().to_string()]);
@@ -53,6 +53,7 @@ impl ExportPopup<'_> {
             path_err_msg: String::default(),
             entry_id: Some(entry.id),
             paragraph_text,
+            replacement: None,
         };
 
         export_popup.validate_path();
@@ -67,8 +68,7 @@ impl ExportPopup<'_> {
             env::current_dir()?
         };
 
-        // Add filename if it's not already defined
-        if default_path.extension().is_none() {
+        if default_path.is_dir() || has_trailing_separator(&default_path) {
             default_path.push(DEFAULT_FILE_NAME);
         }
 
@@ -85,6 +85,7 @@ impl ExportPopup<'_> {
             path_err_msg: String::default(),
             entry_id: None,
             paragraph_text,
+            replacement: None,
         };
 
         export_popup.validate_path();
@@ -146,8 +147,12 @@ impl ExportPopup<'_> {
             ])
             .split(area);
 
-        let journal_paragraph =
-            Paragraph::new(self.paragraph_text.as_str()).wrap(Wrap { trim: false });
+        let message = if self.replacement.is_some() {
+            "This file already exists. Replace it?"
+        } else {
+            self.paragraph_text.as_str()
+        };
+        let journal_paragraph = Paragraph::new(message).wrap(Wrap { trim: false });
         frame.render_widget(journal_paragraph, chunks[0]);
 
         if self.path_err_msg.is_empty() {
@@ -178,7 +183,12 @@ impl ExportPopup<'_> {
 
         frame.render_widget(&self.path_txt, chunks[1]);
 
-        let footer = Paragraph::new(FOOTER_TEXT)
+        let footer_text = if self.replacement.is_some() {
+            "y: replace file | n or Esc: go back"
+        } else {
+            FOOTER_TEXT
+        };
+        let footer = Paragraph::new(footer_text)
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false });
 
@@ -186,6 +196,21 @@ impl ExportPopup<'_> {
     }
 
     pub fn handle_input(&mut self, input: &Input) -> ExportPopupInputReturn {
+        if self.replacement.is_some() {
+            return match input.key_code {
+                KeyCode::Char('y') if input.modifiers.is_empty() => {
+                    ExportPopupInputReturn::Apply((self.replacement.take().unwrap(), self.entry_id))
+                }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    self.replacement = None;
+                    ExportPopupInputReturn::KeepPopup
+                }
+                KeyCode::Char('c') if input.modifiers.contains(KeyModifiers::CONTROL) => {
+                    ExportPopupInputReturn::Cancel
+                }
+                _ => ExportPopupInputReturn::KeepPopup,
+            };
+        }
         let has_ctrl = input.modifiers.contains(KeyModifiers::CONTROL);
         match input.key_code {
             KeyCode::Esc => ExportPopupInputReturn::Cancel,
@@ -214,6 +239,45 @@ impl ExportPopup<'_> {
             .parse()
             .expect("PathBuf from string should never fail");
 
-        ExportPopupInputReturn::Apply((path, self.entry_id))
+        match ExportTarget::inspect(path) {
+            Ok(target) if target.replaces_file() => {
+                self.replacement = Some(target);
+                ExportPopupInputReturn::KeepPopup
+            }
+            Ok(target) => ExportPopupInputReturn::Apply((target, self.entry_id)),
+            Err(error) => {
+                self.path_err_msg = error.to_string();
+                ExportPopupInputReturn::KeepPopup
+            }
+        }
     }
 }
+
+fn has_trailing_separator(path: &std::path::Path) -> bool {
+    let text = path.as_os_str().to_string_lossy();
+    text.ends_with(std::path::MAIN_SEPARATOR)
+}
+
+fn suggested_filename(entry: &Entry) -> String {
+    let mut name = String::new();
+    for ch in entry.title.chars() {
+        let ch = if ch.is_control() || matches!(ch, '/' | '\\' | ':') {
+            '_'
+        } else {
+            ch
+        };
+        if name.len() + ch.len_utf8() > 180 {
+            break;
+        }
+        name.push(ch);
+    }
+    let name = name.trim_matches([' ', '.']);
+    if name.is_empty() {
+        format!("entry_{}.txt", entry.id)
+    } else {
+        format!("{name}.txt")
+    }
+}
+
+#[cfg(test)]
+mod tests;

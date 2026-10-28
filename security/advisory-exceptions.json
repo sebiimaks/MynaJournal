@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "id": "RUSTSEC-2026-0387",
+      "package": "crypto-bigint",
+      "version": "0.5.5",
+      "category": "vulnerability",
+      "expires": "2026-12-31",
+      "reason": "age 0.12.1 is the current release. This crate is used by age's P256/HPKE recipients; MynaJournal only encrypts with scrypt recipients and rejects non-scrypt envelopes before decryption. Review again when age or the protection implementation changes."
+    },
+    {
+      "id": "RUSTSEC-2023-0071",
+      "package": "rsa",
+      "version": "0.9.10",
+      "category": "vulnerability",
+      "expires": "2026-12-31",
+      "must_be_unused": true,
+      "reason": "The package is in Cargo.lock for optional dependency features, but is absent from the normal/build dependency graph with all application features and all targets. CI verifies that it stays unused. SSH recipients and MySQL are not enabled."
+    },
+    {
+      "id": "RUSTSEC-2026-0374",
+      "package": "basic-toml",
+      "version": "0.1.10",
+      "category": "unmaintained",
+      "expires": "2026-12-31",
+      "reason": "Build-time i18n configuration dependency of the current age release. This is a maintenance warning, not a reported vulnerability; update with age/i18n when an upstream replacement is available."
+    }
+  ]
+}

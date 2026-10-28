@@ -519,3 +519,39 @@ fn raw_control_characters_render_as_safe_symbols_without_changing_source() {
     assert_eq!(editor.get_content(), original);
     assert!(!editor.has_unsaved());
 }
+
+#[test]
+fn raw_controls_keep_unicode_selection_and_cursor_visible_while_scrolling() {
+    let original = "α\u{1b}中e\u{301}\tword\r\nplain text\r\nlast";
+    let (mut editor, _) = fixture(original, EditorMode::Visual);
+    editor.set_word_wrap(false);
+    editor.text_area.move_cursor(CursorMove::Jump(0, 0));
+    editor.text_area.start_selection();
+    for col in 1..=11 {
+        editor.text_area.move_cursor(CursorMove::Jump(0, col));
+        for width in [6, 12, 24] {
+            let buffer = render(&mut editor, width, 4);
+            assert!(
+                !cursor_cells(&buffer).is_empty(),
+                "width={width}, col={col}"
+            );
+            assert!(
+                buffer
+                    .content
+                    .iter()
+                    .all(|cell| !cell.symbol().chars().any(char::is_control))
+            );
+            assert_eq!(
+                editor.text_area.selection_range(),
+                Some(((0, 0), (0, usize::from(col))))
+            );
+            assert_eq!(editor.get_content(), original);
+            assert!(!editor.has_unsaved());
+        }
+    }
+    editor.text_area.move_cursor(CursorMove::Jump(1, 5));
+    let buffer = render(&mut editor, 12, 4);
+    assert!(!cursor_cells(&buffer).is_empty());
+    assert!(buffer.content.iter().any(|cell| cell.bg == Color::Magenta));
+    assert_eq!(editor.get_content(), original);
+}

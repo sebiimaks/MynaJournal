@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, fs::OpenOptions, path::PathBuf, str::FromStr};
 
 use self::sqlite_helper::EntryIntermediate;
 
@@ -29,28 +29,46 @@ impl SqliteDataProvide {
         let file_full_path = file_path
             .absolutize()
             .with_context(|| format!("Failed to resolve database path: {}", file_path.display()))?;
-        if !file_path.exists()
-            && let Some(parent) = file_path.parent()
-        {
-            tokio::fs::create_dir_all(parent).await.with_context(|| {
-                format!("Failed to create database directory: {}", parent.display())
-            })?;
-        }
-        let db_url = format!("sqlite://{}", file_full_path.to_string_lossy());
-        Self::create(&db_url).await
+        ensure!(
+            file_full_path.to_str().is_some(),
+            "SQLite filenames must be valid UTF-8"
+        );
+        let options = SqliteConnectOptions::new().filename(file_full_path.as_ref());
+        Self::connect(options, true).await
     }
 
     pub async fn create(db_url: &str) -> anyhow::Result<Self> {
-        if !Sqlite::database_exists(db_url)
-            .await
-            .with_context(|| format!("Failed to check database existence: {db_url}"))?
-        {
-            Sqlite::create_database(db_url)
-                .await
-                .with_context(|| format!("Failed to create database: {db_url}"))?;
-        }
         let options = SqliteConnectOptions::from_str(db_url)
-            .with_context(|| format!("Failed to parse database URL: {db_url}"))?
+            .with_context(|| format!("Failed to parse database URL: {db_url}"))?;
+        let create_file = !Sqlite::database_exists(db_url).await?;
+        Self::connect(options, create_file).await
+    }
+
+    async fn connect(options: SqliteConnectOptions, create_file: bool) -> anyhow::Result<Self> {
+        let filename = options.get_filename();
+        if create_file && filename != std::path::Path::new(":memory:") {
+            if let Some(parent) = filename
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+            {
+                crate::persistence::create_private_dirs(parent).with_context(|| {
+                    format!("Failed to create database directory: {}", parent.display())
+                })?;
+            }
+            let mut open = OpenOptions::new();
+            open.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                open.mode(0o600);
+            }
+            match open.open(filename) {
+                Ok(file) => file.sync_all()?,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error).context("Creating private database file"),
+            }
+        }
+        let options = options
             .journal_mode(SqliteJournalMode::Delete)
             .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
@@ -58,7 +76,7 @@ impl SqliteDataProvide {
         let pool = SqlitePoolOptions::new()
             .connect_with(options)
             .await
-            .with_context(|| format!("Failed to connect to database: {db_url}"))?;
+            .context("Failed to connect to database")?;
         sqlx::migrate!("backend/src/sqlite/migrations")
             .run(&pool)
             .await
@@ -66,11 +84,26 @@ impl SqliteDataProvide {
                 sqlx::migrate::MigrateError::VersionMissing(id) => anyhow!("Database version mismatch: migration {id} was previously applied but is missing in the resolved migrations"),
                 err => anyhow!(err),
             })
-            .with_context(|| format!("Failed to apply migrations on database: {db_url}"))?;
+            .context("Failed to apply migrations on database")?;
         Ok(Self {
             pool,
             snapshots: HashMap::new(),
         })
+    }
+
+    async fn insert_entry(
+        connection: &mut SqliteConnection,
+        entry: &mut Entry,
+        protection: Option<String>,
+    ) -> anyhow::Result<()> {
+        let row = sqlx::query(
+            "INSERT INTO entries (title, date, content, priority, protection) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        ).bind(&entry.title).bind(entry.date).bind(&entry.content).bind(entry.priority)
+            .bind(protection).fetch_one(&mut *connection).await.context("Failed to add entry")?;
+        let id: i64 = row.try_get(0).context("Reading the new entry ID")?;
+        entry.id = u32::try_from(id).context("No entry IDs remain")?;
+        Self::insert_tags(connection, entry.id, &entry.tags).await?;
+        Ok(())
     }
 
     async fn insert_tags(
@@ -172,12 +205,7 @@ impl DataProvider for SqliteDataProvide {
             .begin_with("BEGIN IMMEDIATE")
             .await
             .context("Starting entry transaction")?;
-        let row = sqlx::query(
-            "INSERT INTO entries (title, date, content, priority, protection) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-        ).bind(&entry.title).bind(entry.date).bind(&entry.content).bind(entry.priority)
-            .bind(protection).fetch_one(&mut *transaction).await.context("Failed to add entry")?;
-        entry.id = row.get::<u32, _>(0);
-        Self::insert_tags(&mut transaction, entry.id, &entry.tags).await?;
+        Self::insert_entry(&mut transaction, &mut entry, protection).await?;
         transaction.commit().await.context("Committing new entry")?;
         self.remember_entry(entry.clone());
         Ok(entry)
@@ -282,6 +310,38 @@ impl DataProvider for SqliteDataProvide {
             .map(EntryDraft::from_entry)
             .collect();
         Ok(EntriesDTO::new(entries))
+    }
+
+    async fn import_entries(&mut self, entries_dto: EntriesDTO) -> anyhow::Result<()> {
+        entries_dto.validate()?;
+        if entries_dto.entries.is_empty() {
+            return Ok(());
+        }
+        let mut transaction = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .context("Starting import transaction")?;
+        let mut imported = Vec::new();
+        for draft in entries_dto.entries {
+            let mut entry = Entry::from_draft(0, draft);
+            validate_entry(&entry)?;
+            let protection = entry
+                .protection
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?;
+            Self::insert_entry(&mut transaction, &mut entry, protection).await?;
+            imported.push(entry);
+        }
+        transaction
+            .commit()
+            .await
+            .context("Committing imported entries")?;
+        for entry in imported {
+            self.remember_entry(entry);
+        }
+        Ok(())
     }
 
     async fn assign_priority_to_entries(&mut self, priority: u32) -> anyhow::Result<()> {

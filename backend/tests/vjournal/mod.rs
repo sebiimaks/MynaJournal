@@ -5,6 +5,136 @@ use chrono::{TimeZone, Utc};
 use tempfile::{Builder, TempDir};
 use vobject::{Component, parse_component};
 
+#[tokio::test]
+async fn delete_and_undo_restore_the_native_recurrence_family_and_preserve_other_entries() {
+    for keep_other_components in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut original = parse_component(RECURRING_CALENDAR).unwrap();
+        if !keep_other_components {
+            original.subcomponents.retain(|component| {
+                component.name == "VJOURNAL"
+                    && component_uid(component) == Some("recurring-journal")
+            });
+        }
+        original
+            .subcomponents
+            .iter_mut()
+            .find(|component| component.get_only("RRULE").is_some())
+            .unwrap()
+            .set(vobject::Property::new("X-PRIVATE-CUSTOM", "native value"));
+        let path = write_calendar(&dir, &vobject::component::write_component(&original)).await;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        let family = |calendar: &Component| {
+            calendar
+                .subcomponents
+                .iter()
+                .filter(|component| {
+                    component.name == "VJOURNAL"
+                        && component_uid(component) == Some("recurring-journal")
+                })
+                .map(vobject::component::write_component)
+                .collect::<Vec<_>>()
+        };
+        let expected = family(&original);
+        let mut provider = create_provider(&dir);
+        let entries = provider.load_all_entries().await.unwrap();
+        let removed = entries
+            .iter()
+            .find(|entry| entry.title == "Series master")
+            .unwrap()
+            .clone();
+        provider.remove_entry(removed.id).await.unwrap();
+        if keep_other_components {
+            let mut other = entries
+                .iter()
+                .find(|entry| entry.title == "Standalone")
+                .unwrap()
+                .clone();
+            other.content = "changed while family was deleted".into();
+            provider.update_entry(other).await.unwrap();
+        } else {
+            assert!(!path.exists());
+        }
+        provider.restore_entry(removed).await.unwrap();
+        let restored = parse_component(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(family(&restored), expected);
+        if keep_other_components {
+            assert!(restored.subcomponents.iter().any(|component| {
+                component.get_only("DESCRIPTION").is_some_and(|value| {
+                    value.value_as_string() == "changed while family was deleted"
+                })
+            }));
+            assert!(
+                restored
+                    .subcomponents
+                    .iter()
+                    .any(|component| component.name == "VEVENT")
+            );
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o640
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn restore_refuses_an_occupied_path_and_keeps_metadata_for_retry() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut provider = create_provider(&dir);
+    let entry = provider
+        .add_entry(EntryDraft::new(Utc::now(), "restore".into(), vec![], None))
+        .await
+        .unwrap();
+    let path = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|extension| extension == "ics"))
+        .unwrap();
+    let original = std::fs::read(&path).unwrap();
+    provider.remove_entry(entry.id).await.unwrap();
+    std::fs::write(&path, "unrelated data").unwrap();
+    assert!(provider.restore_entry(entry.clone()).await.is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "unrelated data");
+    std::fs::remove_file(&path).unwrap();
+    provider.restore_entry(entry).await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+}
+
+#[tokio::test]
+async fn undo_keeps_detached_recurrences_in_other_calendar_files() {
+    let dir = TempDir::new().unwrap();
+    let mut original = parse_component(RECURRING_CALENDAR).unwrap();
+    original.subcomponents.retain(|component| {
+        component.name == "VJOURNAL" && component_uid(component) == Some("recurring-journal")
+    });
+    let detached = original.subcomponents.remove(0);
+    let master_path = write_calendar(&dir, &vobject::component::write_component(&original)).await;
+    let mut other = original.clone();
+    other.subcomponents = vec![detached];
+    let detached_path = dir.path().join("detached.ics");
+    let detached_text = vobject::component::write_component(&other);
+    std::fs::write(&detached_path, &detached_text).unwrap();
+    let mut provider = create_provider(&dir);
+    let entry = provider.load_all_entries().await.unwrap().remove(0);
+    provider.remove_entry(entry.id).await.unwrap();
+    assert!(!master_path.exists());
+    provider.restore_entry(entry.clone()).await.unwrap();
+    assert_eq!(provider.load_all_entries().await.unwrap(), vec![entry]);
+    assert_eq!(
+        std::fs::read_to_string(detached_path).unwrap(),
+        detached_text
+    );
+}
+
 fn create_provider(dir: &TempDir) -> VjournalDataProvide {
     VjournalDataProvide::new(dir.path().to_path_buf())
 }
@@ -714,6 +844,59 @@ fn protected(entry: Entry) -> Entry {
             "-----BEGIN AGE ENCRYPTED FILE-----\ndGVzdA==\n-----END AGE ENCRYPTED FILE-----\n"
                 .into(),
     })
+}
+
+#[tokio::test]
+async fn deleted_protected_note_restores_only_ciphertext_and_keeps_its_native_uid() {
+    let dir = TempDir::new().unwrap();
+    let path = write_calendar(&dir, RECURRING_CALENDAR).await;
+    let mut provider = create_provider(&dir);
+    let entry = provider
+        .load_all_entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.title == "Series master")
+        .unwrap();
+    let locked = protected(entry);
+    provider.update_entry(locked.clone()).await.unwrap();
+    provider.remove_entry(locked.id).await.unwrap();
+    provider.retain_restore_metadata(&[locked.id]);
+    assert_eq!(
+        provider.restore_entry(locked.clone()).await.unwrap(),
+        locked
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    for private in ["Master content", "Detached content", "RRULE:"] {
+        assert!(!text.contains(private));
+    }
+    let calendar = parse_component(&text).unwrap();
+    let restored = calendar
+        .subcomponents
+        .iter()
+        .find(|component| component.name == "X-TUI-JOURNAL-LOCKED")
+        .unwrap();
+    assert_eq!(component_uid(restored), Some("recurring-journal"));
+    assert!(provider.load_all_entries().await.unwrap().contains(&locked));
+}
+
+#[tokio::test]
+async fn discarded_restore_metadata_cannot_silently_recreate_an_incomplete_calendar() {
+    let dir = TempDir::new().unwrap();
+    let mut provider = create_provider(&dir);
+    let entry = provider
+        .add_entry(EntryDraft::new(Utc::now(), "deleted".into(), vec![], None))
+        .await
+        .unwrap();
+    provider.remove_entry(entry.id).await.unwrap();
+    provider.retain_restore_metadata(&[]);
+    assert!(provider.restore_entry(entry.clone()).await.is_err());
+    let added = provider
+        .add_entry(EntryDraft::new(Utc::now(), "new".into(), vec![], None))
+        .await
+        .unwrap();
+    assert!(added.id > entry.id);
+    assert_eq!(provider.load_all_entries().await.unwrap(), vec![added]);
 }
 
 #[tokio::test]

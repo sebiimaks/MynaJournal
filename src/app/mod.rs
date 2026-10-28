@@ -20,6 +20,7 @@ use ui::themes::TagsColors;
 use zeroize::Zeroize;
 
 mod colored_tags;
+mod export;
 mod external_editor;
 mod filter;
 mod history;
@@ -434,33 +435,41 @@ where
         Ok(())
     }
 
-    async fn export_entry_content(&self, entry_id: u32, path: PathBuf) -> anyhow::Result<()> {
+    async fn export_entry_content(
+        &self,
+        entry_id: u32,
+        target: impl Into<export::ExportTarget>,
+    ) -> anyhow::Result<()> {
         anyhow::ensure!(
             !self.is_locked(entry_id),
             "Unlock this note before exporting plaintext"
         );
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
+        let target = target.into();
+        self.validate_export_target(&target)?;
         let entry = self.get_entry(entry_id).expect("Entry should exist");
-
-        tokio::fs::write(path, entry.content.to_owned()).await?;
+        target.write(|file| {
+            use std::io::Write;
+            file.write_all(entry.content.as_bytes())?;
+            Ok(())
+        })?;
 
         Ok(())
     }
 
-    async fn export_entries(&mut self, path: PathBuf) -> anyhow::Result<()> {
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
+    async fn export_entries(
+        &mut self,
+        target: impl Into<export::ExportTarget>,
+    ) -> anyhow::Result<()> {
+        let target = target.into();
+        self.validate_export_target(&target)?;
         let selected_ids: Vec<u32> = self.selected_entries.iter().cloned().collect();
 
         let entries_dto = self.data_provide.get_export_object(&selected_ids).await?;
 
-        let file = File::create(path)?;
-        serde_json::to_writer_pretty(&file, &entries_dto)?;
+        target.write(|file| {
+            serde_json::to_writer_pretty(file, &entries_dto)?;
+            Ok(())
+        })?;
 
         Ok(())
     }

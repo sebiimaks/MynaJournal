@@ -47,6 +47,131 @@ async fn submit_password<D: DataProvider>(ui: &mut UIComponents<'_>, app: &mut A
 }
 
 #[tokio::test]
+async fn lock_all_shortcut_seals_body_and_metadata_drafts_and_locks_background_notes() {
+    let (mut app, mut ui) = setup().await;
+    app.settings.security.lock_on_leave = false;
+    app.protect_note(1, password(), "Second private body".into())
+        .await
+        .unwrap();
+    app.unlock_note(0, password()).await.unwrap();
+    app.unlock_note(1, password()).await.unwrap();
+    ui.set_current_entry(Some(0), &mut app);
+    UICommand::EditCurrentEntry
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    ui.handle_input(&key(KeyCode::Char('X')), &mut app)
+        .await
+        .unwrap();
+    ui.editor.set_entry_content("Unfinished private text", &app);
+    let before = match ui.popup_stack.last().unwrap() {
+        Popup::Entry(popup) => popup.snapshot().unwrap(),
+        _ => panic!("metadata form expected"),
+    };
+    ui.handle_input(
+        &Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert!(ui.take_lock_all_request());
+    assert!(!ui.take_lock_all_request());
+    ui.hide_for_auto_lock();
+    assert!(!screen(&mut ui, &app).contains("Unfinished private text"));
+    ui.auto_lock(&mut app).await.unwrap();
+    assert!(app.is_locked(0));
+    assert!(app.is_locked(1));
+    assert!(app.has_sealed_draft(0));
+    assert_eq!(ui.editor.get_content(), "");
+    UICommand::StartEditEntryContent
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    submit_password(&mut ui, &mut app).await;
+    assert_eq!(ui.editor.get_content(), "Unfinished private text");
+    assert!(ui.has_unsaved());
+    let Popup::Entry(popup) = ui.popup_stack.last().unwrap() else {
+        panic!("metadata form expected");
+    };
+    assert_eq!(popup.snapshot().unwrap(), before);
+    assert_eq!(app.get_current_entry().unwrap().content, "Private body");
+    assert!(app.is_locked(1));
+}
+
+#[tokio::test]
+async fn lock_all_preserves_unprotected_editor_and_configuration_popup() {
+    let (mut app, mut ui) = setup().await;
+    app.settings.security.lock_on_leave = false;
+    app.unlock_note(0, password()).await.unwrap();
+    ui.set_current_entry(Some(1), &mut app);
+    ui.editor.set_entry_content("Ordinary unsaved text", &app);
+    let directory = tempfile::tempdir().unwrap();
+    let config = ConfigPopup::new(
+        crate::settings::document::ConfigDocument::load(directory.path().join("config.toml"))
+            .unwrap(),
+        themes::ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
+        &app.settings,
+        &ui.styles,
+        Some("tui"),
+        30,
+    )
+    .unwrap();
+    ui.popup_stack.push(Popup::Config(Box::new(config)));
+    ui.handle_input(
+        &Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert!(ui.take_lock_all_request());
+    ui.hide_for_auto_lock();
+    ui.auto_lock(&mut app).await.unwrap();
+    assert!(app.is_locked(0));
+    assert_eq!(ui.editor.get_content(), "Ordinary unsaved text");
+    assert!(ui.has_unsaved());
+    assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
+    assert!(!ui.is_privacy_shielded());
+
+    // The same config draft also survives locking the current protected note.
+    app.unlock_note(0, password()).await.unwrap();
+    ui.set_current_entry(Some(0), &mut app);
+    ui.editor.set_entry_content("Protected unsaved text", &app);
+    ui.handle_input(
+        &Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert!(ui.take_lock_all_request());
+    ui.hide_for_auto_lock();
+    ui.auto_lock(&mut app).await.unwrap();
+    assert!(app.is_locked(0));
+    assert!(app.has_sealed_draft(0));
+    assert_eq!(ui.editor.get_content(), "");
+    assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
+    assert!(!ui.is_privacy_shielded());
+}
+
+#[tokio::test]
+async fn lock_all_shortcut_is_available_while_editing() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    let mut ui = UIComponents::new(Styles::default());
+    ui.set_current_entry(Some(0), &mut app);
+    ui.change_active_control(ControlType::EntryContentTxt);
+    ui.editor.set_editor_mode(editor::EditorMode::Insert);
+    let before = ui.editor.get_content();
+    ui.handle_input(
+        &Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert!(ui.take_lock_all_request());
+    assert_eq!(ui.editor.get_content(), before);
+}
+
+#[tokio::test]
 async fn security_shortcut_opens_focused_password_field_and_protects_after_confirmation() {
     let mut app = create_default_app();
     app.load_entries().await.unwrap();
@@ -271,6 +396,15 @@ async fn failed_idle_lock_hides_and_retains_draft_until_password_is_verified() {
     ui.recover_failed_auto_lock(&mut app, &error).unwrap();
     assert!(ui.is_privacy_shielded());
     assert!(screen(&mut ui, &app).contains("Could not seal"));
+    ui.handle_input(
+        &Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+        &mut app,
+    )
+    .await
+    .unwrap();
+    assert!(!ui.take_lock_all_request());
+    assert!(ui.is_privacy_shielded());
+    assert_eq!(ui.editor.get_content(), oversized);
     ui.handle_input(&key(KeyCode::Esc), &mut app).await.unwrap();
     ui.handle_input(&key(KeyCode::Char('q')), &mut app)
         .await

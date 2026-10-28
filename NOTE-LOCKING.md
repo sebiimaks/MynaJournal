@@ -20,6 +20,11 @@ the new text before updating the backend. Title/date changes also require an
 unlocked note because these fields are authenticated by the encrypted payload.
 
 Press **L** to lock an open note, change its password, or remove protection.
+Press **Ctrl+L** at any time, including while a popup is open, to lock all open
+protected notes. The screen is hidden before encryption starts. Unsaved text and
+unfinished entry forms are preserved as encrypted drafts in memory, just as
+with automatic locking; unlock the note to recover them. Unprotected drafts and
+the configuration popup remain available.
 Save or discard pending edits before changing a password or removing protection.
 Removing protection explicitly stores plaintext again. A failed write keeps the
 previous stored note and does not apply a new password.

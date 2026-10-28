@@ -27,20 +27,21 @@ assets = [
     ["FILE-BACKEND.md", "usr/share/doc/myna-journal/FILE-BACKEND.md", "644"],
     ["THEMES.md", "usr/share/doc/myna-journal/THEMES.md", "644"],
     ["NOTE-LOCKING.md", "usr/share/doc/myna-journal/NOTE-LOCKING.md", "644"],
+    ["BACKUPS.md", "usr/share/doc/myna-journal/BACKUPS.md", "644"],
     ["ATTRIBUTION.md", "usr/share/doc/myna-journal/ATTRIBUTION.md", "644"],
     ["THIRD_PARTY_NOTICES.txt", "usr/share/doc/myna-journal/THIRD_PARTY_NOTICES.txt", "644"],
 ]
 
 [dependencies]
 anyhow = "1.0"
-tokio = { version = "1.53", features = ["full"] }
+tokio = { version = "1.53.3", features = ["full"] }
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde-saphyr = { version = "2.0", default-features = false, features = ["serialize", "deserialize"], optional = true }
 log = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6", features = ["derive"] }
-crossterm = {version =  "0.28", features = ["event-stream"]}
+crossterm = {version =  "0.29", features = ["event-stream"]}
 directories = "6.0"
 simplelog = "0.12"
 tempfile = "3.27"
@@ -55,14 +56,16 @@ futures-util = { version = "0.3", default-features = false }
 aho-corasick = "1.1"
 
 scopeguard = "1.2"
+shlex = "2.0"
+sha2 = "0.10"
 git2 = { version = "0.21", default-features = false }
 rayon = "1.12"
 fuzzy-matcher = "0.3"
 path-absolutize = "4.0"
-tui-textarea = "0.7"
+tui-textarea = { package = "ratatui-textarea", version = "0.9.3" }
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
-ratatui = { version = "0.29", features = ["all-widgets", "serde", "unstable-rendered-line-info"]}
+ratatui = { version = "0.30.2", features = ["all-widgets", "serde", "unstable-rendered-line-info"]}
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"]}
 age = { version = "0.12.1", default-features = false, features = ["armor"] }
 zeroize = "1.8"

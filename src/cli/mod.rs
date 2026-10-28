@@ -8,6 +8,7 @@ use crate::{
     settings::{BackendType, Settings, settings_default_dir_path},
 };
 
+pub mod backup;
 pub mod commands;
 pub use commands::CliCommand;
 pub use commands::PendingCliCommand;
@@ -63,6 +64,53 @@ pub enum CliResult {
 }
 
 impl Cli {
+    pub async fn execute_backup(&self) -> anyhow::Result<bool> {
+        let Some(CliCommand::Backup(command)) = &self.command else {
+            return Ok(false);
+        };
+        match command {
+            backup::BackupCommand::Restore { directory, to } => {
+                backup::restore(directory, to)?;
+                println!(
+                    "Restored a separate profile at {}. Open it with --config pointing to its config directory.",
+                    std::path::absolute(to)?.display()
+                );
+            }
+            backup::BackupCommand::Create { directory } => {
+                let mut settings = Settings::new(self.config_path.clone()).await?;
+                #[cfg(feature = "json")]
+                if let Some(path) = &self.json_file_path {
+                    settings.json_backend.file_path = Some(std::path::absolute(path)?);
+                    settings.backend_type = Some(BackendType::Json);
+                }
+                #[cfg(feature = "sqlite")]
+                if let Some(path) = &self.sqlite_file_path {
+                    settings.sqlite_backend.file_path = Some(std::path::absolute(path)?);
+                    settings.backend_type = Some(BackendType::Sqlite);
+                }
+                #[cfg(feature = "vjournal")]
+                if let Some(path) = &self.vjournal_dir_path {
+                    settings.vjournal_backend.directory = Some(std::path::absolute(path)?);
+                    settings.backend_type = Some(BackendType::Vjournal);
+                }
+                #[cfg(feature = "file")]
+                if let Some(path) = &self.file_dir_path {
+                    settings.file_backend.directory = Some(std::path::absolute(path)?);
+                    settings.backend_type = Some(BackendType::File);
+                }
+                if let Some(backend) = self.backend_type {
+                    settings.backend_type = Some(backend);
+                }
+                backup::create(&settings, self.config_path.as_ref(), directory).await?;
+                println!(
+                    "Backup written to {}",
+                    std::path::absolute(directory)?.display()
+                );
+            }
+        }
+        Ok(true)
+    }
+
     pub fn launch_details(&self) -> anyhow::Result<Vec<String>> {
         let mut details = vec![
             format!(
@@ -156,7 +204,7 @@ async fn ensure_path_exists(path: &Path) -> anyhow::Result<()> {
     }
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        create_private_dirs(parent)?;
     }
 
     Ok(())
@@ -174,7 +222,7 @@ async fn set_sqlite_path(path: PathBuf, settings: &mut Settings) -> anyhow::Resu
 #[cfg(feature = "vjournal")]
 async fn set_vjournal_path(path: PathBuf, settings: &mut Settings) -> anyhow::Result<()> {
     if !path.exists() {
-        fs::create_dir_all(&path)?;
+        create_private_dirs(&path)?;
     }
 
     settings.vjournal_backend.directory = path.absolutize().map(PathBuf::from).ok();
@@ -184,7 +232,7 @@ async fn set_vjournal_path(path: PathBuf, settings: &mut Settings) -> anyhow::Re
 
 #[cfg(feature = "file")]
 fn set_file_path(path: PathBuf, settings: &mut Settings) -> anyhow::Result<()> {
-    fs::create_dir_all(&path)?;
+    create_private_dirs(&path)?;
     settings.file_backend.directory = Some(std::path::absolute(path)?);
     Ok(())
 }
@@ -192,6 +240,17 @@ fn set_file_path(path: PathBuf, settings: &mut Settings) -> anyhow::Result<()> {
 #[inline]
 fn set_backend_type(backend: BackendType, settings: &mut Settings) {
     settings.backend_type = Some(backend);
+}
+
+fn create_private_dirs(path: &std::path::Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
 }
 
 fn log_help() -> String {
@@ -223,6 +282,34 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_creates_private_directories_without_changing_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("existing");
+        fs::create_dir(&existing).unwrap();
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o750)).unwrap();
+        let destination = existing.join("new/nested");
+        create_private_dirs(&destination).unwrap();
+        assert_eq!(
+            fs::metadata(&existing).unwrap().permissions().mode() & 0o777,
+            0o750
+        );
+        assert_eq!(
+            fs::metadata(destination.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(destination).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
 
     #[test]
     fn parse_backend_and_config() {

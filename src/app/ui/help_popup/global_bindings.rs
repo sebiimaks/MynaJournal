@@ -58,3 +58,19 @@ impl KeybindingsTable for GlobalBindings {
         "Global Keybindings"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    #[test]
+    fn help_includes_lock_all_shortcut() {
+        let bindings = GlobalBindings::new();
+        assert_eq!(
+            bindings.get_bindings_map().get(&UICommand::LockAllNotes),
+            Some(&vec![Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL)])
+        );
+        assert_eq!(UICommand::LockAllNotes.get_info().name, "Lock all notes");
+    }
+}

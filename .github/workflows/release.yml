@@ -80,7 +80,7 @@ jobs:
           stage="$(mktemp -d)"
           install -m 755 "$binary" "$stage/mjournal"
           install -m 644 LICENSE ATTRIBUTION.md THIRD_PARTY_NOTICES.txt README.md \
-            CONFIGURATION.md FILE-BACKEND.md THEMES.md NOTE-LOCKING.md "$stage/"
+            CONFIGURATION.md FILE-BACKEND.md THEMES.md NOTE-LOCKING.md BACKUPS.md "$stage/"
           mkdir -p release
           archive="release/myna-journal_${APP_VERSION}_macos-arm64.tar.gz"
           COPYFILE_DISABLE=1 tar -C "$stage" -czf "$archive" .

@@ -32,6 +32,7 @@ pub enum UICommand {
     ShowConfig,
     ShowSecurity,
     LockNote,
+    LockAllNotes,
     ExportPrivateContent,
     CycleFocusedControlForward,
     CycleFocusedControlBack,
@@ -98,6 +99,10 @@ impl UICommand {
                 "Protect, unlock, lock, or change a note password",
             ),
             UICommand::LockNote => CommandInfo::new("Lock note", "Lock this protected note"),
+            UICommand::LockAllNotes => CommandInfo::new(
+                "Lock all notes",
+                "Lock all open protected notes, preserving unsaved encrypted drafts",
+            ),
             UICommand::ExportPrivateContent => CommandInfo::new(
                 "Export plaintext",
                 "Export private content after confirmation",
@@ -282,6 +287,13 @@ impl UICommand {
             );
         }
         match self {
+            UICommand::LockAllNotes => {
+                // A failed seal keeps the draft shielded until authentication.
+                if !ui_components.privacy_shield {
+                    ui_components.lock_all_requested = true;
+                }
+                Ok(HandleInputReturnType::Handled)
+            }
             UICommand::ShowSecurity => {
                 ui_components.show_security(app, false)?;
                 Ok(HandleInputReturnType::Handled)
@@ -361,6 +373,7 @@ impl UICommand {
         match self {
             UICommand::ShowSecurity => not_implemented(),
             UICommand::LockNote => ui_components.continue_lock_note(app, msg_box_result).await,
+            UICommand::LockAllNotes => not_implemented(),
             UICommand::ExportPrivateContent => {
                 if msg_box_result == MsgBoxResult::Yes {
                     exec_export_private_content(ui_components, app)

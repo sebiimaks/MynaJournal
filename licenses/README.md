@@ -6,13 +6,18 @@ source of the MPL-2.0 dependency `option-ext` 0.2.0. Ship that file together wit
 the application's `LICENSE` and `ATTRIBUTION.md`, including with workflow binary
 artifacts. Dependencies retain their own licences.
 
-The snapshot covers all 422 external packages in the current `Cargo.lock`,
+The snapshot reviewed on 28 October 2026 covers all 501 external packages in the
+current `Cargo.lock`,
 including build dependencies and other target platforms. It is intentionally a
 superset of any individual Mac or Linux binary. Root licence files are not
 sufficient for every package: the snapshot also retains nested notices, including
 WHATWG data, Unicode data, the Wayland protocols, tracing's spin-lock code,
 libgit2's native dependencies, SQLite's public-domain notice, zlib, and the
-Unicode CLDR 37 data transformed into rules by `intl_pluralrules`.
+Unicode CLDR 37 data transformed into rules by `intl_pluralrules`. The terminal
+library update also retains source-header and README notices for copied math
+routines, Unicode tables, Nerd Fonts' codepoint-name mapping, and widecharwidth.
+The original `tui-textarea` MIT notice remains explicitly recorded with its
+successor `ratatui-textarea` for the application's adapted clipboard mappings.
 
 ## Files and verification
 
@@ -37,8 +42,13 @@ python3 scripts/test-generate-notices.py
 
 The generator rejects added/removed dependencies, changed crate checksums,
 missing licence texts, altered notice text, missing MPL source, and changed native
-runtime notices. The source snapshot was checked against every original cached
-`.crate` archive and each archive's checksum in `Cargo.lock` during this review.
+runtime notices. The original snapshot was checked against each cached `.crate`
+archive and its checksum in `Cargo.lock`. Unchanged records retain that review;
+all 91 added or updated package archives were checked in the 28 October update.
+Declared licence metadata
+is preserved verbatim. Selected licences additionally account for bundled code
+and data; see `REVIEW.md` for the `finl_unicode` metadata mismatch and provenance
+limits in upstream-generated files.
 
 ## Updating dependencies
 

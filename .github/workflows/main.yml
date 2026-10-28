@@ -55,6 +55,12 @@ jobs:
       - name: Check sqlite
         run: cargo check --locked --no-default-features -F sqlite --verbose
 
+      - name: Check json
+        run: cargo check --locked --no-default-features -F json --verbose
+
+      - name: Check vjournal
+        run: cargo check --locked --no-default-features -F vjournal --verbose
+
       - name: Check file
         run: cargo check --locked --no-default-features -F file --verbose
 

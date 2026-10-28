@@ -241,11 +241,14 @@ impl<'a> Editor<'a> {
         }
 
         match input.key_code {
-            KeyCode::Char('d') => {
+            KeyCode::Char(command @ ('d' | 'c')) => {
                 if sync_os_clipboard {
                     self.exec_os_clipboard(ClipboardOperation::Cut)?;
                 } else {
                     self.text_area.cut();
+                }
+                if command == 'c' {
+                    self.set_editor_mode(EditorMode::Insert);
                 }
                 Ok(true)
             }
@@ -256,15 +259,6 @@ impl<'a> Editor<'a> {
                     self.text_area.copy();
                 }
                 self.set_editor_mode(EditorMode::Normal);
-                Ok(true)
-            }
-            KeyCode::Char('c') => {
-                if sync_os_clipboard {
-                    self.exec_os_clipboard(ClipboardOperation::Copy)?;
-                } else {
-                    self.text_area.cut();
-                }
-                self.set_editor_mode(EditorMode::Insert);
                 Ok(true)
             }
             _ => Ok(false),
@@ -419,7 +413,7 @@ impl<'a> Editor<'a> {
     /// sits on the edge it would snap to, so a dead key press leaves both the
     /// cursor and the selection untouched.
     fn resolve_vertical_move(&self, dir: VerticalDir) -> Option<CursorMove> {
-        let (row, col) = self.text_area.cursor();
+        let tui_textarea::DataCursor(row, col) = self.text_area.cursor();
         match dir {
             VerticalDir::Up if self.is_on_first_line() => (col > 0).then_some(CursorMove::Head),
             VerticalDir::Up => Some(CursorMove::Up),
@@ -442,7 +436,7 @@ impl<'a> Editor<'a> {
     }
 
     fn is_on_last_line(&self) -> bool {
-        let (row, _) = self.text_area.cursor();
+        let tui_textarea::DataCursor(row, _) = self.text_area.cursor();
         row + 1 >= self.text_area.lines().len()
     }
 
@@ -544,23 +538,7 @@ impl<'a> Editor<'a> {
             .set_selection_style(Style::from(estyles.selection_style));
 
         frame.render_widget(&self.text_area, area);
-
-        // TextArea retains source controls in its cells; never emit them to the terminal.
-        let content_area = area.inner(Margin {
-            horizontal: 1,
-            vertical: 1,
-        });
-        let buffer = frame.buffer_mut();
-        for y in content_area.y..content_area.bottom() {
-            for x in content_area.x..content_area.right() {
-                let cell = &mut buffer[(x, y)];
-                if cell.symbol() == "\r" {
-                    cell.set_symbol(" ");
-                } else if cell.symbol().chars().any(char::is_control) {
-                    cell.set_symbol("�");
-                }
-            }
-        }
+        self.render_unwrapped_controls(frame, area, styles, cursor_style);
 
         self.render_vertical_scrollbar(frame, area);
         self.render_horizontal_scrollbar(frame, area);
@@ -573,7 +551,7 @@ impl<'a> Editor<'a> {
             return;
         }
 
-        let (row, _) = self.text_area.cursor();
+        let tui_textarea::DataCursor(row, _) = self.text_area.cursor();
 
         let mut state = ScrollbarState::default()
             .content_length(lines_count)
@@ -606,7 +584,7 @@ impl<'a> Editor<'a> {
             return;
         }
 
-        let (_, col) = self.text_area.cursor();
+        let tui_textarea::DataCursor(_, col) = self.text_area.cursor();
 
         let mut state = ScrollbarState::default()
             .content_length(max_width)
@@ -759,6 +737,21 @@ fn map_clipboard_error(err: arboard::Error) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visual_change_removes_selection_before_entering_insert_mode() {
+        let mut editor = editor_with(&["replace this"], 0, 0);
+        editor.set_editor_mode(EditorMode::Visual);
+        editor.text_area.move_cursor(CursorMove::Jump(0, 7));
+        editor
+            .handle_input_visual_only(&Input::new(KeyCode::Char('c'), KeyModifiers::NONE), false)
+            .unwrap();
+        assert_eq!(editor.get_content(), " this");
+        assert_eq!(editor.text_area.yank_text(), "replace");
+        assert!(editor.is_insert_mode());
+        editor.text_area.insert_str("changed");
+        assert_eq!(editor.get_content(), "changed this");
+    }
 
     #[test]
     fn vim_deletions_keep_cut_text_internal_when_clipboard_sync_is_disabled() {

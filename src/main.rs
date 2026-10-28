@@ -18,6 +18,10 @@ mod terminal_session;
 async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
+    if cli.execute_backup().await? {
+        return Ok(());
+    }
+
     if matches!(cli.command, Some(cli::CliCommand::Licenses)) {
         cli::commands::print_licenses()?;
         return Ok(());

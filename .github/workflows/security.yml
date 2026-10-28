@@ -1,0 +1,39 @@
+name: Dependency security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 19 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rustsec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install stable Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+      - name: Install audit tool
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Fetch locked dependency metadata and current advisories
+        run: |
+          cargo fetch --locked
+          git clone --depth 1 https://github.com/RustSec/advisory-db.git "$RUNNER_TEMP/advisory-db"
+      - name: Test advisory policy
+        run: python3 scripts/test-audit-dependencies.py
+      - name: Check advisories and expiring exceptions
+        run: python3 scripts/audit-dependencies.py --database "$RUNNER_TEMP/advisory-db" --no-fetch

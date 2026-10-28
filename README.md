@@ -206,6 +206,7 @@ entry-list action is involved. In insertion mode, letters are ordinary text.
 | Fuzzy find | `a` or `Shift-F` |
 | Sort options | `o` |
 | Entry security | `L` |
+| Lock all open protected notes | `Ctrl-L` (also works while editing or in a popup) |
 | Export this entry's body | `>` |
 | Select multiple entries | `v`, then `Space` to select; `>` exports the selection |
 | Reload storage after external changes | `Ctrl-R` in normal mode |
@@ -252,7 +253,26 @@ mjournal --file-dir-path /path/to/destination import-journals --path exported.js
 
 Transfer JSON preserves common entry fields and protected-note ciphertext.
 Single-entry body exports contain only the body; they are not a complete backup.
-Keep copies of the actual backend files when you need all native metadata.
+Existing export files require confirmation before replacement. Export cannot
+overwrite the active journal store, configuration, themes, or saved state.
+An existing directory, or a path ending in `/`, receives a filename based on the
+entry title; other paths specify the output file.
+
+Imports validate the whole batch before saving. JSON and SQLite commit the batch
+atomically. File and VJOURNAL stores roll back ordinary publication failures;
+an interruption or power loss between file writes can still leave a partial batch.
+
+For a complete local backup with native metadata, settings and themes:
+
+```sh
+mjournal backup create /path/to/new-backup
+mjournal backup restore /path/to/new-backup --to /path/to/new-profile
+mjournal --config /path/to/new-profile/config
+```
+
+Both destinations must be new directories with existing parents. Restore verifies
+checksums and creates a separate profile. Protected notes stay encrypted, but the
+backup itself is not encrypted. See [Backups and recovery](BACKUPS.md).
 
 ## Configuration, themes and entry protection
 
@@ -285,6 +305,8 @@ its body, tags, priority and private metadata are encrypted. Press `Enter` on a
 locked entry to unlock it. There is no password recovery. Automatic locking,
 clipboard restrictions and export behavior are described in
 [Note locking](NOTE-LOCKING.md).
+`Ctrl-L` locks all open protected notes and retains unsaved protected changes as
+encrypted in-memory drafts; unlock them again to save before quitting.
 
 Useful terminal commands:
 
@@ -332,6 +354,9 @@ For development, the main checks are `cargo test --locked`,
 `cargo fmt --all -- --check`. Python 3.11 or newer runs the offline license check:
 `python3 scripts/generate-notices.py --check`. See [license maintenance](licenses/README.md)
 before distributing builds with changed dependencies or toolchains.
+CI also checks RustSec advisories on pull requests, pushes and a weekly schedule.
+See [dependency security checks](security/README.md) for the local command and
+the narrowly scoped, expiring exceptions that still require upstream fixes.
 
 ## Contributions and attribution
 
@@ -341,6 +366,7 @@ Contribution guidelines do not add conditions to the MIT license.
 Thanks to Ammar Abou Zor and the TUI-Journal contributors, including Samuel K.
 Norton's inherited `auto_title` and editor improvements. The interface uses
 [Ratatui](https://github.com/ratatui/ratatui) and
+[ratatui-textarea](https://github.com/ratatui/ratatui-textarea), which continues
 [tui-textarea](https://github.com/rhysd/tui-textarea); SQLite support uses
 [SQLx](https://github.com/launchbadge/sqlx). See [Attribution](ATTRIBUTION.md) for
 the full provenance record, including the AI-generated Myna artwork.

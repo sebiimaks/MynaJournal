@@ -11,6 +11,9 @@ use super::*;
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum CliCommand {
+    /// Create local backups or restore them into a separate profile.
+    #[command(subcommand)]
+    Backup(super::backup::BackupCommand),
     /// Print the app license, attribution, and third-party notices without opening any data files.
     Licenses,
     /// Print the current settings including the paths for the back-end files.
@@ -67,6 +70,9 @@ impl CliCommand {
         custom_config_dir: Option<&PathBuf>,
     ) -> anyhow::Result<CliResult> {
         match self {
+            CliCommand::Backup(_) => {
+                anyhow::bail!("Backup commands must run before application startup")
+            }
             CliCommand::Licenses => {
                 print_licenses()?;
                 Ok(CliResult::Return)

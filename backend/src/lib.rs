@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
+mod persistence;
 pub mod protection;
 pub use protection::EncryptedNote;
 

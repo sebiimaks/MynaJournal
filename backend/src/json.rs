@@ -69,7 +69,7 @@ impl JsonDataProvide {
             return Ok(());
         }
         let parent = self.parent();
-        fs::create_dir_all(parent)
+        crate::persistence::create_private_dirs(parent)
             .with_context(|| format!("Failed to create entries directory: {}", parent.display()))?;
         let parent = fs::canonicalize(parent).context("Resolving entries directory")?;
         let name = self
@@ -312,6 +312,24 @@ impl DataProvider for JsonDataProvide {
             .map(EntryDraft::from_entry)
             .collect();
         Ok(EntriesDTO::new(entries))
+    }
+
+    async fn import_entries(&mut self, entries_dto: EntriesDTO) -> anyhow::Result<()> {
+        entries_dto.validate()?;
+        if entries_dto.entries.is_empty() {
+            return Ok(());
+        }
+        let mut entries = self.read_for_write()?;
+        let next_id = entries
+            .iter()
+            .map(|entry| u64::from(entry.id) + 1)
+            .max()
+            .unwrap_or(0);
+        for (next_id, draft) in (next_id..).zip(entries_dto.entries) {
+            let id = u32::try_from(next_id).context("No entry ids remain")?;
+            entries.push(Entry::from_draft(id, draft));
+        }
+        self.write_entries_to_file(entries)
     }
 
     async fn assign_priority_to_entries(&mut self, priority: u32) -> anyhow::Result<()> {

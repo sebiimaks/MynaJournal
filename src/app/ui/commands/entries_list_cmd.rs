@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fs, path::PathBuf};
+use std::{collections::HashMap, env, path::PathBuf};
 
 use crate::app::{App, UIComponents, external_editor, ui::*};
 
@@ -319,54 +319,28 @@ pub async fn edit_in_external_editor<D: DataProvider>(
     // The event loop cannot enforce idle locking while waiting for another editor.
     app.lock_all_saved_notes();
     if let Some(entry) = app.get_current_entry() {
-        const TEMP_FILENAME: &str = "myna_journal";
         let temp_extension = &app.settings.external_editor.temp_file_extension;
-
-        let mut builder = tempfile::Builder::new();
-        builder.prefix(TEMP_FILENAME);
-
-        if !temp_extension.is_empty() {
-            builder.suffix(temp_extension);
-        };
-
-        // We need to check the content of the environment variable if it's
-        // actually a valid path before trying to create files and directories.
         let xdg_temp_dir = env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .map(|runtime_dir| {
-                let app_dir = runtime_dir.join("myna-journal");
-
-                if fs::create_dir(&app_dir).is_ok()
-                    || fs::metadata(&app_dir).is_ok_and(|metadata| metadata.is_dir())
-                {
-                    app_dir
-                } else {
-                    runtime_dir
-                }
-            });
-
-        let temp_file = xdg_temp_dir.map_or_else(
-            || builder.tempfile(),
-            |dir| builder.tempfile_in(dir).or_else(|_| builder.tempfile()),
+            .filter(|path| path.is_absolute());
+        let draft = external_editor::EditorDraft::new(
+            entry.content.as_str(),
+            temp_extension,
+            xdg_temp_dir.as_deref(),
         )?;
-
-        let file_path = temp_file.path();
-
-        fs::write(file_path, entry.content.as_str())?;
-
         app.redraw_after_restore = true;
+        let editor_result = external_editor::open_editor(draft.path(), &app.settings).await;
+        let new_content = draft.read()?;
+        ui_components.editor.set_entry_content(&new_content, app);
+        ui_components.change_active_control(ControlType::EntriesList);
 
-        external_editor::open_editor(file_path, &app.settings).await?;
-
-        if file_path.exists() {
-            let new_content = fs::read_to_string(file_path)?;
-            ui_components.editor.set_entry_content(&new_content, app);
-            ui_components.change_active_control(ControlType::EntriesList);
-
-            if app.settings.external_editor.auto_save {
-                exec_save_entry_content(ui_components, app).await?;
-            }
+        if let Err(error) = editor_result {
+            anyhow::bail!(
+                "{error}. Any edited text is available in the journal pane as an unsaved draft; it has not been saved automatically."
+            );
+        }
+        if app.settings.external_editor.auto_save {
+            exec_save_entry_content(ui_components, app).await?;
         }
     }
 

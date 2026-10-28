@@ -1,6 +1,210 @@
 use backend::*;
 use chrono::{TimeZone, Utc};
 
+#[tokio::test]
+async fn exhausted_entry_ids_return_an_error_without_committing_a_new_entry() {
+    let mut provider = SqliteDataProvide::create("sqlite::memory:").await.unwrap();
+    let existing = Entry::from_draft(
+        u32::MAX,
+        EntryDraft::new(Utc::now(), "existing".into(), vec![], None),
+    );
+    provider.restore_entry(existing.clone()).await.unwrap();
+    let error = provider
+        .add_entry(EntryDraft::new(Utc::now(), "overflow".into(), vec![], None))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("No entry IDs remain"));
+    assert_eq!(provider.load_all_entries().await.unwrap(), vec![existing]);
+}
+
+#[tokio::test]
+async fn exhausted_entry_ids_roll_back_the_entire_import_batch() {
+    let mut provider = SqliteDataProvide::create("sqlite::memory:").await.unwrap();
+    let existing = Entry::from_draft(
+        u32::MAX - 1,
+        EntryDraft::new(Utc::now(), "existing".into(), vec![], None),
+    );
+    provider.restore_entry(existing.clone()).await.unwrap();
+    let draft = EntryDraft::new(Utc::now(), "imported".into(), vec![], None);
+    let error = provider
+        .import_entries(EntriesDTO::new(vec![draft.clone(), draft.clone()]))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("No entry IDs remain"));
+    assert_eq!(provider.load_all_entries().await.unwrap(), vec![existing]);
+    provider
+        .import_entries(EntriesDTO::new(vec![draft]))
+        .await
+        .unwrap();
+    let entries = provider.load_all_entries().await.unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|entry| entry.id == u32::MAX));
+}
+
+#[tokio::test]
+async fn named_memory_url_does_not_create_a_disk_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("memory-only.db");
+    let mut provider =
+        SqliteDataProvide::create(&format!("sqlite://file:{}?mode=memory", path.display()))
+            .await
+            .unwrap();
+    provider
+        .add_entry(EntryDraft::new(Utc::now(), "memory".into(), vec![], None))
+        .await
+        .unwrap();
+    assert_eq!(provider.load_all_entries().await.unwrap().len(), 1);
+    assert!(!path.exists());
+}
+
+#[tokio::test]
+async fn filesystem_paths_are_not_interpreted_as_database_urls() {
+    let directory = tempfile::tempdir().unwrap();
+    for name in [
+        "literal%41.db",
+        "question?mode=memory.db",
+        "hash#fragment.db",
+        "with spaces.db",
+    ] {
+        let path = directory.path().join(name);
+        let mut provider = SqliteDataProvide::from_file(path.clone()).await.unwrap();
+        provider
+            .add_entry(EntryDraft::new(Utc::now(), name.into(), vec![], None))
+            .await
+            .unwrap();
+        assert!(path.is_file(), "{name}");
+        assert_eq!(provider.load_all_entries().await.unwrap()[0].title, name);
+    }
+    assert!(!directory.path().join("literalA.db").exists());
+    assert!(!directory.path().join("question").exists());
+    assert!(!directory.path().join("hash").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn invalid_utf8_database_path_is_rejected_without_creating_a_lossy_filename() {
+    use std::os::unix::ffi::OsStringExt;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory
+        .path()
+        .join(std::ffi::OsString::from_vec(b"invalid-\xff.db".to_vec()));
+    assert!(SqliteDataProvide::from_file(path).await.is_err());
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn new_database_and_directories_are_private_without_changing_existing_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o750)).unwrap();
+    let path = directory.path().join("private/nested/notes.db");
+    let mut provider = SqliteDataProvide::from_file(path.clone()).await.unwrap();
+    provider
+        .add_entry(EntryDraft::new(Utc::now(), "private".into(), vec![], None))
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    for parent in [
+        path.parent().unwrap(),
+        path.parent().unwrap().parent().unwrap(),
+    ] {
+        assert_eq!(
+            std::fs::metadata(parent).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+    assert_eq!(
+        std::fs::metadata(directory.path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o750
+    );
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let _reopened = SqliteDataProvide::from_file(path.clone()).await.unwrap();
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rollback_journal_inherits_private_database_permissions() {
+    use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("notes.db");
+    let mut provider = SqliteDataProvide::from_file(path.clone()).await.unwrap();
+    provider
+        .add_entry(
+            EntryDraft::new(Utc::now(), "private".into(), vec![], None)
+                .with_content("original content".into()),
+        )
+        .await
+        .unwrap();
+    let mut connection =
+        SqliteConnection::connect_with(&SqliteConnectOptions::new().filename(&path))
+            .await
+            .unwrap();
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE entries SET content = 'pending private change'")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let journal = directory.path().join("notes.db-journal");
+    assert_eq!(
+        std::fs::metadata(journal).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    sqlx::query("ROLLBACK")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn failed_batch_import_rolls_back_earlier_inserts_and_retry_does_not_duplicate() {
+    let mut provider = create_provider_with_two_entries().await;
+    let before = provider.load_all_entries().await.unwrap();
+    let first = EntryDraft::new(Utc::now(), "first imported".into(), vec![], None);
+    let mut second = EntryDraft::new(
+        Utc::now(),
+        "second imported".into(),
+        vec!["duplicate".into(); 2],
+        None,
+    );
+    assert!(
+        provider
+            .import_entries(EntriesDTO::new(vec![first.clone(), second.clone()]))
+            .await
+            .is_err()
+    );
+    assert_eq!(provider.load_all_entries().await.unwrap(), before);
+    second.tags.pop();
+    provider
+        .import_entries(EntriesDTO::new(vec![first, second]))
+        .await
+        .unwrap();
+    let entries = provider.load_all_entries().await.unwrap();
+    assert_eq!(entries.len(), 4);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| entry.title == "first imported")
+            .count(),
+        1
+    );
+}
+
 async fn create_provider_with_two_entries() -> SqliteDataProvide {
     let mut provider = create_provider().await;
 

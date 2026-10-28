@@ -33,6 +33,7 @@ output.
 
 The terminal interface uses [Ratatui](https://github.com/ratatui/ratatui),
 which continues the work of [tui-rs](https://github.com/fdehau/tui-rs), and
+[ratatui-textarea](https://github.com/ratatui/ratatui-textarea), a continuation of
 [tui-textarea](https://github.com/rhysd/tui-textarea). SQLite support uses
 [SQLx](https://github.com/launchbadge/sqlx). These are examples, not the complete
 dependency inventory.

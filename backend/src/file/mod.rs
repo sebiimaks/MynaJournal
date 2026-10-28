@@ -227,6 +227,14 @@ impl FileDataProvider {
     }
 
     fn new_path(&self, document: &JournalDocument) -> Result<PathBuf> {
+        self.new_path_excluding(document, &HashSet::new())
+    }
+
+    fn new_path_excluding(
+        &self,
+        document: &JournalDocument,
+        reserved: &HashSet<PathBuf>,
+    ) -> Result<PathBuf> {
         let root = &self
             .guard
             .as_ref()
@@ -240,6 +248,9 @@ impl FileDataProvider {
                 format!("{stem}_{suffix}{}", self.format.extension())
             };
             let path = root.join(name);
+            if reserved.contains(&path) {
+                continue;
+            }
             match fs::symlink_metadata(&path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(path),
                 Err(error) => return Err(error).context("Checking journal filename availability"),
@@ -488,6 +499,55 @@ impl DataProvider for FileDataProvider {
         Ok(EntriesDTO::new(entries))
     }
 
+    async fn import_entries(&mut self, entries_dto: EntriesDTO) -> Result<()> {
+        entries_dto.validate()?;
+        if entries_dto.entries.is_empty() {
+            return Ok(());
+        }
+        self.prepare_write()?;
+        let count = u64::try_from(entries_dto.entries.len())?;
+        ensure!(
+            self.next_id + count <= u64::from(u32::MAX) + 1,
+            "No journal IDs remain"
+        );
+        let mut paths = HashSet::new();
+        let mut staged = Vec::new();
+        let mut imported = Vec::new();
+        let created = Local::now().fixed_offset();
+        for (offset, draft) in entries_dto.entries.into_iter().enumerate() {
+            let document = JournalDocument::new(&draft, created)?;
+            let path = self.new_path_excluding(&document, &paths)?;
+            paths.insert(path.clone());
+            let bytes = document.text()?.into_bytes();
+            let file = crate::persistence::StagedFile::new(path.clone(), &bytes)?;
+            let baseline = Snapshot {
+                bytes,
+                identity: FileIdentity::new(&file.temporary.as_file().metadata()?),
+            };
+            let id = (self.next_id + offset as u64) as u32;
+            document.entry(id)?;
+            staged.push(file);
+            imported.push((
+                id,
+                StoredEntry {
+                    document,
+                    path,
+                    baseline,
+                },
+            ));
+        }
+        let guard = self
+            .guard
+            .as_ref()
+            .context("Journal directory is not open")?;
+        crate::persistence::publish_new_files(staged, || guard.check())?;
+        guard.sync_directory();
+        for (id, stored) in imported {
+            self.insert_stored(id, stored);
+        }
+        Ok(())
+    }
+
     async fn assign_priority_to_entries(&mut self, priority: u32) -> Result<()> {
         self.prepare_write()?;
         let mut entries = self
@@ -514,7 +574,7 @@ impl DataProvider for FileDataProvider {
 impl DirectoryGuard {
     fn acquire(directory: &Path) -> Result<Self> {
         let requested = std::path::absolute(directory).context("Resolving journal directory")?;
-        fs::create_dir_all(&requested)
+        crate::persistence::create_private_dirs(&requested)
             .with_context(|| format!("Creating journal directory {}", requested.display()))?;
         let canonical = fs::canonicalize(&requested).context("Resolving journal directory")?;
         let metadata = fs::metadata(&canonical)?;

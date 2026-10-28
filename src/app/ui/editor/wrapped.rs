@@ -17,11 +17,12 @@ pub(super) struct WrappedView {
     top: usize,
     goal_column: Option<usize>,
     layout: Option<WrappedLayout>,
+    dirty: bool,
 }
 
 impl WrappedView {
     pub fn invalidate(&mut self) {
-        self.layout = None;
+        self.dirty = true;
     }
 
     pub fn clear_goal(&mut self) {
@@ -29,13 +30,119 @@ impl WrappedView {
     }
 
     fn layout(&mut self, text: &TextArea<'_>) -> &WrappedLayout {
-        self.layout.get_or_insert_with(|| {
+        let layout = self.layout.get_or_insert_with(|| {
             WrappedLayout::new(text.lines(), self.width, usize::from(text.tab_length()))
-        })
+        });
+        if self.dirty {
+            layout.update(text.lines(), self.width, usize::from(text.tab_length()));
+            self.dirty = false;
+        }
+        layout
     }
 }
 
 impl Editor<'_> {
+    // The textarea widget drops controls before producing cells. Redraw affected
+    // viewports with our source-preserving glyph mapping, including the CRLF cursor.
+    pub(super) fn render_unwrapped_controls(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        styles: &Styles,
+        cursor_style: Style,
+    ) {
+        let inner = area.inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        });
+        let (top, left) = self.text_area.scroll_offset();
+        let top = usize::from(top);
+        let mut left = usize::from(left);
+        let lines = self.text_area.lines();
+        let bottom = (top + usize::from(inner.height)).min(lines.len());
+        let Some(visible) = lines.get(top..bottom) else {
+            return;
+        };
+        if !visible
+            .iter()
+            .any(|line| line.chars().any(|c| c.is_control() && c != '\t'))
+        {
+            return;
+        }
+        let layout = WrappedLayout::unwrapped_window(
+            visible,
+            bottom < lines.len(),
+            usize::from(self.text_area.tab_length()),
+        );
+        let tui_textarea::DataCursor(source_row, source_col) = self.text_area.cursor();
+        let (cursor_row, cursor_col) =
+            layout.source_to_visual((source_row.saturating_sub(top), source_col));
+        let width = usize::from(inner.width);
+        if cursor_col < left {
+            left = cursor_col;
+        } else if cursor_col >= left + width {
+            left = cursor_col + 1 - width;
+        }
+        let selected = self.text_area.selection_range();
+        let selection_style = Style::from(styles.editor.selection_style);
+        let buffer = frame.buffer_mut();
+        for y in inner.y..inner.bottom() {
+            for x in inner.x..inner.right() {
+                buffer[(x, y)].reset();
+            }
+        }
+        for (offset, row) in layout.rows.iter().enumerate() {
+            let y = inner.y + offset as u16;
+            for glyph in &row.glyphs {
+                if glyph.column >= left + width {
+                    break;
+                }
+                if glyph.column < left {
+                    continue;
+                }
+                let style = if selected.is_some_and(|(start, end)| {
+                    (top + row.source_row, glyph.source_start) < end
+                        && (top + row.source_row, glyph.source_end) > start
+                }) {
+                    selection_style
+                } else {
+                    Style::reset()
+                };
+                buffer.set_stringn(
+                    inner.x + (glyph.column - left) as u16,
+                    y,
+                    layout.glyph_text(row, glyph),
+                    glyph.width.min(left + width - glyph.column),
+                    style,
+                );
+            }
+            let end = (top + row.source_row, row.end_col);
+            let end_col = row.glyphs.last().map_or(0, |g| g.column + g.width);
+            if end_col >= left
+                && end_col < left + width
+                && selected.is_some_and(|(start, stop)| start <= end && end < stop)
+            {
+                buffer[(inner.x + (end_col - left) as u16, y)].set_style(selection_style);
+            }
+        }
+        if self.is_active
+            && source_row >= top
+            && source_row < bottom
+            && cursor_col >= left
+            && cursor_col < left + width
+        {
+            let cursor_width = layout.rows[cursor_row]
+                .glyphs
+                .iter()
+                .find(|glyph| glyph.column == cursor_col)
+                .map_or(1, |glyph| glyph.width);
+            for x in cursor_col..(cursor_col + cursor_width).min(left + width) {
+                buffer[(inner.x + (x - left) as u16, inner.y + cursor_row as u16)]
+                    .set_style(cursor_style);
+            }
+        }
+    }
+
     pub fn set_word_wrap(&mut self, enabled: bool) {
         if self.word_wrap != enabled {
             self.word_wrap = enabled;
@@ -100,7 +207,8 @@ impl Editor<'_> {
         distance: usize,
         select: bool,
     ) {
-        let cursor = self.text_area.cursor();
+        let tui_textarea::DataCursor(source_row, source_col) = self.text_area.cursor();
+        let cursor = (source_row, source_col);
         let layout = self.wrapped.layout(&self.text_area);
         let (row, column) = layout.source_to_visual(cursor);
         let last = layout.row_count().saturating_sub(1);
@@ -133,23 +241,22 @@ impl Editor<'_> {
         if !self.word_wrap {
             return false;
         }
-        let (row, col) = self.text_area.cursor();
+        let tui_textarea::DataCursor(row, col) = self.text_area.cursor();
         let line = &self.text_area.lines()[row];
-        let mut boundaries = vec![0];
-        for glyph in line.graphemes(true) {
-            boundaries.push(boundaries.last().unwrap() + glyph.chars().count());
-        }
+        let mut boundaries =
+            std::iter::once(0).chain(line.graphemes(true).scan(0, |end, glyph| {
+                *end += glyph.chars().count();
+                Some(*end)
+            }));
         let target = if forward {
             boundaries
-                .into_iter()
                 .find(|&boundary| boundary > col)
                 .map(|boundary| (row, boundary))
                 .or_else(|| (row + 1 < self.text_area.lines().len()).then_some((row + 1, 0)))
         } else {
             boundaries
-                .into_iter()
-                .rev()
-                .find(|&boundary| boundary < col)
+                .take_while(|&boundary| boundary < col)
+                .last()
                 .map(|boundary| (row, boundary))
                 .or_else(|| {
                     row.checked_sub(1)
@@ -237,7 +344,8 @@ impl Editor<'_> {
         if inner.is_empty() {
             return;
         }
-        let cursor = self.text_area.cursor();
+        let tui_textarea::DataCursor(source_row, source_col) = self.text_area.cursor();
+        let cursor = (source_row, source_col);
         let layout = self.wrapped.layout(&self.text_area);
         let (cursor_row, cursor_col) = layout.source_to_visual(cursor);
         let count = layout.row_count();
@@ -269,13 +377,13 @@ impl Editor<'_> {
                 buf.set_stringn(
                     inner.x + glyph.column as u16,
                     y,
-                    &glyph.text,
+                    layout.glyph_text(row, glyph),
                     glyph.width,
                     style,
                 );
             }
             let end = (row.source_row, row.end_col);
-            if row.end_col == self.text_area.lines()[row.source_row].chars().count()
+            if layout.is_line_end(top + offset)
                 && selected.is_some_and(|(start, stop)| start <= end && end < stop)
             {
                 let x = row.glyphs.last().map_or(0, |g| g.column + g.width);

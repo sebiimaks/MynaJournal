@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Keep the highlighted entry, editor and actions consistent when applying or resetting filters
+- Prevent export filenames derived from titles from escaping the selected directory; confirm replacements and protect active journal/configuration files
+- Create new database, export and CLI storage paths with private Unix permissions
+- Respect quoted external-editor arguments, reject unsuccessful editor exits, and retain recoverable changes without automatically saving them
+- Preserve native VJOURNAL metadata and recurrence families through delete/undo, and interpret SQLite filenames literally
+- Validate import batches before publishing, with atomic JSON/SQLite commits and guarded file-store rollback on ordinary failures
+- Report SQLite entry-ID exhaustion without panicking or committing part of an import
+- Bound long title/tag previews, correct visual-mode change/cut behavior, and reuse unchanged word-wrap geometry
+- Add native local backups with checksum verification and restore into a separate profile
+- Apply the same manifest size limit when creating and restoring backups
+- Add `Ctrl-L` to lock all open protected notes while retaining unsaved encrypted drafts
+- Update terminal/editor dependencies and add CI advisory checks with exact-version, expiring exceptions; retain all four backends and refresh distribution notices
+
 ## 0.19.0 - 2026-10-27
 
 ### MynaJournal

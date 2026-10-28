@@ -21,7 +21,7 @@ use crossterm::{
     style::{Attribute, Colors, Print, SetAttribute, SetColors},
 };
 use ratatui::{
-    backend::{Backend, ClearType, CrosstermBackend, WindowSize},
+    backend::{Backend, ClearType, CrosstermBackend, IntoCrossterm, WindowSize},
     buffer::Cell,
     layout::{Position, Size},
     style::{Color, Modifier},
@@ -75,8 +75,8 @@ impl<W: Write> ConsoleBackend<W> {
             last_pos = Some(Position { x, y });
             if Some((cell.fg, cell.bg, cell.modifier)) != style {
                 let colors = Colors {
-                    foreground: (cell.fg != Color::Reset).then(|| cell.fg.into()),
-                    background: (cell.bg != Color::Reset).then(|| cell.bg.into()),
+                    foreground: (cell.fg != Color::Reset).then(|| cell.fg.into_crossterm()),
+                    background: (cell.bg != Color::Reset).then(|| cell.bg.into_crossterm()),
                 };
                 queue!(
                     self.inner,
@@ -97,6 +97,8 @@ impl<W: Write> ConsoleBackend<W> {
 }
 
 impl<W: Write> Backend for ConsoleBackend<W> {
+    type Error = io::Error;
+
     fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,

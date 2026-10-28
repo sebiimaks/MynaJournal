@@ -91,8 +91,8 @@ auto_lock_seconds = 300 # Automatically lock protected notes after inactivity; 0
 lock_on_leave = true    # Lock a protected note when selecting another entry.
 
 [export]
-default_path = "<Absolute_path_to_export_directory>"   # Optional default path to export multiple journals or a single journal's content. Falls back to the current directory if not specified.
-show_confirmation = true   # Show confirmation after successful export.
+default_path = "<Absolute_path_to_export_directory>"   # Existing directory, or end with '/' to create a directory. Other paths name a file. Falls back to the current directory if omitted.
+show_confirmation = true   # Show confirmation after successful export. Replacing an existing file always requires confirmation.
 
 [external_editor]
 # Set the external terminal editor to use from within the app.

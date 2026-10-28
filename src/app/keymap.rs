@@ -93,6 +93,10 @@ impl Keymap {
 pub(crate) fn get_global_keymaps() -> Vec<Keymap> {
     vec![
         Keymap::new(
+            Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+            UICommand::LockAllNotes,
+        ),
+        Keymap::new(
             Input::new(KeyCode::Char('L'), KeyModifiers::NONE),
             UICommand::ShowSecurity,
         ),
