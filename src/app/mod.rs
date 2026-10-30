@@ -108,6 +108,8 @@ where
         self.settings.editor_word_wrap = saved.editor_word_wrap;
         self.settings.security = saved.security;
         self.settings.datum_visibility = saved.datum_visibility;
+        self.settings.show_entry_time = saved.show_entry_time;
+        self.settings.entry_time_format = saved.entry_time_format;
         if self.settings.colored_tags != saved.colored_tags {
             self.settings.colored_tags = saved.colored_tags;
             self.colored_tags = saved

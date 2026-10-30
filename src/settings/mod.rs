@@ -88,6 +88,10 @@ pub struct Settings {
     #[serde(default)]
     /// Sets the visibility options for the datum of journals when rendered in entries list.
     pub datum_visibility: DatumVisibility,
+    #[serde(default = "default_show_entry_time")]
+    pub show_entry_time: bool,
+    #[serde(default)]
+    pub entry_time_format: EntryTimeFormat,
     /// Overwrite the path for the directory used to persist the app state.
     pub app_state_dir: Option<PathBuf>,
 }
@@ -117,6 +121,8 @@ impl Default for Settings {
             history_limit: default_history_limit(),
             colored_tags: default_colored_tags(),
             datum_visibility: Default::default(),
+            show_entry_time: default_show_entry_time(),
+            entry_time_format: Default::default(),
             app_state_dir: Default::default(),
         }
     }
@@ -134,6 +140,15 @@ pub enum DatumVisibility {
     Hide,
     /// Hide the datum providing an extra empty line if `priority` filed for the entry is empty.
     EmptyLine,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone, Copy, Default)]
+pub enum EntryTimeFormat {
+    #[default]
+    #[serde(rename = "24h")]
+    TwentyFourHour,
+    #[serde(rename = "12h")]
+    TwelveHour,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, ValueEnum, Clone, Copy, Default)]
@@ -168,6 +183,10 @@ const fn default_editor_word_wrap() -> bool {
 }
 
 const fn default_show_entry_priority() -> bool {
+    true
+}
+
+const fn default_show_entry_time() -> bool {
     true
 }
 
@@ -248,6 +267,8 @@ impl Settings {
             history_limit: _,
             colored_tags: _,
             datum_visibility: _,
+            show_entry_time: _,
+            entry_time_format: _,
             app_state_dir: _,
         } = self;
 
@@ -534,6 +555,40 @@ kind = "date"
                 .unwrap()
                 .show_entry_priority
         );
+    }
+
+    #[test]
+    fn entry_time_defaults_visible_in_24_hour_format_for_missing_settings() {
+        for settings in [Settings::default(), toml::from_str::<Settings>("").unwrap()] {
+            assert!(settings.show_entry_time);
+            assert_eq!(settings.entry_time_format, EntryTimeFormat::TwentyFourHour);
+        }
+    }
+
+    #[test]
+    fn entry_time_preferences_round_trip_without_changing_entry_defaults() {
+        for (format, expected) in [
+            ("24h", EntryTimeFormat::TwentyFourHour),
+            ("12h", EntryTimeFormat::TwelveHour),
+        ] {
+            let mut settings: Settings = toml::from_str(&format!(
+                "show_entry_time = false\nentry_time_format = '{format}'\nauto_title = 'Daily'\n"
+            ))
+            .unwrap();
+            let title = settings.auto_title.clone();
+            let reloaded: Settings = toml::from_str(&settings.get_as_text().unwrap()).unwrap();
+            assert!(!reloaded.show_entry_time);
+            assert_eq!(reloaded.entry_time_format, expected);
+            assert_eq!(reloaded.auto_title, title);
+        }
+    }
+
+    #[test]
+    fn entry_time_preferences_reject_invalid_values() {
+        for value in ["'am/pm'", "'24'", "24", "true", "[]"] {
+            assert!(toml::from_str::<Settings>(&format!("entry_time_format = {value}")).is_err());
+        }
+        assert!(toml::from_str::<Settings>("show_entry_time = 'false'").is_err());
     }
 
     #[test]

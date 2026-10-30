@@ -153,6 +153,37 @@ async fn priority_visibility_saves_and_applies_without_touching_entries_or_defau
     assert_eq!(reloaded.auto_title, original_title);
 }
 
+#[tokio::test]
+async fn entry_time_preferences_save_and_apply_without_touching_entries_or_auto_title() {
+    let (dir, mut app, mut ui) = setup("# Keep\nauto_title = 'Daily'\n");
+    let original = app.get_current_entry().unwrap().clone();
+    let original_title = app.settings.auto_title.clone();
+    ui.show_config(&app).unwrap();
+    for (show, format, expected) in [
+        (false, "12h", crate::settings::EntryTimeFormat::TwelveHour),
+        (
+            true,
+            "24h",
+            crate::settings::EntryTimeFormat::TwentyFourHour,
+        ),
+    ] {
+        set_setting(&mut ui, &["show_entry_time"], toml::Value::Boolean(show));
+        set_setting(&mut ui, &["entry_time_format"], format.into());
+        control(&mut ui, &mut app, 's').await;
+        assert_eq!(app.settings.show_entry_time, show);
+        assert_eq!(app.settings.entry_time_format, expected);
+        assert_eq!(app.settings.auto_title, original_title);
+        assert_eq!(app.get_current_entry(), Some(&original));
+        let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(text.contains("# Keep"));
+        assert!(text.contains("auto_title = 'Daily'"));
+        let reloaded = Settings::new(Some(dir.path().to_path_buf())).await.unwrap();
+        assert_eq!(reloaded.show_entry_time, show);
+        assert_eq!(reloaded.entry_time_format, expected);
+        assert_eq!(reloaded.auto_title, original_title);
+    }
+}
+
 async fn press(ui: &mut UIComponents<'_>, app: &mut App<NoAccessProvider>, code: KeyCode) {
     ui.handle_input(&key(code), app).await.unwrap();
 }

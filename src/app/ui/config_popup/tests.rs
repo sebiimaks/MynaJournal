@@ -94,6 +94,61 @@ fn priority_visibility_toggle_is_available_in_entries_and_restores_default() {
 }
 
 #[test]
+fn entry_time_controls_cycle_toggle_and_restore_defaults() {
+    let (_, mut popup) = popup("auto_title = 'Daily'\n", "");
+    select(&mut popup, Tab::General, &["show_entry_time"]);
+    assert_eq!(popup.current_field().label, "Show entry time");
+    assert!(!popup.current_field().restart);
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(true))
+    );
+    key(&mut popup, KeyCode::Enter);
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(false))
+    );
+
+    select(&mut popup, Tab::General, &["entry_time_format"]);
+    assert_eq!(popup.current_field().label, "Time format");
+    assert!(!popup.current_field().restart);
+    assert_eq!(popup.value(popup.current_field()), Some("24h".into()));
+    key(&mut popup, KeyCode::Enter);
+    assert_eq!(popup.value(popup.current_field()), Some("12h".into()));
+    let settings: Settings = toml::from_str(&popup.settings_document.text()).unwrap();
+    assert!(!settings.show_entry_time);
+    assert_eq!(
+        settings.entry_time_format,
+        crate::settings::EntryTimeFormat::TwelveHour
+    );
+    assert!(settings.auto_title.is_some());
+    key(&mut popup, KeyCode::Enter);
+    assert_eq!(popup.value(popup.current_field()), Some("24h".into()));
+    key(&mut popup, KeyCode::Enter);
+    key(&mut popup, KeyCode::Char('d'));
+    assert!(
+        popup
+            .settings_document
+            .value(&["entry_time_format"])
+            .is_none()
+    );
+    assert_eq!(popup.value(popup.current_field()), Some("24h".into()));
+
+    select(&mut popup, Tab::General, &["show_entry_time"]);
+    key(&mut popup, KeyCode::Char('d'));
+    assert!(
+        popup
+            .settings_document
+            .value(&["show_entry_time"])
+            .is_none()
+    );
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(true))
+    );
+}
+
+#[test]
 fn invalid_field_keeps_text_and_previous_document_value() {
     let (_, mut popup) = popup("scroll_per_page = 5\n", "");
     select(&mut popup, Tab::General, &["scroll_per_page"]);

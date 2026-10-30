@@ -281,6 +281,11 @@ arrow keys to select an option, `Enter` to edit, and `Ctrl-S` to save. Settings
 marked **restart required** apply on the next launch. See
 [Configuration](CONFIGURATION.md) for the full reference and example TOML.
 
+Under **General**, use **Show entry time** to show or hide the time beside each
+entry's date. **Time format** offers `24h` (`30.10.2026 22:09`, the default) and
+`12h` (`30.10.2026 10:09 pm`). These display preferences apply after saving and
+use your local timezone.
+
 Under **Entries**, turn off **Show priority field** to hide Priority in the entry
 dialog. Existing priorities and the configured default for new entries are
 preserved. Titles start blank by default; `auto_title = "Daily Note"` supplies

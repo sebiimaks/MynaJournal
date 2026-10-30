@@ -1,5 +1,5 @@
 use anyhow::Ok;
-use chrono::{DateTime, Datelike, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, LocalResult, NaiveDate, TimeZone, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
@@ -93,7 +93,7 @@ impl EntryPopup<'_> {
             priority_txt,
             show_priority: settings.show_entry_priority,
             is_edit_entry: false,
-            original_date: None,
+            original_date: Some(date.with_timezone(&Utc)),
             active_txt: ActiveText::Title,
             title_err_msg: String::default(),
             date_err_msg: String::default(),
@@ -107,11 +107,12 @@ impl EntryPopup<'_> {
         let mut title_txt = TextArea::new(vec![entry.title.to_owned()]);
         title_txt.move_cursor(CursorMove::End);
 
+        let date = entry.date.with_timezone(&Local);
         let date_txt = TextArea::new(vec![format!(
             "{:02}-{:02}-{}",
-            entry.date.day(),
-            entry.date.month(),
-            entry.date.year()
+            date.day(),
+            date.month(),
+            date.year()
         )]);
 
         let tags = tags_to_text(&entry.tags);
@@ -504,13 +505,17 @@ impl EntryPopup<'_> {
         let date = NaiveDate::parse_from_str(self.date_txt.lines()[0].as_str(), "%d-%m-%Y")
             .expect("Date must be valid here");
 
-        let date = self
-            .original_date
-            .filter(|original| original.date_naive() == date)
-            .unwrap_or_else(|| {
-                Utc.with_ymd_and_hms(date.year(), date.month(), date.day(), 0, 0, 0)
-                    .unwrap()
-            });
+        let date = if let Some(original) = self.original_date.filter(|original| {
+            let local = original.with_timezone(&Local);
+            (local.year(), local.month(), local.day()) == (date.year(), date.month(), date.day())
+        }) {
+            original
+        } else if let Some(start) = local_day_start(date) {
+            start
+        } else {
+            self.date_err_msg = "This date does not exist in your local timezone".into();
+            return Ok(EntryPopupInputReturn::KeepPopup);
+        };
 
         let tags = text_to_tags(
             self.tags_txt
@@ -533,6 +538,28 @@ impl EntryPopup<'_> {
             Ok(EntryPopupInputReturn::AddEntry(entry_id))
         }
     }
+}
+
+fn local_day_start(date: NaiveDate) -> Option<DateTime<Utc>> {
+    // Clock changes can skip midnight, including historical changes of less than a minute.
+    (0..86_400)
+        .find_map(|second| {
+            let time = date
+                .and_hms_opt(second / 3_600, second % 3_600 / 60, second % 60)
+                .expect("Valid time within a day");
+            let candidates = match Local.from_local_datetime(&time) {
+                LocalResult::Single(value) => [Some(value), None],
+                LocalResult::Ambiguous(first, second) => [Some(first), Some(second)],
+                LocalResult::None => [None, None],
+            };
+            // Verify transition-boundary offsets and order ambiguous results by their instant.
+            candidates
+                .into_iter()
+                .flatten()
+                .filter(|value| value.with_timezone(&Local).offset() == value.offset())
+                .min()
+        })
+        .map(|start| start.with_timezone(&Utc))
 }
 
 fn tags_to_text(tags: &[String]) -> String {

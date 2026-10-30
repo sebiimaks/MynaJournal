@@ -33,7 +33,7 @@ async fn editing_metadata_preserves_the_full_original_timestamp() {
 }
 
 #[tokio::test]
-async fn changing_the_calendar_date_uses_midnight_on_the_new_day() {
+async fn changing_the_calendar_date_uses_local_midnight_on_the_new_day() {
     let mut app = create_default_app();
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
@@ -42,8 +42,126 @@ async fn changing_the_calendar_date_uses_midnight_on_the_new_day() {
     popup.handle_confirm(&mut app).await.unwrap();
     assert_eq!(
         app.get_current_entry().unwrap().date,
-        Utc.with_ymd_and_hms(2026, 10, 23, 0, 0, 0).unwrap()
+        Local
+            .with_ymd_and_hms(2026, 10, 23, 0, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
     );
+}
+
+#[tokio::test]
+async fn calendar_date_selection_handles_local_midnight_transitions_without_panicking() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    let original = app.get_current_entry().unwrap().clone();
+    let mut popup = EntryPopup::from_entry(&original, &app.settings);
+    popup.date_txt = TextArea::new(vec!["04-11-2018".into()]);
+    // This midnight was skipped in Brazil; the day began at 01:00 instead.
+    match Local
+        .with_ymd_and_hms(2018, 11, 4, 0, 0, 0)
+        .earliest()
+        .or_else(|| Local.with_ymd_and_hms(2018, 11, 4, 1, 0, 0).earliest())
+    {
+        Some(start) => {
+            assert_eq!(
+                popup.handle_confirm(&mut app).await.unwrap(),
+                EntryPopupInputReturn::UpdateCurrentEntry
+            );
+            assert_eq!(
+                app.get_current_entry().unwrap().date,
+                start.with_timezone(&Utc)
+            );
+        }
+        None => {
+            assert_eq!(
+                popup.handle_confirm(&mut app).await.unwrap(),
+                EntryPopupInputReturn::KeepPopup
+            );
+            assert!(!popup.date_err_msg.is_empty());
+            assert_eq!(app.get_current_entry(), Some(&original));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn local_calendar_days_handle_clock_changes_in_isolated_timezones() {
+    const CHILD_ENV: &str = "MYNA_ENTRY_TIME_TEST_ZONE";
+    if let std::result::Result::Ok(zone) = std::env::var(CHILD_ENV) {
+        let (date, expected) = match zone.as_str() {
+            "America/Sao_Paulo" => ("2018-11-04", Some("2018-11-04T03:00:00Z")),
+            "America/Havana" => ("2020-11-01", Some("2020-11-01T04:00:00Z")),
+            "Asia/Kathmandu" => ("1986-01-01", Some("1985-12-31T18:30:00Z")),
+            "Africa/Monrovia" => ("1972-01-07", Some("1972-01-07T00:44:30Z")),
+            "Pacific/Apia" => ("2011-12-30", None),
+            _ => panic!("unexpected test timezone"),
+        };
+        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap();
+        let expected = expected.map(|value| value.parse::<DateTime<Utc>>().unwrap());
+        assert_eq!(local_day_start(date), expected, "{zone}");
+        let mut app = create_default_app();
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(1);
+        let original = app.get_current_entry().unwrap().clone();
+        let mut popup = EntryPopup::from_entry(&original, &app.settings);
+        popup.title_txt = TextArea::new(vec!["Unsaved title".into()]);
+        popup.date_txt = TextArea::new(vec![date.format("%d-%m-%Y").to_string()]);
+        let result = popup.handle_confirm(&mut app).await.unwrap();
+        if let Some(expected) = expected {
+            assert_eq!(result, EntryPopupInputReturn::UpdateCurrentEntry);
+            assert_eq!(app.get_current_entry().unwrap().date, expected);
+        } else {
+            assert_eq!(result, EntryPopupInputReturn::KeepPopup);
+            assert!(!popup.date_err_msg.is_empty());
+            assert_eq!(app.get_current_entry(), Some(&original));
+            assert_eq!(popup.title_txt.lines(), ["Unsaved title"]);
+            popup.date_txt = TextArea::new(vec!["31-12-2011".into()]);
+            assert_eq!(
+                popup.handle_confirm(&mut app).await.unwrap(),
+                EntryPopupInputReturn::UpdateCurrentEntry
+            );
+            assert_eq!(app.get_current_entry().unwrap().title, "Unsaved title");
+        }
+        if zone == "America/Havana" {
+            let repeated_time = "2020-11-01T05:30:00Z".parse::<DateTime<Utc>>().unwrap();
+            app.update_current_entry_attributes(
+                "Second occurrence".into(),
+                repeated_time,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+            let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+            popup.title_txt = TextArea::new(vec!["Edited".into()]);
+            popup.handle_confirm(&mut app).await.unwrap();
+            assert_eq!(app.get_current_entry().unwrap().date, repeated_time);
+        }
+        return;
+    }
+
+    for zone in [
+        "America/Sao_Paulo",
+        "America/Havana",
+        "Asia/Kathmandu",
+        "Africa/Monrovia",
+        "Pacific/Apia",
+    ] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "app::ui::entry_popup::tests::local_calendar_days_handle_clock_changes_in_isolated_timezones", "--nocapture"])
+            .env("TZ", zone)
+            .env(CHILD_ENV, zone)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{zone}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed;"));
+    }
 }
 
 #[tokio::test]
@@ -71,6 +189,12 @@ async fn new_entries_keep_auto_title_and_calendar_date_behavior() {
     app.settings = toml::from_str("auto_title = 'Daily journal'").unwrap();
     let mut popup = EntryPopup::new_entry(&app.settings);
     assert_eq!(popup.title_txt.lines(), ["Daily journal"]);
+    popup.original_date = Some(
+        Local
+            .with_ymd_and_hms(2026, 10, 24, 17, 18, 19)
+            .unwrap()
+            .with_timezone(&Utc),
+    );
     popup.date_txt = TextArea::new(vec!["23-10-2026".into()]);
     let EntryPopupInputReturn::AddEntry(id) = popup.handle_confirm(&mut app).await.unwrap() else {
         panic!("valid new entry was not added");
@@ -79,8 +203,77 @@ async fn new_entries_keep_auto_title_and_calendar_date_behavior() {
     assert_eq!(entry.title, "Daily journal");
     assert_eq!(
         entry.date,
-        Utc.with_ymd_and_hms(2026, 10, 23, 0, 0, 0).unwrap()
+        Local
+            .with_ymd_and_hms(2026, 10, 23, 0, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
     );
+}
+
+#[tokio::test]
+async fn new_entry_keeps_creation_time_through_snapshot_retry_and_reload() {
+    let mut app = create_default_app();
+    let before = Utc::now();
+    let mut popup = EntryPopup::new_entry(&app.settings);
+    let after = Utc::now();
+    let timestamp = popup.original_date.unwrap();
+    assert!((before..=after).contains(&timestamp));
+    assert_eq!(popup.title_txt.lines(), [""]);
+    popup.title_txt = TextArea::new(vec!["Timed entry".into()]);
+    let mut popup = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+    app.data_provide.set_return_err(true);
+    assert!(popup.handle_confirm(&mut app).await.is_err());
+    app.data_provide.set_return_err(false);
+    let EntryPopupInputReturn::AddEntry(id) = popup.handle_confirm(&mut app).await.unwrap() else {
+        panic!("valid new entry was not added");
+    };
+    assert_eq!(app.get_entry(id).unwrap().date, timestamp);
+    app.load_entries().await.unwrap();
+    assert_eq!(app.get_entry(id).unwrap().date, timestamp);
+}
+
+#[tokio::test]
+async fn metadata_dialog_uses_local_calendar_day_without_changing_timestamp() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    for hour in [0, 23] {
+        let local = Local.with_ymd_and_hms(2026, 10, 30, hour, 9, 47).unwrap();
+        let timestamp = local.with_timezone(&Utc);
+        app.update_current_entry_attributes("Entry".into(), timestamp, vec![], None)
+            .await
+            .unwrap();
+        let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+        assert_eq!(popup.date_txt.lines(), ["30-10-2026"]);
+        popup.title_txt = TextArea::new(vec!["Edited".into()]);
+        popup.handle_confirm(&mut app).await.unwrap();
+        assert_eq!(app.get_current_entry().unwrap().date, timestamp);
+    }
+}
+
+#[tokio::test]
+async fn calendar_date_can_be_replaced_for_timestamps_at_chronos_limits() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    for timestamp in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {
+        app.update_current_entry_attributes("Imported entry".into(), timestamp, vec![], None)
+            .await
+            .unwrap();
+        let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+        popup.date_txt = TextArea::new(vec!["30-10-2026".into()]);
+        assert_eq!(
+            popup.handle_confirm(&mut app).await.unwrap(),
+            EntryPopupInputReturn::UpdateCurrentEntry
+        );
+        assert_eq!(
+            app.get_current_entry().unwrap().date,
+            Local
+                .with_ymd_and_hms(2026, 10, 30, 0, 0, 0)
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+    }
 }
 
 #[test]

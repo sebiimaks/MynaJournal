@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Show local entry times beside period-separated dates, with live settings to hide the time or use 12-hour am/pm format instead of the default 24-hour format
+- Retain the time for new entries and use the same local calendar date in the entry list and metadata dialog; preserve existing timestamps when editing other metadata
+- Handle calendar dates whose local midnight is skipped or repeated by clock changes without losing the entry draft
+
 ## 0.20.0 - 2026-10-28
 
 - Keep the highlighted entry, editor and actions consistent when applying or resetting filters

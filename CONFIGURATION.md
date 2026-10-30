@@ -36,6 +36,20 @@ storage paths, the File format preference, the app-state directory, and the jour
 Changing storage paths does not move or copy entries. Relative paths retain their
 existing meaning: they resolve from the application's launch directory.
 
+In General, **Show entry time** toggles the time beside each entry's date, and
+**Time format** selects `24h` (for example, `30.10.2026 22:09`) or `12h`
+(`30.10.2026 10:09 pm`). Time is shown in 24-hour format by default. Save with
+`Ctrl-S` to apply these preferences immediately. **Entry dates** hides both the
+date and time when set to `hide` or `empty_line`.
+
+Dates and times are displayed in your computer's local timezone. New entries
+retain the time when their dialog was opened. Editing metadata preserves the
+saved timestamp unless you choose another calendar date, which uses the first
+valid local time on that day (usually midnight). A date skipped entirely by a
+timezone change is rejected without changing the entry. Existing timestamps are
+not rewritten. Older entries may show a time derived from midnight UTC because
+earlier versions saved only a calendar date.
+
 In Entries, turn off **Show priority field** to hide Priority in the entry dialog.
 This applies to the next dialog you open. Existing priority values are preserved,
 and the configured new-entry priority still applies when creating entries.
@@ -81,6 +95,8 @@ colored_tags = true   # Sets if automatically coloring for tags is enabled.
 #  - `hide`: Hide datum without providing an extra empty line for journal without `priority` value.
 #  - `empty_line`: Hide datum providing an extra empty line for journal without `priority` value.
 datum_visibility = "show"
+show_entry_time = true   # Show the stored time in the entry list, using the local timezone.
+entry_time_format = "24h" # "24h" (22:09) or "12h" (10:09 pm). Only affects display.
 
 # Sets the directory where the application persists its state between sessions.
 # Defaults: ~/.local/state/myna-journal/ on Debian; ~/Library/Application Support/myna-journal/ on macOS.

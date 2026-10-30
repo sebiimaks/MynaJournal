@@ -1,4 +1,4 @@
-use chrono::Datelike;
+use chrono::Local;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -15,10 +15,13 @@ use ratatui::{
     },
 };
 
-use backend::DataProvider;
+use backend::{DataProvider, Entry};
 
 use crate::app::App;
-use crate::{app::keymap::Keymap, settings::DatumVisibility};
+use crate::{
+    app::keymap::Keymap,
+    settings::{DatumVisibility, EntryTimeFormat, Settings},
+};
 
 use super::{Styles, UICommand, ui_functions::menu_key_style};
 
@@ -101,44 +104,7 @@ impl EntriesList {
                     .collect();
 
                 // *** Date & Priority ***
-                let date_priority_lines = match (app.settings.datum_visibility, entry.priority) {
-                    (DatumVisibility::Show, Some(prio)) => {
-                        let one_liner = format!(
-                            "{}.{}.{} | Priority: {}",
-                            entry.date.day(),
-                            entry.date.month(),
-                            entry.date.year(),
-                            prio
-                        );
-
-                        if one_liner.len() > width {
-                            vec![
-                                format!(
-                                    "{}.{}.{}",
-                                    entry.date.day(),
-                                    entry.date.month(),
-                                    entry.date.year()
-                                ),
-                                format!("Priority: {prio}"),
-                            ]
-                        } else {
-                            vec![one_liner]
-                        }
-                    }
-                    (DatumVisibility::Show, None) => {
-                        vec![format!(
-                            "{}.{}.{}",
-                            entry.date.day(),
-                            entry.date.month(),
-                            entry.date.year()
-                        )]
-                    }
-                    (DatumVisibility::Hide, None) => Vec::new(),
-                    (DatumVisibility::EmptyLine, None) => vec![String::new()],
-                    (_, Some(prio)) => {
-                        vec![format!("Priority: {}", prio)]
-                    }
-                };
+                let date_priority_lines = entry_metadata_lines(entry, &app.settings, width);
 
                 let date_lines = date_priority_lines
                     .iter()
@@ -348,6 +314,53 @@ impl EntriesList {
     }
 }
 
+fn entry_metadata_lines(entry: &Entry, settings: &Settings, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    if settings.datum_visibility == DatumVisibility::Show {
+        let local = entry.date.with_timezone(&Local);
+        let mut date = local.format("%d.%m.%Y").to_string();
+        let time = settings.show_entry_time.then(|| {
+            local
+                .format(match settings.entry_time_format {
+                    EntryTimeFormat::TwentyFourHour => "%H:%M",
+                    EntryTimeFormat::TwelveHour => "%I:%M %P",
+                })
+                .to_string()
+        });
+        if let Some(time) = time {
+            if date.len() + 1 + time.len() <= width {
+                date.push(' ');
+                date.push_str(&time);
+                lines.push(date);
+            } else {
+                lines.extend([date, time]);
+            }
+        } else {
+            lines.push(date);
+        }
+    }
+    if let Some(priority) = entry.priority {
+        let priority = format!("Priority: {priority}");
+        if lines.len() == 1
+            && let Some(date) = lines.first_mut()
+            && date.len() + " | ".len() + priority.len() <= width
+        {
+            date.push_str(" | ");
+            date.push_str(&priority);
+        } else {
+            lines.push(priority);
+        }
+    }
+    if lines.is_empty() && settings.datum_visibility == DatumVisibility::EmptyLine {
+        lines.push(String::new());
+    }
+    lines
+        .iter()
+        .flat_map(|line| textwrap::wrap(line, width.max(1)))
+        .map(|line| line.into_owned())
+        .collect()
+}
+
 fn bounded_preview(text: &str, limit: usize) -> (String, bool) {
     let mut chars = text.chars();
     let preview = chars
@@ -397,7 +410,132 @@ fn preview_lines(text: &str, width: usize, height: usize, already_truncated: boo
 mod tests {
     use super::*;
     use crate::app::test::create_default_app;
+    use chrono::{TimeZone, Utc};
     use ratatui::{Terminal, backend::TestBackend};
+
+    fn entry_at(hour: u32, minute: u32) -> Entry {
+        Entry::new(
+            7,
+            Local
+                .with_ymd_and_hms(2026, 10, 30, hour, minute, 47)
+                .unwrap()
+                .with_timezone(&Utc),
+            "Entry title".into(),
+            "Body".into(),
+            Vec::new(),
+            None,
+        )
+    }
+
+    #[test]
+    fn entry_time_formats_use_local_dates_minutes_and_lowercase_am_pm() {
+        let mut settings = Settings::default();
+        for (hour, minute, expected_24h, expected_12h) in [
+            (0, 9, "00:09", "12:09 am"),
+            (9, 5, "09:05", "09:05 am"),
+            (12, 0, "12:00", "12:00 pm"),
+            (22, 9, "22:09", "10:09 pm"),
+            (23, 59, "23:59", "11:59 pm"),
+        ] {
+            let entry = entry_at(hour, minute);
+            for (format, expected) in [
+                (EntryTimeFormat::TwentyFourHour, expected_24h),
+                (EntryTimeFormat::TwelveHour, expected_12h),
+            ] {
+                settings.entry_time_format = format;
+                assert_eq!(
+                    entry_metadata_lines(&entry, &settings, 80),
+                    [format!("30.10.2026 {expected}")]
+                );
+            }
+        }
+        let mut entry = entry_at(22, 9);
+        entry.date = Local
+            .with_ymd_and_hms(2026, 1, 2, 3, 4, 59)
+            .unwrap()
+            .with_timezone(&Utc);
+        settings.show_entry_time = false;
+        assert_eq!(entry_metadata_lines(&entry, &settings, 80), ["02.01.2026"]);
+    }
+
+    #[test]
+    fn entry_time_visibility_respects_date_visibility_and_priority() {
+        let mut entry = entry_at(22, 9);
+        let mut settings = Settings::default();
+        for format in [EntryTimeFormat::TwentyFourHour, EntryTimeFormat::TwelveHour] {
+            settings.entry_time_format = format;
+            for show in [true, false] {
+                settings.show_entry_time = show;
+                for visibility in [DatumVisibility::Hide, DatumVisibility::EmptyLine] {
+                    settings.datum_visibility = visibility;
+                    entry.priority = None;
+                    assert_eq!(
+                        entry_metadata_lines(&entry, &settings, 80),
+                        if visibility == DatumVisibility::Hide {
+                            vec![]
+                        } else {
+                            vec![""]
+                        }
+                    );
+                    entry.priority = Some(3);
+                    assert_eq!(entry_metadata_lines(&entry, &settings, 80), ["Priority: 3"]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn entry_time_and_priority_wrap_to_fit_narrow_panes() {
+        let mut entry = entry_at(22, 9);
+        entry.priority = Some(7);
+        let mut settings = Settings::default();
+        assert_eq!(
+            entry_metadata_lines(&entry, &settings, 40),
+            ["30.10.2026 22:09 | Priority: 7"]
+        );
+        assert_eq!(
+            entry_metadata_lines(&entry, &settings, 25),
+            ["30.10.2026 22:09", "Priority: 7"]
+        );
+        settings.entry_time_format = EntryTimeFormat::TwelveHour;
+        assert_eq!(
+            entry_metadata_lines(&entry, &settings, 16),
+            ["30.10.2026", "10:09 pm", "Priority: 7"]
+        );
+        for width in 0..=40 {
+            let lines = entry_metadata_lines(&entry, &settings, width);
+            assert!(lines.iter().all(|line| line.width() <= width.max(1)));
+        }
+    }
+
+    #[test]
+    fn entry_time_renders_on_second_line_and_changes_without_mutating_entry() {
+        let mut app = create_default_app();
+        let entry = entry_at(22, 9);
+        app.entries = vec![entry.clone()];
+        let mut list = EntriesList::new();
+        list.state.select(Some(0));
+        let mut terminal = Terminal::new(TestBackend::new(40, 6)).unwrap();
+        for (show, format, expected) in [
+            (true, EntryTimeFormat::TwentyFourHour, "30.10.2026 22:09"),
+            (true, EntryTimeFormat::TwelveHour, "30.10.2026 10:09 pm"),
+            (false, EntryTimeFormat::TwelveHour, "30.10.2026"),
+        ] {
+            app.settings.show_entry_time = show;
+            app.settings.entry_time_format = format;
+            terminal
+                .draw(|frame| {
+                    list.render_widget(frame, frame.area(), &app, &[], &Styles::default())
+                })
+                .unwrap();
+            let row = terminal.backend().buffer().content()[80..120]
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert_eq!(row.trim_matches(['│', ' ']), expected);
+            assert_eq!(app.entries.as_slice(), std::slice::from_ref(&entry));
+        }
+    }
 
     #[tokio::test]
     async fn oversized_titles_and_tags_render_without_mutating_stored_text() {
