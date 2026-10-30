@@ -86,6 +86,16 @@ Runtime coverage is version-specific: Rust 1.99.1 and Zig 0.15.2 where used.
 See [the maintenance procedure](README.md) before redistributing builds made
 with different toolchains, modified dependencies or additional native code.
 
+## Dependency snapshot update — 30 October 2026
+
+Updated `libz-sys` from 1.1.29 to 1.1.31 for RUSTSEC-2026-0418. The published
+crate archive matches its locked SHA-256. Its MIT, Apache-2.0 and bundled zlib
+licence files are byte-for-byte identical to the previously reviewed versions;
+the bundled native sources are also unchanged. Only package metadata, the
+crate's own lockfile and its build script changed. The snapshot retains the
+existing licence selection and notice texts, with updated version, checksum
+and source-commit provenance. The inventory still contains 501 external packages.
+
 ## Dependency snapshot update — 28 October 2026
 
 The locked inventory now contains 501 external packages: 91 package versions

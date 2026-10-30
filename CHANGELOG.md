@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 - Show local entry times beside period-separated dates, with live settings to hide the time or use 12-hour am/pm format instead of the default 24-hour format
 - Retain the time for new entries and use the same local calendar date in the entry list and metadata dialog; preserve existing timestamps when editing other metadata
 - Handle calendar dates whose local midnight is skipped or repeated by clock changes without losing the entry draft
+- Update `libz-sys` to 1.1.31 to prevent build-environment disclosure with newer C compiler tooling (RUSTSEC-2026-0418)
 
 ## 0.20.0 - 2026-10-28
 

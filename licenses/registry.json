@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed": "2026-10-28",
+  "reviewed": "2026-10-30",
   "packages": [
     {
       "name": "aead",
@@ -6225,8 +6225,8 @@
     },
     {
       "name": "libz-sys",
-      "version": "1.1.29",
-      "checksum": "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9",
+      "version": "1.1.31",
+      "checksum": "ff20308ecabd635a2dc1dd5834a86c462cca20efba1d5d3ddab1f8aea3455cb2",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "MIT OR Apache-2.0",
       "selected_license": "MIT",
@@ -6242,7 +6242,7 @@
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
             "crate": "libz-sys",
-            "version": "1.1.29",
+            "version": "1.1.31",
             "path": "LICENSE-APACHE"
           }
         },
@@ -6251,7 +6251,7 @@
           "sha256": "34c467b6945a22696d060b8fdd2379d464acb3408d4c599d3dc5fe4fa1b4c84f",
           "source": {
             "crate": "libz-sys",
-            "version": "1.1.29",
+            "version": "1.1.31",
             "path": "LICENSE-MIT"
           }
         },
@@ -6260,12 +6260,12 @@
           "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
           "source": {
             "crate": "libz-sys",
-            "version": "1.1.29",
+            "version": "1.1.31",
             "path": "src/zlib/LICENSE"
           }
         }
       ],
-      "vcs_commit": "c589ac52bdf9f735dfc2858487e9b1f33b40c5cd"
+      "vcs_commit": "595fbb7995b2c5e15371963103d33192fd066857"
     },
     {
       "name": "line-clipping",

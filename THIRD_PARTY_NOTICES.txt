@@ -1913,13 +1913,13 @@ Published source revision: 499cc7bb986e04cc66e6ed762522f7ea449178d1
 Notice [f59ba65550f2a5adff98ec6478d783402c8e0a3eb515025c0b3438f3d30dc39e]: LICENSE
 Notice [3a2a3b5bec4a761babbe66d25b33db25987c5851081e1c65da3b2a0c7dda396a]: sqlite3/sqlite3.c (public-domain notice, lines 1-45)
 
-libz-sys 1.1.29
+libz-sys 1.1.31
 Declared licence: MIT OR Apache-2.0
 Selected licence: MIT
-Crate SHA-256: 85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9
+Crate SHA-256: ff20308ecabd635a2dc1dd5834a86c462cca20efba1d5d3ddab1f8aea3455cb2
 Repository: https://github.com/rust-lang/libz-sys
 Published authors: Alex Crichton <alex@alexcrichton.com>; Josh Triplett <josh@joshtriplett.org>; Sebastian Thiel <sebastian.thiel@icloud.com>
-Published source revision: c589ac52bdf9f735dfc2858487e9b1f33b40c5cd
+Published source revision: 595fbb7995b2c5e15371963103d33192fd066857
 Notice [a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2]: LICENSE-APACHE
 Notice [34c467b6945a22696d060b8fdd2379d464acb3408d4c599d3dc5fe4fa1b4c84f]: LICENSE-MIT
 Notice [e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2]: src/zlib/LICENSE
@@ -7122,8 +7122,8 @@ lazy_static 1.5.0: LICENSE-APACHE
 Source: https://crates.io/api/v1/crates/lazy_static/1.5.0/download :: LICENSE-APACHE
 libgit2-sys 0.18.8+1.9.7: LICENSE-APACHE
 Source: https://crates.io/api/v1/crates/libgit2-sys/0.18.8+1.9.7/download :: LICENSE-APACHE
-libz-sys 1.1.29: LICENSE-APACHE
-Source: https://crates.io/api/v1/crates/libz-sys/1.1.29/download :: LICENSE-APACHE
+libz-sys 1.1.31: LICENSE-APACHE
+Source: https://crates.io/api/v1/crates/libz-sys/1.1.31/download :: LICENSE-APACHE
 linux-raw-sys 0.12.1: LICENSE-APACHE
 Source: https://crates.io/api/v1/crates/linux-raw-sys/0.12.1/download :: LICENSE-APACHE
 linux-raw-sys 0.4.15: LICENSE-APACHE
@@ -18633,8 +18633,8 @@ Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.30.1/download :: sqlite
 
 ==============================================================================
 NOTICE [34c467b6945a22696d060b8fdd2379d464acb3408d4c599d3dc5fe4fa1b4c84f]
-libz-sys 1.1.29: LICENSE-MIT
-Source: https://crates.io/api/v1/crates/libz-sys/1.1.29/download :: LICENSE-MIT
+libz-sys 1.1.31: LICENSE-MIT
+Source: https://crates.io/api/v1/crates/libz-sys/1.1.31/download :: LICENSE-MIT
 ==============================================================================
 Copyright (c) 2014 Alex Crichton
 Copyright (c) 2020 Josh Triplett
@@ -18666,8 +18666,8 @@ DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 NOTICE [e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2]
-libz-sys 1.1.29: src/zlib/LICENSE
-Source: https://crates.io/api/v1/crates/libz-sys/1.1.29/download :: src/zlib/LICENSE
+libz-sys 1.1.31: src/zlib/LICENSE
+Source: https://crates.io/api/v1/crates/libz-sys/1.1.31/download :: src/zlib/LICENSE
 ==============================================================================
 Copyright notice:
 
