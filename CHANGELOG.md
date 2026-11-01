@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.21.0 - 2026-11-01
+
 - Show an editable **Date and Time** field in entry dialogs when time display is enabled, using the selected 24-hour or am/pm format
 - Use **Create Entry** for the new-entry heading, reduce its width by 25%, and highlight entry-dialog shortcuts to match the main menu
 - Handle explicit Ctrl-M confirmation and keep tag-picker shortcuts visible in narrower entry dialogs
@@ -11,6 +13,15 @@ All notable changes to this project are documented in this file.
 - Retain the time for new entries and use the same local calendar date in the entry list and metadata dialog; preserve existing timestamps when editing other metadata
 - Handle calendar dates whose local midnight is skipped or repeated by clock changes without losing the entry draft
 - Update `libz-sys` to 1.1.31 to prevent build-environment disclosure with newer C compiler tooling (RUSTSEC-2026-0418)
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.21.0-1_amd64.deb`.
+Existing MynaJournal journals and settings are preserved; no migration is needed
+from 0.20.0. Times use your computer's local timezone. Older entries may show a
+time derived from midnight UTC because earlier versions saved only a date.
+Use **Config → General → Show entry time** to hide times, or **Time format** to
+choose 24-hour or am/pm display.
 
 ## 0.20.0 - 2026-10-28
 
