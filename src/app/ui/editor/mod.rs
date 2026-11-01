@@ -7,7 +7,9 @@ use ratatui::{
     prelude::Margin,
     style::Style,
     symbols,
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
+    widgets::{
+        Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
+    },
 };
 
 use crate::app::{App, keymap::Input, runner::HandleInputReturnType};
@@ -466,7 +468,14 @@ impl<'a> Editor<'a> {
         self.mode = mode;
     }
 
-    pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+    pub fn render_widget(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        styles: &Styles,
+        top_inset: u16,
+    ) {
+        let top_inset = top_inset.min(area.height.saturating_sub(3));
         if self.locked {
             frame.render_widget(
                 Paragraph::new("Locked note\n\nEnter: unlock\nL: note security")
@@ -482,7 +491,7 @@ impl<'a> Editor<'a> {
             return;
         }
         if self.word_wrap {
-            self.render_wrapped(frame, area, styles);
+            self.render_wrapped(frame, area, styles, top_inset);
             return;
         }
         if area.width < 3 || area.height < 3 {
@@ -515,6 +524,7 @@ impl<'a> Editor<'a> {
             Block::default()
                 .borders(Borders::ALL)
                 .style(text_block_style)
+                .padding(Padding::new(0, 0, top_inset, 0))
                 .title(title),
         );
 
@@ -538,10 +548,16 @@ impl<'a> Editor<'a> {
             .set_selection_style(Style::from(estyles.selection_style));
 
         frame.render_widget(&self.text_area, area);
-        self.render_unwrapped_controls(frame, area, styles, cursor_style);
+        let text_area = Rect::new(
+            area.x,
+            area.y + top_inset,
+            area.width,
+            area.height - top_inset,
+        );
+        self.render_unwrapped_controls(frame, text_area, styles, cursor_style);
 
-        self.render_vertical_scrollbar(frame, area);
-        self.render_horizontal_scrollbar(frame, area);
+        self.render_vertical_scrollbar(frame, text_area);
+        self.render_horizontal_scrollbar(frame, text_area);
     }
 
     pub fn render_vertical_scrollbar(&mut self, frame: &mut Frame, area: Rect) {
@@ -957,7 +973,7 @@ mod tests {
         styles.editor.selection_style.bg = Some(Color::Magenta);
         let mut terminal = Terminal::new(TestBackend::new(14, 3)).unwrap();
         terminal
-            .draw(|frame| editor.render_widget(frame, frame.area(), &styles))
+            .draw(|frame| editor.render_widget(frame, frame.area(), &styles, 0))
             .unwrap();
         let buffer = terminal.backend().buffer();
 

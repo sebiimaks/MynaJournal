@@ -2065,6 +2065,7 @@ dependencies = [
  "git2",
  "log",
  "path-absolutize",
+ "rand",
  "ratatui",
  "ratatui-textarea",
  "rayon",

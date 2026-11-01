@@ -9,7 +9,7 @@ use zeroize::Zeroize;
 
 use super::*;
 
-const PROTECTED_STORE_VERSION: u32 = 2;
+const VERSIONED_STORE_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -150,15 +150,26 @@ impl JsonDataProvide {
             );
             let entries: Vec<Entry> = serde_json::from_value(value)?;
             ensure!(
-                entries.iter().all(|entry| entry.protection.is_none()),
-                "Protected notes require a versioned entries file"
+                entries.iter().all(|entry| entry.protection.is_none()
+                    && entry.mood.is_none()
+                    && entry.journal_prompt.is_none()),
+                "Protected notes, moods and prompts require a versioned entries file"
             );
             entries
         } else {
             let store: VersionedStore = serde_json::from_value(value)?;
             ensure!(
-                store.format == "tui-journal" && store.version == PROTECTED_STORE_VERSION,
+                store.format == "tui-journal"
+                    && matches!(store.version, 2 | VERSIONED_STORE_VERSION),
                 "Unsupported entries file format or version"
+            );
+            ensure!(
+                store.version == VERSIONED_STORE_VERSION
+                    || store
+                        .entries
+                        .iter()
+                        .all(|entry| entry.mood.is_none() && entry.journal_prompt.is_none()),
+                "Mood and prompts require entries file version 3"
             );
             self.versioned = true;
             store.entries
@@ -189,11 +200,14 @@ impl JsonDataProvide {
         for entry in &entries {
             entry.validate_protection()?;
         }
-        let versioned = self.versioned || entries.iter().any(|entry| entry.protection.is_some());
+        let versioned = self.versioned
+            || entries.iter().any(|entry| {
+                entry.protection.is_some() || entry.mood.is_some() || entry.journal_prompt.is_some()
+            });
         let bytes = if versioned {
             serde_json::to_vec(&VersionedStore {
                 format: "tui-journal".into(),
-                version: PROTECTED_STORE_VERSION,
+                version: VERSIONED_STORE_VERSION,
                 entries,
             })?
         } else {

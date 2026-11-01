@@ -240,7 +240,7 @@ mod tests {
             let provider = JsonDataProvide::new(dir.path().join("entries.json"));
             let mut app = App::new(provider, Settings::default());
             let id = app
-                .add_entry("Journal".into(), chrono::Utc::now(), vec![], None)
+                .add_entry("Journal".into(), chrono::Utc::now(), vec![], None, None)
                 .await
                 .unwrap();
             let mut ui = UIComponents::new(Styles::default());

@@ -107,9 +107,15 @@ async fn filtering_out_every_entry_clears_the_highlight() {
 async fn applying_a_filter_with_multiple_matches_reconciles_the_existing_selection() {
     let mut app = create_default_app();
     app.load_entries().await.unwrap();
-    app.add_entry("Another entry".into(), chrono::Utc::now(), Vec::new(), None)
-        .await
-        .unwrap();
+    app.add_entry(
+        "Another entry".into(),
+        chrono::Utc::now(),
+        Vec::new(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let mut ui = UIComponents::new(Styles::default());
     ui.set_current_entry(Some(0), &mut app);
     assert_eq!(ui.entries_list.state.selected(), Some(2));

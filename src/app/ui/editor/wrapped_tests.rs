@@ -69,7 +69,7 @@ fn render(editor: &mut Editor<'_>, width: u16, height: u16) -> Buffer {
     styles.editor.cursor_visual.bg = Some(Color::Yellow);
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
-        .draw(|frame| editor.render_widget(frame, frame.area(), &styles))
+        .draw(|frame| editor.render_widget(frame, frame.area(), &styles, 0))
         .unwrap();
     terminal.backend().buffer().clone()
 }
@@ -84,6 +84,46 @@ fn cursor_cells(buffer: &Buffer) -> Vec<(u16, u16)> {
         }
     }
     positions
+}
+
+#[test]
+fn prompt_inset_keeps_cursor_controls_and_scrollbars_below_the_prompt() {
+    let content = (0..30)
+        .map(|i| format!("Line {i}\x1b end"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for word_wrap in [false, true] {
+        let (mut editor, app) = fixture(&content, EditorMode::Insert);
+        editor.set_word_wrap(word_wrap);
+        let mut styles = Styles::default();
+        styles.editor.cursor_insert.bg = Some(Color::Yellow);
+        let mut terminal = Terminal::new(TestBackend::new(24, 12)).unwrap();
+        for inset in [4, 0, 4] {
+            editor.text_area.move_cursor(CursorMove::Jump(0, 0));
+            terminal
+                .draw(|frame| editor.render_widget(frame, frame.area(), &styles, inset))
+                .unwrap();
+            assert_eq!(cursor_cells(terminal.backend().buffer()), [(1, inset + 1)]);
+            input(&mut editor, &app, KeyCode::PageDown, KeyModifiers::NONE);
+            terminal
+                .draw(|frame| editor.render_widget(frame, frame.area(), &styles, inset))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            assert!(!cursor_cells(buffer).is_empty());
+            assert!(
+                cursor_cells(buffer)
+                    .iter()
+                    .all(|(_, y)| *y > inset && *y < 11)
+            );
+            for y in 1..=inset {
+                for x in 1..23 {
+                    assert_eq!(buffer[(x, y)].symbol(), " ");
+                }
+                assert_eq!(buffer[(23, y)].symbol(), "│");
+            }
+            assert_eq!(editor.get_content(), content);
+        }
+    }
 }
 
 #[test]

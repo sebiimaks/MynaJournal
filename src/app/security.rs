@@ -20,6 +20,8 @@ fn private_entry(entry: Entry) -> PrivateEntry {
         entry.content.zeroize();
         entry.tags.zeroize();
         entry.priority.zeroize();
+        entry.mood.zeroize();
+        entry.journal_prompt.zeroize();
     }
     scopeguard::guard(entry, erase as fn(Entry))
 }
@@ -35,6 +37,8 @@ impl Drop for UnlockedSession {
         self.entry.content.zeroize();
         self.entry.tags.zeroize();
         self.entry.priority.zeroize();
+        self.entry.mood.zeroize();
+        self.entry.journal_prompt.zeroize();
         self.native_metadata.zeroize();
     }
 }
@@ -89,6 +93,17 @@ impl Default for SecurityState {
 }
 
 impl<D: DataProvider> App<D> {
+    pub fn entry_mood(&self, entry: &Entry) -> Option<backend::Mood> {
+        if entry.protection.is_some() {
+            self.security
+                .sessions
+                .get(&entry.id)
+                .and_then(|session| session.entry.mood)
+        } else {
+            entry.mood
+        }
+    }
+
     pub fn is_protected(&self, id: u32) -> bool {
         self.entries
             .iter()
@@ -196,6 +211,8 @@ impl<D: DataProvider> App<D> {
             entry.content = std::mem::take(&mut private.content);
             entry.tags = std::mem::take(&mut private.tags);
             entry.priority = private.priority;
+            entry.mood = private.mood;
+            entry.journal_prompt = private.journal_prompt.take();
             let draft_content = if let Some(draft) = draft {
                 let private_draft = protection::unlock(&draft, &password)?;
                 Some(

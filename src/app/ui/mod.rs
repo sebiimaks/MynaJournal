@@ -48,6 +48,7 @@ mod footer;
 mod fuzz_find;
 mod help_popup;
 mod msg_box;
+mod prompt;
 mod security_handlers;
 mod security_popup;
 #[cfg(test)]
@@ -104,6 +105,7 @@ pub struct UIComponents<'a> {
     privacy_shield: bool,
     shielded_popups: Vec<Popup<'a>>,
     lock_all_requested: bool,
+    prompt_hidden: bool,
 }
 
 impl UIComponents<'_> {
@@ -136,6 +138,7 @@ impl UIComponents<'_> {
             privacy_shield: false,
             shielded_popups: Vec::new(),
             lock_all_requested: false,
+            prompt_hidden: false,
         }
     }
 
@@ -165,6 +168,9 @@ impl UIComponents<'_> {
             && let Some(previous) = app.current_entry_id
         {
             app.lock_note(previous);
+        }
+        if app.current_entry_id != entry_id {
+            self.prompt_hidden = false;
         }
         app.current_entry_id = entry_id;
         let entry_index =
@@ -261,7 +267,7 @@ impl UIComponents<'_> {
                 self.active_control == ControlType::EntryContentTxt,
             );
         } else {
-            self.editor.render_widget(f, area, &self.styles);
+            self.render_editor_with_prompt(f, area, app);
         }
     }
 
@@ -314,7 +320,9 @@ impl UIComponents<'_> {
             (keymap.key == *input
                 && matches!(
                     keymap.command,
-                    UICommand::ShrinkEntriesPane | UICommand::GrowEntriesPane
+                    UICommand::ShrinkEntriesPane
+                        | UICommand::GrowEntriesPane
+                        | UICommand::ToggleJournalPrompt
                 ))
             .then_some(keymap.command)
         }) {

@@ -25,6 +25,7 @@ mod external_editor;
 mod filter;
 mod history;
 mod keymap;
+mod prompts;
 mod runner;
 mod security;
 mod sorter;
@@ -99,6 +100,8 @@ where
     /// Apply preferences that do not replace session storage or discard undo history.
     pub fn apply_live_settings(&mut self, saved: Settings) {
         self.settings.show_entry_priority = saved.show_entry_priority;
+        self.settings.show_entry_mood = saved.show_entry_mood;
+        self.settings.journal_prompts = saved.journal_prompts;
         self.settings.export = saved.export;
         self.settings.external_editor = saved.external_editor;
         self.settings.default_journal_priority = saved.default_journal_priority;
@@ -203,33 +206,17 @@ where
         date: DateTime<Utc>,
         tags: Vec<String>,
         priority: Option<u32>,
+        mood: Option<backend::Mood>,
     ) -> anyhow::Result<u32> {
-        self.add_entry_intern(title, date, tags, priority, None, HistoryStack::Undo)
-            .await
-    }
-
-    /// Creates an [`Entry`] from the given arguments, registering the change to the provided
-    /// [`HistoryStack`].
-    async fn add_entry_intern(
-        &mut self,
-        title: String,
-        date: DateTime<Utc>,
-        tags: Vec<String>,
-        priority: Option<u32>,
-        content: Option<String>,
-        history_target: HistoryStack,
-    ) -> anyhow::Result<u32> {
-        log::trace!("Adding entry");
-
         let mut draft = EntryDraft::new(date, title, tags, priority);
-        if let Some(content) = content {
-            draft = draft.with_content(content);
+        draft.mood = mood.filter(|_| self.settings.show_entry_mood);
+        if self.settings.journal_prompts {
+            draft.journal_prompt = draft.mood.and_then(prompts::choose);
         }
-
         let entry = self.data_provide.add_entry(draft).await?;
         let entry_id = entry.id;
 
-        self.history.register_add(history_target, &entry);
+        self.history.register_add(HistoryStack::Undo, &entry);
         self.retain_restore_metadata();
 
         self.entries.push(entry);
@@ -270,16 +257,20 @@ where
         date: DateTime<Utc>,
         tags: Vec<String>,
         priority: Option<u32>,
+        mood: Option<backend::Mood>,
     ) -> anyhow::Result<()> {
         let current_entry_id = self
             .current_entry_id
             .context("No journal is selected for updating attributes")?;
         self.update_entry_attributes(
-            current_entry_id,
-            title,
-            date,
-            tags,
-            priority,
+            history::EntryAttributes {
+                id: current_entry_id,
+                title,
+                date,
+                tags,
+                priority,
+                mood,
+            },
             HistoryStack::Undo,
         )
         .await
@@ -289,13 +280,17 @@ where
     /// the given [`HistoryStack`]
     async fn update_entry_attributes(
         &mut self,
-        entry_id: u32,
-        title: String,
-        date: DateTime<Utc>,
-        tags: Vec<String>,
-        priority: Option<u32>,
+        attributes: history::EntryAttributes,
         history_target: HistoryStack,
     ) -> anyhow::Result<()> {
+        let history::EntryAttributes {
+            id: entry_id,
+            title,
+            date,
+            tags,
+            priority,
+            mood,
+        } = attributes;
         log::trace!("Updating entry");
 
         if self.is_protected(entry_id) {
@@ -312,6 +307,7 @@ where
             candidate.tags.zeroize();
             candidate.tags = tags;
             candidate.priority = priority;
+            candidate.mood = mood;
             return self.save_protected_entry(candidate).await;
         }
 
@@ -325,6 +321,7 @@ where
         candidate.date = date;
         candidate.tags = tags;
         candidate.priority = priority;
+        candidate.mood = mood;
 
         let persisted_entry = self.data_provide.update_entry(candidate).await?;
         let entry = self
@@ -741,17 +738,10 @@ where
             }
             Change::EntryAttribute(attr) => {
                 log::trace!("History Apply: Change Attributes: ID {}", attr.id);
-                self.update_entry_attributes(
-                    attr.id,
-                    attr.title,
-                    attr.date,
-                    attr.tags,
-                    attr.priority,
-                    history_target,
-                )
-                .await?;
+                let id = attr.id;
+                self.update_entry_attributes(*attr, history_target).await?;
 
-                Ok(Some(attr.id))
+                Ok(Some(id))
             }
             Change::EntryContent { id, content } => {
                 log::trace!("History Apply: Change Content: ID: {id}");

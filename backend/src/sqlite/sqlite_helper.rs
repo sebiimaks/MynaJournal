@@ -14,6 +14,8 @@ pub(crate) struct EntryIntermediate {
     pub priority: Option<u32>,
     pub tags: String,
     pub protection: Option<String>,
+    pub mood: Option<String>,
+    pub journal_prompt: Option<String>,
 }
 
 impl TryFrom<EntryIntermediate> for Entry {
@@ -26,6 +28,18 @@ impl TryFrom<EntryIntermediate> for Entry {
             title: value.title,
             content: value.content,
             priority: value.priority,
+            mood: value
+                .mood
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .context("Invalid entry mood")?,
+            journal_prompt: value
+                .journal_prompt
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .context("Invalid entry prompt")?,
             tags: serde_json::from_str(&value.tags).context("Invalid entry tags")?,
             protection: value
                 .protection
@@ -53,6 +67,8 @@ mod tests {
             priority: Some(2),
             tags: tags.into(),
             protection: None,
+            mood: None,
+            journal_prompt: None,
         }
     }
 

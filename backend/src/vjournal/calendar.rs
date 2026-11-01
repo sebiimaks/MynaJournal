@@ -67,6 +67,13 @@ pub fn set_uid(component: &mut Component, uid: &str) {
 
 /// Build an [`Entry`] from a VJOURNAL [`Component`].
 pub fn component_to_entry(component: &Component, id: u32) -> anyhow::Result<Entry> {
+    for property in ["X-MYNA-JOURNAL-MOOD", "X-MYNA-JOURNAL-PROMPT"] {
+        ensure!(
+            component.get_all(property).len() <= 1,
+            "Duplicate mood or prompt metadata"
+        );
+    }
+
     let title = component
         .get_only("SUMMARY")
         .map(text_value)
@@ -135,6 +142,16 @@ pub fn component_to_entry(component: &Component, id: u32) -> anyhow::Result<Entr
         tags,
         priority,
         protection,
+        mood: component
+            .get_only("X-MYNA-JOURNAL-MOOD")
+            .map(|value| serde_json::from_str(&text_value(value)))
+            .transpose()
+            .context("Invalid entry mood")?,
+        journal_prompt: component
+            .get_only("X-MYNA-JOURNAL-PROMPT")
+            .map(|value| serde_json::from_str(&text_value(value)))
+            .transpose()
+            .context("Invalid entry prompt")?,
     };
     entry.validate_protection()?;
     Ok(entry)
@@ -228,6 +245,19 @@ pub fn apply_entry_to_component(
         comp.set(Property::new("PRIORITY", priority.to_string()));
     }
 
+    for (name, value) in [
+        ("X-MYNA-JOURNAL-MOOD", serde_json::to_value(entry.mood)),
+        (
+            "X-MYNA-JOURNAL-PROMPT",
+            serde_json::to_value(&entry.journal_prompt),
+        ),
+    ] {
+        comp.remove(name);
+        let value = value.expect("mood and prompt contain serializable fields");
+        if !value.is_null() {
+            comp.set(text_property(name, &value.to_string()));
+        }
+    }
     comp
 }
 
@@ -374,6 +404,16 @@ pub fn normalize_entry_priority(priority: Option<u32>) -> Result<Option<u32>, Mo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_mood_or_prompt_properties_are_rejected_without_dropping_values() {
+        for property in ["X-MYNA-JOURNAL-MOOD", "X-MYNA-JOURNAL-PROMPT"] {
+            let mut component = Component::new("VJOURNAL");
+            component.push(text_property(property, "null"));
+            component.push(text_property(property, "null"));
+            assert!(component_to_entry(&component, 0).is_err());
+        }
+    }
 
     #[test]
     fn protected_component_round_trips_exact_date_and_envelope() {

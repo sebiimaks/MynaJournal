@@ -6,7 +6,7 @@ use chrono::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
@@ -18,7 +18,7 @@ use crate::{
     settings::{EntryTimeFormat, Settings},
 };
 
-use backend::{DataProvider, Entry};
+use backend::{DataProvider, Entry, Mood};
 
 use self::tags::{TagsPopup, TagsPopupReturn};
 
@@ -40,6 +40,9 @@ pub struct EntryPopup<'a> {
     tags_txt: TextArea<'a>,
     priority_txt: TextArea<'a>,
     show_priority: bool,
+    show_mood: bool,
+    mood: Option<Mood>,
+    mood_focus: usize,
     time_format: Option<EntryTimeFormat>,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
@@ -54,6 +57,7 @@ pub struct EntryPopup<'a> {
 #[derive(Debug, PartialEq, Eq)]
 enum ActiveText {
     Title,
+    Mood,
     Date,
     Tags,
     Priority,
@@ -96,6 +100,9 @@ impl EntryPopup<'_> {
             tags_txt,
             priority_txt,
             show_priority: settings.show_entry_priority,
+            show_mood: settings.show_entry_mood,
+            mood: None,
+            mood_focus: 0,
             time_format,
             is_edit_entry: false,
             original_date: Some(date.with_timezone(&Utc)),
@@ -134,6 +141,12 @@ impl EntryPopup<'_> {
             tags_txt,
             priority_txt,
             show_priority: settings.show_entry_priority,
+            show_mood: settings.show_entry_mood,
+            mood: entry.mood,
+            mood_focus: entry
+                .mood
+                .and_then(|m| Mood::ALL.iter().position(|candidate| *candidate == m))
+                .unwrap_or(0),
             time_format,
             is_edit_entry: true,
             original_date: Some(entry.date),
@@ -168,7 +181,7 @@ impl EntryPopup<'_> {
             Span::raw(", "),
             Span::styled("<Ctrl-t>", command_style),
         ]);
-        let footer = Paragraph::new(footer_text)
+        let mut footer = Paragraph::new(footer_text)
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false });
         let bounds = area;
@@ -177,12 +190,59 @@ impl EntryPopup<'_> {
         let width = if self.is_edit_entry {
             width
         } else {
-            (u32::from(width) * 3 / 4) as u16
+            (u32::from(width) * 27 / 40) as u16
         };
-        let footer_height = footer
-            .line_count(width.saturating_sub(2 * HORIZONTAL_MARGIN))
-            .min(u16::MAX as usize) as u16;
-        let height = height.saturating_add(footer_height.saturating_sub(1));
+        let width = if self.show_mood {
+            let minimum_width = if self.is_edit_entry { 42 } else { 38 };
+            width.max(minimum_width).min(bounds.width)
+        } else {
+            width
+        };
+        let horizontal_margin = if width < 42 { 1 } else { HORIZONTAL_MARGIN };
+        let inner_width = width.saturating_sub(2 * horizontal_margin);
+        let mood_lines = self.mood_lines(inner_width, styles);
+        let mood_height = mood_lines.len() as u16;
+        let height = height + if self.show_mood { mood_height } else { 0 };
+        let mut mood_hint = vec![
+            Span::raw("Press "),
+            Span::styled("Space", command_style),
+            Span::raw(" to select"),
+        ];
+        if inner_width >= 35 {
+            mood_hint.extend([
+                Span::raw(" | "),
+                Span::styled("←/→", command_style),
+                Span::raw(" to move"),
+            ]);
+        }
+        let mood_hint = Paragraph::new(Line::from(mood_hint))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false });
+        let hint_height = if self.show_mood {
+            mood_hint.line_count(inner_width).min(u16::MAX as usize) as u16
+        } else {
+            0
+        };
+        let mut footer_height = (footer.line_count(inner_width).min(u16::MAX as usize) as u16)
+            .saturating_add(hint_height);
+        let mut height = height.saturating_add(footer_height.saturating_sub(1));
+        let vertical_margin = if height > bounds.height { 1 } else { 2 };
+        if height > bounds.height {
+            let compact = vec![
+                Span::styled("Enter", command_style),
+                Span::raw(": confirm | "),
+                Span::styled("Esc", command_style),
+                Span::raw(": cancel | "),
+                Span::styled("Tab", command_style),
+                Span::raw(": next"),
+            ];
+            footer = Paragraph::new(Line::from(compact))
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: false });
+            footer_height = (footer.line_count(inner_width).min(u16::MAX as usize) as u16)
+                .saturating_add(hint_height);
+            height = bounds.height;
+        }
         let area = centered_rect_exact_dimensions(width, height, bounds).intersection(bounds);
 
         let block = Block::default()
@@ -196,19 +256,62 @@ impl EntryPopup<'_> {
         frame.render_widget(Clear, area);
         frame.render_widget(block, area);
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .horizontal_margin(HORIZONTAL_MARGIN)
-            .vertical_margin(2)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(if self.show_priority { 3 } else { 0 }),
-                Constraint::Length(3),
-                Constraint::Min(1),
-            ])
-            .split(area);
+        let inner = area.inner(ratatui::layout::Margin::new(
+            horizontal_margin,
+            vertical_margin,
+        ));
+        let footer_height = footer_height.min(inner.height.saturating_sub(3));
+        let body_height = inner.height.saturating_sub(footer_height);
+        if inner.width < 3 || body_height < 3 {
+            frame.render_widget(Paragraph::new("Enlarge terminal"), inner);
+            return;
+        }
+        let mut fields = vec![(0, ActiveText::Title, 3)];
+        if self.show_mood {
+            fields.push((1, ActiveText::Mood, mood_height));
+        }
+        fields.push((2, ActiveText::Date, 3));
+        if self.show_priority {
+            fields.push((3, ActiveText::Priority, 3));
+        }
+        fields.push((4, ActiveText::Tags, 3));
+        let focus = fields
+            .iter()
+            .position(|(_, field, _)| *field == self.active_txt)
+            .unwrap_or(0);
+        if fields[focus].2 > body_height {
+            frame.render_widget(Paragraph::new("Enlarge terminal"), inner);
+            return;
+        }
+        let mut start = 0;
+        while start < focus
+            && fields[start..=focus]
+                .iter()
+                .map(|(_, _, height)| height)
+                .sum::<u16>()
+                > body_height
+        {
+            start += 1;
+        }
+        let mut chunks = [Rect::default(); 6];
+        let mut y = inner.y;
+        for (index, _, height) in &fields[start..] {
+            if y + height > inner.y + body_height {
+                break;
+            }
+            chunks[*index] = Rect::new(inner.x, y, inner.width, *height);
+            y += height;
+        }
+        chunks[5] = Rect::new(
+            inner.x,
+            inner.bottom() - footer_height,
+            inner.width,
+            footer_height,
+        );
 
+        if self.show_mood {
+            frame.render_widget(Paragraph::new(mood_lines), chunks[1]);
+        }
         self.title_txt.set_cursor_line_style(Style::default());
         self.date_txt.set_cursor_line_style(Style::default());
         self.tags_txt.set_cursor_line_style(Style::default());
@@ -351,17 +454,86 @@ impl EntryPopup<'_> {
         }
 
         frame.render_widget(&self.title_txt, chunks[0]);
-        frame.render_widget(&self.date_txt, chunks[1]);
+        frame.render_widget(&self.date_txt, chunks[2]);
         if self.show_priority {
-            frame.render_widget(&self.priority_txt, chunks[2]);
+            frame.render_widget(&self.priority_txt, chunks[3]);
         }
-        frame.render_widget(&self.tags_txt, chunks[3]);
+        frame.render_widget(&self.tags_txt, chunks[4]);
 
-        frame.render_widget(footer, chunks[4]);
+        let hint_height = hint_height.min(chunks[5].height);
+        let footer_area = Rect::new(
+            chunks[5].x,
+            chunks[5].y,
+            chunks[5].width,
+            chunks[5].height - hint_height,
+        );
+        frame.render_widget(footer, footer_area);
+        if self.show_mood && self.active_txt == ActiveText::Mood {
+            frame.render_widget(
+                mood_hint,
+                Rect::new(
+                    chunks[5].x,
+                    footer_area.bottom(),
+                    chunks[5].width,
+                    hint_height,
+                ),
+            );
+        }
 
         if let Some(tags_popup) = self.tags_popup.as_mut() {
             tags_popup.render_widget(frame, area, styles)
         }
+    }
+
+    fn mood_lines(&self, width: u16, styles: &Styles) -> Vec<Line<'static>> {
+        let active = self.active_txt == ActiveText::Mood;
+        let style = if active {
+            Style::from(styles.general.input_block_active)
+        } else {
+            Style::reset()
+        };
+        let choices: Vec<_> = Mood::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(index, mood)| {
+                let choice = format!(
+                    "[{}] {}",
+                    if self.mood == Some(mood) { 'x' } else { ' ' },
+                    mood.label()
+                );
+                let choice_style = if active && self.mood_focus == index {
+                    Style::from(styles.general.input_cursor_active)
+                } else {
+                    style
+                };
+                Span::styled(choice, choice_style)
+            })
+            .collect();
+        let mut lines = vec![Line::default()];
+        lines.extend(
+            textwrap::wrap("How is your mood at the moment?", usize::from(width.max(1)))
+                .into_iter()
+                .map(|question| {
+                    Line::from(Span::styled(question.into_owned(), style))
+                        .alignment(Alignment::Center)
+                }),
+        );
+        lines.push(Line::default());
+        let mut row = Vec::new();
+        for choice in choices {
+            if !row.is_empty() {
+                row.push(Span::raw(" "));
+            }
+            row.push(choice);
+            if width < 28 {
+                lines.push(Line::from(std::mem::take(&mut row)).alignment(Alignment::Center));
+            }
+        }
+        if !row.is_empty() {
+            lines.push(Line::from(row).alignment(Alignment::Center));
+        }
+        lines.push(Line::default());
+        lines
     }
 
     pub fn is_input_valid(&self) -> bool {
@@ -452,7 +624,8 @@ impl EntryPopup<'_> {
             KeyCode::Char('m') if has_ctrl => self.handle_confirm(app).await,
             KeyCode::Tab | KeyCode::Down => {
                 self.active_txt = match self.active_txt {
-                    ActiveText::Title => ActiveText::Date,
+                    ActiveText::Title if self.show_mood => ActiveText::Mood,
+                    ActiveText::Title | ActiveText::Mood => ActiveText::Date,
                     ActiveText::Date if self.show_priority => ActiveText::Priority,
                     ActiveText::Date => ActiveText::Tags,
                     ActiveText::Priority => ActiveText::Tags,
@@ -460,10 +633,11 @@ impl EntryPopup<'_> {
                 };
                 Ok(EntryPopupInputReturn::KeepPopup)
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::BackTab => {
                 self.active_txt = match self.active_txt {
                     ActiveText::Title => ActiveText::Tags,
-                    ActiveText::Date => ActiveText::Title,
+                    ActiveText::Date if self.show_mood => ActiveText::Mood,
+                    ActiveText::Date | ActiveText::Mood => ActiveText::Title,
                     ActiveText::Priority => ActiveText::Date,
                     ActiveText::Tags if self.show_priority => ActiveText::Priority,
                     ActiveText::Tags => ActiveText::Date,
@@ -486,6 +660,19 @@ impl EntryPopup<'_> {
             }
             _ => {
                 match self.active_txt {
+                    ActiveText::Mood => match input.key_code {
+                        KeyCode::Left => self.mood_focus = (self.mood_focus + 2) % 3,
+                        KeyCode::Right => self.mood_focus = (self.mood_focus + 1) % 3,
+                        KeyCode::Char(' ') if input.modifiers.is_empty() => {
+                            let focused = Mood::ALL[self.mood_focus];
+                            self.mood = if self.mood == Some(focused) {
+                                None
+                            } else {
+                                Some(focused)
+                            };
+                        }
+                        _ => {}
+                    },
                     ActiveText::Title => {
                         if self.title_txt.input(KeyEvent::from(input)) {
                             self.validate_title();
@@ -537,6 +724,15 @@ impl EntryPopup<'_> {
         // Validation
         self.validate_all();
         if !self.is_input_valid() {
+            self.active_txt = if !self.title_err_msg.is_empty() {
+                ActiveText::Title
+            } else if !self.date_err_msg.is_empty() {
+                ActiveText::Date
+            } else if !self.priority_err_msg.is_empty() {
+                ActiveText::Priority
+            } else {
+                ActiveText::Tags
+            };
             return Ok(EntryPopupInputReturn::KeepPopup);
         }
 
@@ -563,6 +759,7 @@ impl EntryPopup<'_> {
                     "This date does not exist in your local timezone"
                 }
                 .into();
+                self.active_txt = ActiveText::Date;
                 return Ok(EntryPopupInputReturn::KeepPopup);
             };
             resolved
@@ -581,11 +778,13 @@ impl EntryPopup<'_> {
         };
 
         if self.is_edit_entry {
-            app.update_current_entry_attributes(title, date, tags, priority)
+            app.update_current_entry_attributes(title, date, tags, priority, self.mood)
                 .await?;
             Ok(EntryPopupInputReturn::UpdateCurrentEntry)
         } else {
-            let entry_id = app.add_entry(title, date, tags, priority).await?;
+            let entry_id = app
+                .add_entry(title, date, tags, priority, self.mood)
+                .await?;
             Ok(EntryPopupInputReturn::AddEntry(entry_id))
         }
     }

@@ -34,10 +34,12 @@ fn tags_picker_keeps_its_cancel_shortcuts_visible_in_narrow_entry_dialogs() {
 async fn ctrl_m_confirms_from_each_field_without_inserting_a_newline() {
     for is_edit in [false, true] {
         let mut app = create_default_app();
+        app.settings.show_entry_priority = true;
         app.load_entries().await.unwrap();
         app.current_entry_id = Some(1);
         for active in [
             ActiveText::Title,
+            ActiveText::Mood,
             ActiveText::Date,
             ActiveText::Priority,
             ActiveText::Tags,
@@ -72,6 +74,138 @@ async fn ctrl_m_confirms_from_each_field_without_inserting_a_newline() {
             assert_eq!(popup.date_txt.lines().len(), 1);
             assert_eq!(popup.priority_txt.lines().len(), 1);
             assert_eq!(popup.tags_txt.lines().len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn mood_is_optional_exclusive_and_between_title_and_date() {
+    let mut app = create_default_app();
+    let mut popup = EntryPopup::new_entry(&app.settings);
+    assert_eq!(popup.mood, None);
+    for (code, active, selected) in [
+        (KeyCode::Tab, ActiveText::Mood, None),
+        (KeyCode::Char(' '), ActiveText::Mood, Some(Mood::Low)),
+        (KeyCode::Right, ActiveText::Mood, Some(Mood::Low)),
+        (KeyCode::Char(' '), ActiveText::Mood, Some(Mood::Average)),
+        (KeyCode::Right, ActiveText::Mood, Some(Mood::Average)),
+        (KeyCode::Char(' '), ActiveText::Mood, Some(Mood::High)),
+        (KeyCode::Char(' '), ActiveText::Mood, None),
+        (KeyCode::Tab, ActiveText::Date, None),
+        (KeyCode::BackTab, ActiveText::Mood, None),
+        (KeyCode::BackTab, ActiveText::Title, None),
+    ] {
+        popup
+            .handle_input(&Input::new(code, KeyModifiers::NONE), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(popup.active_txt, active);
+        assert_eq!(popup.mood, selected);
+    }
+}
+
+#[tokio::test]
+async fn validation_focuses_invalid_fields_so_they_are_visible_when_the_form_scrolls() {
+    let mut app = create_default_app();
+    let mut popup = EntryPopup::new_entry(&app.settings);
+    popup.active_txt = ActiveText::Tags;
+    popup.date_txt = TextArea::new(vec!["invalid".into()]);
+    popup.handle_confirm(&mut app).await.unwrap();
+    assert_eq!(popup.active_txt, ActiveText::Title);
+    popup.title_txt = TextArea::new(vec!["A title".into()]);
+    popup.active_txt = ActiveText::Tags;
+    popup.handle_confirm(&mut app).await.unwrap();
+    assert_eq!(popup.active_txt, ActiveText::Date);
+}
+
+#[tokio::test]
+async fn hidden_mood_survives_editing_and_draft_recovery_without_replacing_prompt() {
+    let mut app = create_default_app();
+    let id = app
+        .add_entry(
+            "Reflection".into(),
+            Utc::now(),
+            vec![],
+            None,
+            Some(Mood::Low),
+        )
+        .await
+        .unwrap();
+    app.current_entry_id = Some(id);
+    let before = app.get_current_entry().unwrap().clone();
+    app.settings.show_entry_mood = false;
+    let mut popup = EntryPopup::from_entry(&before, &app.settings);
+    popup
+        .handle_input(&Input::new(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+        .await
+        .unwrap();
+    assert_eq!(popup.active_txt, ActiveText::Date);
+    let mut restored = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+    assert!(!restored.show_mood);
+    restored.handle_confirm(&mut app).await.unwrap();
+    assert_eq!(app.get_current_entry(), Some(&before));
+
+    app.settings.show_entry_mood = true;
+    let mut popup = EntryPopup::from_entry(&before, &app.settings);
+    popup.active_txt = ActiveText::Mood;
+    popup.mood = Some(Mood::Average);
+    popup.mood_focus = 1;
+    let mut restored = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+    assert_eq!(restored.mood, Some(Mood::Average));
+    assert_eq!(restored.mood_focus, 1);
+    assert_eq!(restored.active_txt, ActiveText::Mood);
+    restored.handle_confirm(&mut app).await.unwrap();
+    let after = app.get_current_entry().unwrap();
+    assert_eq!(after.mood, Some(Mood::Average));
+    assert_eq!(after.journal_prompt, before.journal_prompt);
+}
+
+#[test]
+fn mood_choices_and_the_focused_field_remain_visible_in_small_terminals() {
+    use ratatui::{Terminal, backend::TestBackend};
+    for (width, height) in [(180, 50), (80, 24), (60, 18), (31, 18)] {
+        let mut popup = EntryPopup::new_entry(&Settings {
+            show_entry_priority: true,
+            ..Settings::default()
+        });
+        popup.mood = Some(Mood::Average);
+        popup.mood_focus = 1;
+        for (active, label) in [
+            (ActiveText::Title, "Title"),
+            (ActiveText::Mood, "How is your mood"),
+            (ActiveText::Date, "Date"),
+            (ActiveText::Tags, "Tags"),
+            (ActiveText::Priority, "Priority"),
+        ] {
+            popup.active_txt = active;
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+                .unwrap();
+            let text: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(text.contains(label), "Missing {label} at {width}x{height}");
+            assert!(text.contains("confirm") || text.contains("Confirm"));
+            assert!(text.contains("cancel") || text.contains("Cancel"));
+            assert_eq!(
+                text.contains("Press Space to select"),
+                popup.active_txt == ActiveText::Mood
+            );
+            if popup.active_txt == ActiveText::Mood {
+                assert!(text.contains("How is your mood"));
+                for choice in ["[ ] Low", "[x] Average", "[ ] High"] {
+                    assert!(
+                        text.contains(choice),
+                        "Missing {choice} at {width}x{height}"
+                    );
+                }
+                assert!(!text.contains("Medium"));
+            }
         }
     }
 }
@@ -288,7 +422,7 @@ async fn editing_metadata_preserves_the_full_original_timestamp() {
         .parse::<DateTime<chrono::FixedOffset>>()
         .unwrap()
         .with_timezone(&Utc);
-    app.update_current_entry_attributes("Imported".into(), timestamp, vec![], None)
+    app.update_current_entry_attributes("Imported".into(), timestamp, vec![], None, None)
         .await
         .unwrap();
 
@@ -421,6 +555,7 @@ async fn local_calendar_days_handle_clock_changes_in_isolated_timezones() {
                 repeated_time,
                 vec![],
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -485,9 +620,15 @@ async fn local_calendar_days_handle_clock_changes_in_isolated_timezones() {
             let repeated = "2020-11-01T05:30:47.123456789Z"
                 .parse::<DateTime<Utc>>()
                 .unwrap();
-            app.update_current_entry_attributes("Second occurrence".into(), repeated, vec![], None)
-                .await
-                .unwrap();
+            app.update_current_entry_attributes(
+                "Second occurrence".into(),
+                repeated,
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             for format in [EntryTimeFormat::TwentyFourHour, EntryTimeFormat::TwelveHour] {
                 app.settings.entry_time_format = format;
                 let popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
@@ -600,7 +741,7 @@ async fn metadata_dialog_uses_local_calendar_day_without_changing_timestamp() {
     for hour in [0, 23] {
         let local = Local.with_ymd_and_hms(2026, 10, 30, hour, 9, 47).unwrap();
         let timestamp = local.with_timezone(&Utc);
-        app.update_current_entry_attributes("Entry".into(), timestamp, vec![], None)
+        app.update_current_entry_attributes("Entry".into(), timestamp, vec![], None, None)
             .await
             .unwrap();
         let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
@@ -618,7 +759,7 @@ async fn calendar_date_can_be_replaced_for_timestamps_at_chronos_limits() {
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     for timestamp in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {
-        app.update_current_entry_attributes("Imported entry".into(), timestamp, vec![], None)
+        app.update_current_entry_attributes("Imported entry".into(), timestamp, vec![], None, None)
             .await
             .unwrap();
         let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
@@ -732,7 +873,7 @@ async fn hidden_priority_is_not_rendered_or_focused_in_new_and_edit_dialogs() {
         EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings),
     ] {
         let priority = popup.priority_txt.lines().to_vec();
-        for code in [KeyCode::Tab, KeyCode::Down] {
+        for code in [KeyCode::Tab, KeyCode::Down, KeyCode::Tab] {
             popup
                 .handle_input(&Input::new(code, KeyModifiers::NONE), &mut app)
                 .await
@@ -753,7 +894,7 @@ async fn hidden_priority_is_not_rendered_or_focused_in_new_and_edit_dialogs() {
             .await
             .unwrap();
         assert_eq!(popup.active_txt, ActiveText::Date);
-        for size in [(100, 30), (60, 18)] {
+        for size in [(100, 30), (60, 21)] {
             let mut terminal = Terminal::new(TestBackend::new(size.0, size.1)).unwrap();
             terminal
                 .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
@@ -773,7 +914,7 @@ async fn hidden_priority_is_not_rendered_or_focused_in_new_and_edit_dialogs() {
     }
     app.settings.show_entry_priority = true;
     let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
-    for _ in 0..2 {
+    for _ in 0..3 {
         popup
             .handle_input(&Input::new(KeyCode::Tab, KeyModifiers::NONE), &mut app)
             .await
@@ -806,6 +947,7 @@ async fn hidden_priority_survives_metadata_edits_and_encrypted_form_restoration(
             original.date,
             original.tags.clone(),
             priority,
+            None,
         )
         .await
         .unwrap();

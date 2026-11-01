@@ -17,6 +17,7 @@ async fn file_history_preserves_identity_metadata_and_retryable_restore_conflict
             Utc.with_ymd_and_hms(2026, 10, 23, 7, 8, 9).unwrap(),
             vec!["personal".into()],
             Some(2),
+            None,
         )
         .await
         .unwrap();
@@ -81,7 +82,7 @@ async fn saving_after_reloading_an_externally_deleted_last_file_returns_an_error
     let mut app = App::new(provider, Settings::default());
     app.load_entries().await.unwrap();
     let id = app
-        .add_entry("Last journal".into(), Utc::now(), vec![], None)
+        .add_entry("Last journal".into(), Utc::now(), vec![], None, None)
         .await
         .unwrap();
     let mut ui = UIComponents::new(Styles::default());
@@ -113,7 +114,7 @@ async fn saving_after_reloading_an_externally_deleted_last_file_returns_an_error
         .unwrap_err();
     assert!(error.to_string().contains("No journal is selected"));
     let error = app
-        .update_current_entry_attributes("Changed".into(), Utc::now(), vec![], None)
+        .update_current_entry_attributes("Changed".into(), Utc::now(), vec![], None, None)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("No journal is selected"));

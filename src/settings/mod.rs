@@ -72,6 +72,10 @@ pub struct Settings {
     pub default_journal_priority: Option<u32>,
     #[serde(default = "default_show_entry_priority")]
     pub show_entry_priority: bool,
+    #[serde(default = "default_enabled")]
+    pub show_entry_mood: bool,
+    #[serde(default = "default_enabled")]
+    pub journal_prompts: bool,
     #[serde(default)]
     pub auto_title: Option<AutoTitle>,
     #[serde(default)]
@@ -114,6 +118,8 @@ impl Default for Settings {
             file_backend: Default::default(),
             default_journal_priority: Default::default(),
             show_entry_priority: default_show_entry_priority(),
+            show_entry_mood: true,
+            journal_prompts: true,
             auto_title: Default::default(),
             scroll_per_page: Default::default(),
             sync_os_clipboard: Default::default(),
@@ -182,8 +188,12 @@ const fn default_editor_word_wrap() -> bool {
     true
 }
 
-const fn default_show_entry_priority() -> bool {
+const fn default_enabled() -> bool {
     true
+}
+
+const fn default_show_entry_priority() -> bool {
+    false
 }
 
 const fn default_show_entry_time() -> bool {
@@ -260,6 +270,8 @@ impl Settings {
             external_editor: _,
             default_journal_priority: _,
             show_entry_priority: _,
+            show_entry_mood: _,
+            journal_prompts: _,
             auto_title: _,
             scroll_per_page: _,
             sync_os_clipboard: _,
@@ -543,18 +555,22 @@ kind = "date"
     }
 
     #[test]
-    fn entry_priority_field_defaults_visible_and_can_be_disabled() {
-        assert!(Settings::default().show_entry_priority);
-        assert!(toml::from_str::<Settings>("").unwrap().show_entry_priority);
-        let mut settings: Settings = toml::from_str("show_entry_priority = false").unwrap();
-        settings.complete_missing_options().unwrap();
-        assert!(!settings.show_entry_priority);
-        let serialized = settings.get_as_text().unwrap();
-        assert!(
-            !toml::from_str::<Settings>(&serialized)
-                .unwrap()
-                .show_entry_priority
-        );
+    fn entry_priority_field_defaults_hidden_and_preserves_explicit_preferences() {
+        assert!(!Settings::default().show_entry_priority);
+        assert!(!toml::from_str::<Settings>("").unwrap().show_entry_priority);
+        for enabled in [false, true] {
+            let mut settings: Settings =
+                toml::from_str(&format!("show_entry_priority = {enabled}")).unwrap();
+            settings.complete_missing_options().unwrap();
+            assert_eq!(settings.show_entry_priority, enabled);
+            let serialized = settings.get_as_text().unwrap();
+            assert_eq!(
+                toml::from_str::<Settings>(&serialized)
+                    .unwrap()
+                    .show_entry_priority,
+                enabled
+            );
+        }
     }
 
     #[test]

@@ -285,7 +285,7 @@ async fn protected_store_never_reverts_to_legacy_after_removal() {
     let bytes = std::fs::read(path).unwrap();
     assert!(serde_json::from_slice::<Vec<Entry>>(&bytes).is_err());
     let store: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(store["version"], 2);
+    assert_eq!(store["version"], 3);
 }
 
 #[tokio::test]

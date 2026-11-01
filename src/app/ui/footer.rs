@@ -32,7 +32,7 @@ pub fn render_footer<D: DataProvider>(
 }
 
 fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static> {
-    let text = match (
+    let mut text = match (
         ui.editor.is_insert_mode(),
         ui.entries_list.multi_select_mode,
     ) {
@@ -53,6 +53,12 @@ fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static
         }
         _ => standard_text(ui, app),
     };
+    if ui.current_prompt(app).is_some() {
+        text.push_span(Span::raw(SEPARATOR));
+        text.spans.extend(
+            command_text("Prompt", &ui.global_keymaps, UICommand::ToggleJournalPrompt).spans,
+        );
+    }
     Paragraph::new(text).wrap(Wrap { trim: false })
 }
 

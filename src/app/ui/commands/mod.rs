@@ -29,6 +29,7 @@ pub enum ClipboardOperation {
 pub enum UICommand {
     Quit,
     ShowHelp,
+    ToggleJournalPrompt,
     ShowConfig,
     ShowSecurity,
     LockNote,
@@ -94,6 +95,10 @@ impl CommandInfo {
 impl UICommand {
     pub fn get_info(&self) -> CommandInfo {
         match self {
+            UICommand::ToggleJournalPrompt => CommandInfo::new(
+                "Journal prompt",
+                "Show or hide this entry’s saved journal prompt (also while editing)",
+            ),
             UICommand::ShowSecurity => CommandInfo::new(
                 "Note security",
                 "Protect, unlock, lock, or change a note password",
@@ -342,6 +347,12 @@ impl UICommand {
             UICommand::ToggleFullScreenMode => exec_toggle_full_screen_mode(app),
             UICommand::ShrinkEntriesPane => Ok(ui_components.adjust_divider(app, -5)),
             UICommand::GrowEntriesPane => Ok(ui_components.adjust_divider(app, 5)),
+            UICommand::ToggleJournalPrompt => {
+                if ui_components.current_prompt(app).is_some() {
+                    ui_components.prompt_hidden = !ui_components.prompt_hidden;
+                }
+                Ok(HandleInputReturnType::Handled)
+            }
             UICommand::CopyOsClipboard => exec_copy_os_clipboard(ui_components),
             UICommand::CutOsClipboard => exec_cut_os_clipboard(ui_components),
             UICommand::PasteOsClipboard => exec_paste_os_clipboard(ui_components),
@@ -436,7 +447,9 @@ impl UICommand {
             }
             UICommand::ToggleEditorVisualMode => not_implemented(),
             UICommand::ToggleFullScreenMode => not_implemented(),
-            UICommand::ShrinkEntriesPane | UICommand::GrowEntriesPane => not_implemented(),
+            UICommand::ShrinkEntriesPane
+            | UICommand::GrowEntriesPane
+            | UICommand::ToggleJournalPrompt => not_implemented(),
             UICommand::CopyOsClipboard => {
                 if msg_box_result == MsgBoxResult::Yes && !app.current_is_locked() {
                     exec_copy_os_clipboard(ui_components)

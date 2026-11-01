@@ -15,7 +15,7 @@ use zeroize::Zeroize;
 mod sqlite_helper;
 
 const SELECT_ENTRIES: &str = r"SELECT entries.id, entries.title, entries.date, entries.content,
-    entries.priority, entries.protection,
+    entries.priority, entries.protection, entries.mood, entries.journal_prompt,
     json_group_array(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) AS tags
     FROM entries LEFT JOIN tags ON entries.id = tags.entry_id";
 
@@ -97,9 +97,10 @@ impl SqliteDataProvide {
         protection: Option<String>,
     ) -> anyhow::Result<()> {
         let row = sqlx::query(
-            "INSERT INTO entries (title, date, content, priority, protection) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO entries (title, date, content, priority, protection, mood, journal_prompt) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
         ).bind(&entry.title).bind(entry.date).bind(&entry.content).bind(entry.priority)
-            .bind(protection).fetch_one(&mut *connection).await.context("Failed to add entry")?;
+            .bind(protection).bind(entry.mood.as_ref().map(serde_json::to_string).transpose()?)
+            .bind(entry.journal_prompt.as_ref().map(serde_json::to_string).transpose()?).fetch_one(&mut *connection).await.context("Failed to add entry")?;
         let id: i64 = row.try_get(0).context("Reading the new entry ID")?;
         entry.id = u32::try_from(id).context("No entry IDs remain")?;
         Self::insert_tags(connection, entry.id, &entry.tags).await?;
@@ -153,6 +154,8 @@ impl SqliteDataProvide {
                         && entry.content == snapshot.content
                         && entry.priority == snapshot.priority
                         && entry.protection == snapshot.protection
+                        && entry.mood == snapshot.mood
+                        && entry.journal_prompt == snapshot.journal_prompt
                         && entry.tags.len() == snapshot.tags.len()
                         && entry.tags.iter().all(|tag| snapshot.tags.contains(tag))
                 }),
@@ -175,6 +178,8 @@ fn wipe_snapshot(mut entry: Entry) {
     entry.content.zeroize();
     entry.tags.zeroize();
     entry.priority.zeroize();
+    entry.mood.zeroize();
+    entry.journal_prompt.zeroize();
 }
 
 impl DataProvider for SqliteDataProvide {
@@ -225,9 +230,11 @@ impl DataProvider for SqliteDataProvide {
             .await
             .context("Starting restore transaction")?;
         sqlx::query(
-            "INSERT INTO entries (id, title, date, content, priority, protection) VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO entries (id, title, date, content, priority, protection, mood, journal_prompt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         ).bind(entry.id).bind(&entry.title).bind(entry.date).bind(&entry.content)
-            .bind(entry.priority).bind(protection).execute(&mut *transaction).await
+            .bind(entry.priority).bind(protection)
+            .bind(entry.mood.as_ref().map(serde_json::to_string).transpose().context("Serializing mood")?)
+            .bind(entry.journal_prompt.as_ref().map(serde_json::to_string).transpose().context("Serializing prompt")?).execute(&mut *transaction).await
             .with_context(|| format!("Failed to restore entry {}", entry.id))?;
         Self::insert_tags(&mut transaction, entry.id, &entry.tags).await?;
         transaction
@@ -288,9 +295,11 @@ impl DataProvider for SqliteDataProvide {
             .await
             .context("Replacing entry tags")?;
         sqlx::query(
-            "UPDATE entries SET title = $1, date = $2, content = $3, priority = $4, protection = $5 WHERE id = $6",
+            "UPDATE entries SET title = $1, date = $2, content = $3, priority = $4, protection = $5, mood = $7, journal_prompt = $8 WHERE id = $6",
         ).bind(&entry.title).bind(entry.date).bind(&entry.content).bind(entry.priority)
-            .bind(protection).bind(entry.id).execute(&mut *transaction).await
+            .bind(protection).bind(entry.id)
+            .bind(entry.mood.as_ref().map(serde_json::to_string).transpose().context("Serializing mood")?)
+            .bind(entry.journal_prompt.as_ref().map(serde_json::to_string).transpose().context("Serializing prompt")?).execute(&mut *transaction).await
             .with_context(|| format!("Failed to update entry {}", entry.id))?;
         Self::insert_tags(&mut transaction, entry.id, &entry.tags).await?;
         transaction

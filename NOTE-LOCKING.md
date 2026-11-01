@@ -7,7 +7,7 @@ The current editor text is
 included, including unsaved changes. There is no master password, recovery
 service, network connection, or saved password file.
 
-The title and date remain visible. The body, tags, priority, and private native
+The title and date remain visible. The body, tags, priority, mood, saved prompt, and private native
 metadata are encrypted. Use a strong passphrase: a forgotten password cannot be
 recovered. Protecting a note does not change the `auto_title` setting for new
 notes.
@@ -74,7 +74,7 @@ export. Multi-note and CLI transfer exports retain ciphertext and do not require
 passwords. Transfers between all four backends preserve protection. Private
 metadata from the original file format travels inside the encrypted payload;
 it is restored when protection is removed in that same backend. Other backends
-restore the common title/date/body/tags/priority fields.
+restore the common title/date/body/tags/priority/mood/prompt fields.
 
 ## Storage and compatibility
 
@@ -84,7 +84,7 @@ passphrase encryption, fresh random keys/salts, and scrypt with work factor 18
 also authenticates a random note identity and its public title/date. Backend
 numeric IDs may change during transfer without invalidating protection.
 
-- **JSON:** the store becomes a version-2 object on its first protected note.
+- **JSON:** the store becomes a version-3 object on its first protected note or saved mood/prompt. Existing version-2 stores remain readable.
   Writes use an exclusive advisory lock and atomic file replacement.
 - **SQLite:** a migrated protection column holds ciphertext; private plaintext
   columns and tag rows are cleared in the same transaction. Secure deletion and

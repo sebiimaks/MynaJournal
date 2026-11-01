@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Add optional Low, Average and High moods to entry dialogs, with `[-]`, `[~]` and `[+]` markers in the entries pane
+- Choose a matching prompt locally from 120 bundled prompts when creating an entry with a mood; retain the original prompt through mood edits, undo/redo and reopening
+- Show the prompt in a centred box at the top inside the content pane, with Ctrl-G to hide or show it while browsing or editing
+- Add live mood and prompt preferences under Config → Entries; hiding moods also disables prompt creation and display without deleting saved values
+- Preserve moods and prompts across all four backends, structured transfers and native backups; encrypt both with protected notes and hide them while locked
+- Hide Priority by default while preserving explicit preferences and existing values; refine the mood layout and make the new-entry popup another 10% narrower
+
+JSON stores with mood/prompt data use version 3, plain-text/Markdown entries with
+these fields use front-matter version 3, and structured transfers use version 102.
+Earlier formats remain readable. SQLite adds the new columns automatically.
+Use a mood-aware MynaJournal build with these stores and transfers.
+
 ## 0.21.0 - 2026-11-01
 
 - Show an editable **Date and Time** field in entry dialogs when time display is enabled, using the selected 24-hour or am/pm format

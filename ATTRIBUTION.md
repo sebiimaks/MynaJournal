@@ -29,6 +29,13 @@ project's MIT license to the extent they hold rights in it. This records its
 provenance without claiming human authorship or exclusive copyright in generated
 output.
 
+## Journal prompts
+
+The maintainer supplied `assets/mood_journaling_prompts.json` on 1 November 2026
+for inclusion in MynaJournal. Its original wording, category labels, rationales
+and reference identifiers are retained in the asset. The app displays the prompt
+wording and selects locally; the associated research references are not fetched.
+
 ## Libraries and adapted code
 
 The terminal interface uses [Ratatui](https://github.com/ratatui/ratatui),

@@ -30,10 +30,13 @@ impl HistoryManager {
                         entry.content.zeroize();
                         entry.tags.zeroize();
                         entry.priority.zeroize();
+                        entry.mood.zeroize();
+                        entry.journal_prompt.zeroize();
                     }
                     Change::EntryAttribute(attributes) => {
                         attributes.tags.zeroize();
                         attributes.priority.zeroize();
+                        attributes.mood.zeroize();
                     }
                     Change::EntryContent { content, .. } => content.zeroize(),
                 }
@@ -160,6 +163,7 @@ pub struct EntryAttributes {
     pub title: String,
     pub tags: Vec<String>,
     pub priority: Option<u32>,
+    pub mood: Option<backend::Mood>,
 }
 
 impl From<&Entry> for EntryAttributes {
@@ -170,6 +174,7 @@ impl From<&Entry> for EntryAttributes {
             title: entry.title.to_owned(),
             tags: entry.tags.to_owned(),
             priority: entry.priority.to_owned(),
+            mood: entry.mood,
         }
     }
 }

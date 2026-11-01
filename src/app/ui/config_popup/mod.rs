@@ -214,6 +214,15 @@ impl ConfigPopup {
     }
 
     fn active_value(&self, field: &Field) -> Option<Value> {
+        if field.keys() == ["journal_prompts"]
+            && self
+                .active_settings
+                .get("show_entry_mood")
+                .and_then(Value::as_bool)
+                == Some(false)
+        {
+            return Some(Value::Boolean(false));
+        }
         if field.tab == Tab::Layout {
             Some(Value::Integer(i64::from(self.saved_divider)))
         } else {
@@ -751,7 +760,15 @@ impl ConfigPopup {
                     "default"
                 };
                 let differs = value != self.active_value(field);
-                let status = if differs && field.restart {
+                let status = if field.keys() == ["journal_prompts"]
+                    && self
+                        .settings
+                        .get("show_entry_mood")
+                        .and_then(Value::as_bool)
+                        == Some(false)
+                {
+                    "mood off".into()
+                } else if differs && field.restart {
                     format!("{source} · restart")
                 } else if differs {
                     format!("{source} · changed")

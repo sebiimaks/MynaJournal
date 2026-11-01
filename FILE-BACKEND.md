@@ -48,6 +48,14 @@ not values to copy into this header. Renamed files retain their identity on relo
 Copying a file into the same directory requires a new UUID to create a separate entry.
 Titles must be nonempty, and both timestamps use RFC 3339 with a timezone.
 
+Entries with a mood or saved prompt use `tui_journal.version: 3`. The same
+metadata object contains optional `mood` (`low`, `average`, `high`) and
+`journal_prompt` fields. The prompt records its `id`, original `mood`, `topic`
+and `text`, so future mood edits or catalog changes do not replace it.
+Version-1 files without these fields remain readable; protected files continue
+to use version 2 with these private fields inside the encrypted payload.
+Use a MynaJournal build that supports mood/prompts when opening version-3 files.
+
 Unknown JSON-compatible metadata values are preserved. Body-only saves also retain
 header comments and formatting; editing metadata may reformat YAML and remove
 comments. Headers are limited to 1 MiB and bounded nesting and item counts;

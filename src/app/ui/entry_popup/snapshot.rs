@@ -50,6 +50,12 @@ struct EntrySnapshot {
     priority: TextSnapshot,
     show_priority: bool,
     #[serde(default)]
+    show_mood: bool,
+    #[serde(default)]
+    mood: Option<backend::Mood>,
+    #[serde(default)]
+    mood_focus: usize,
+    #[serde(default)]
     time_format: Option<EntryTimeFormat>,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
@@ -66,6 +72,9 @@ impl EntryPopup<'_> {
             tags: TextSnapshot::capture(&self.tags_txt),
             priority: TextSnapshot::capture(&self.priority_txt),
             show_priority: self.show_priority,
+            show_mood: self.show_mood,
+            mood: self.mood,
+            mood_focus: self.mood_focus,
             time_format: self.time_format,
             is_edit_entry: self.is_edit_entry,
             original_date: self.original_date,
@@ -74,6 +83,7 @@ impl EntryPopup<'_> {
                 ActiveText::Date => 1,
                 ActiveText::Tags => 2,
                 ActiveText::Priority => 3,
+                ActiveText::Mood => 4,
             },
             tag_picker: self.tags_popup.as_ref().map(TagsPopup::snapshot),
         })
@@ -92,6 +102,7 @@ impl EntryPopup<'_> {
             1 => ActiveText::Date,
             2 => ActiveText::Tags,
             3 => ActiveText::Priority,
+            4 if snapshot.show_mood => ActiveText::Mood,
             _ => return Err(anyhow!("Invalid entry form snapshot")),
         };
         let mut popup = Self {
@@ -100,6 +111,9 @@ impl EntryPopup<'_> {
             tags_txt: snapshot.tags.restore()?,
             priority_txt: snapshot.priority.restore()?,
             show_priority: snapshot.show_priority,
+            show_mood: snapshot.show_mood,
+            mood: snapshot.mood,
+            mood_focus: snapshot.mood_focus.min(2),
             time_format: snapshot.time_format,
             is_edit_entry: snapshot.is_edit_entry,
             original_date: snapshot.original_date,

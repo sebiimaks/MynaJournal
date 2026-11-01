@@ -1,0 +1,1708 @@
+[
+  {
+    "id": "low_001",
+    "mood": "low",
+    "topic": "Affect labeling",
+    "prompt": "Choose up to three words for how you feel right now. For each word, write one sentence about what you notice, without needing to explain or change it.",
+    "rationale": "Brief labels give feelings a manageable form while limiting extended analysis of their causes.",
+    "reference_ids": [
+      "R04"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1177/1754073917742706"
+    ]
+  },
+  {
+    "id": "low_002",
+    "mood": "low",
+    "topic": "Affect labeling",
+    "prompt": "Complete these two lines: 'The feeling I notice most is...' and 'For the next hour, a little support could look like...'. A few words are enough.",
+    "rationale": "Pairs emotion identification with a practical support need rather than an open-ended search for explanations.",
+    "reference_ids": [
+      "R04",
+      "R07"
+    ],
+    "evidence_basis": "Mechanism / therapy adaptation",
+    "citation_dois": [
+      "10.1177/1754073917742706",
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "low_003",
+    "mood": "low",
+    "topic": "Affect labeling",
+    "prompt": "Think of one moment today when your mood shifted. Name the feeling before and after, and describe only what was happening around you.",
+    "rationale": "Places emotion in a specific context, avoiding conclusions about the whole day or the whole self.",
+    "reference_ids": [
+      "R04",
+      "R06"
+    ],
+    "evidence_basis": "Mechanism / therapy adaptation",
+    "citation_dois": [
+      "10.1177/1754073917742706",
+      "10.1017/S0033291711002480"
+    ]
+  },
+  {
+    "id": "low_004",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "Write two sentences to yourself as you would to someone you care about who is having this exact day. Include understanding and one gentle offer of help.",
+    "rationale": "Practises a supportive inner response, drawing on self-compassion writing research.",
+    "reference_ids": [
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "low_005",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "Notice one harsh sentence you have said to yourself today. Rewrite it in language that is honest and kind, keeping any useful information and removing insults.",
+    "rationale": "Separates useful feedback from self-attack and rehearses a more compassionate response.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "low_006",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "What is one thing you managed today, even if it was very small? Describe the effort it took without comparing it with anyone else's day.",
+    "rationale": "Makes effort visible without requiring achievement, comparison or an unrealistically positive self-evaluation.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "low_007",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "Finish this sentence in words you can believe: 'Having a difficult day does not make me less deserving of...'. Name one small way to honour that need.",
+    "rationale": "Connects common human vulnerability with compassionate care rather than shame.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "low_008",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "If you could make one demand on yourself gentler today, which would it be? Write a fairer expectation that fits the energy you actually have.",
+    "rationale": "Uses compassionate expectations to make the day more manageable without demanding a change in mood.",
+    "reference_ids": [
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "low_009",
+    "mood": "low",
+    "topic": "Behavioural activation",
+    "prompt": "Which basic need would benefit from attention now: food, water, rest, comfort, or company? Choose one and write the smallest available action to meet it.",
+    "rationale": "Turns reflection into an accessible care action, adapting behavioural activation's emphasis on workable behaviour.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "low_010",
+    "mood": "low",
+    "topic": "Behavioural activation",
+    "prompt": "Choose one familiar routine that could make the next hour easier. What is its first two-minute step, and when could you begin?",
+    "rationale": "Shrinks initiation demands and makes an everyday action specific enough to attempt.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "low_011",
+    "mood": "low",
+    "topic": "Positive affect",
+    "prompt": "What usually offers a little comfort or interest, even if it does not sound enjoyable today? Describe a brief version you could try without expecting it to fix your mood.",
+    "rationale": "Encourages gentle contact with potential reward without requiring enjoyment or immediate symptom relief.",
+    "reference_ids": [
+      "R16"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1037/ccp0000396"
+    ]
+  },
+  {
+    "id": "low_012",
+    "mood": "low",
+    "topic": "Behavioural activation",
+    "prompt": "Who feels relatively easy to contact? Draft a short message asking for something specific, such as a check-in, company, or help with one task. Sending it is optional.",
+    "rationale": "Makes a possible social-support action concrete while preserving choice about contact.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "low_013",
+    "mood": "low",
+    "topic": "Behavioural activation",
+    "prompt": "Choose one task that is weighing on you. Write only its first visible action, what you need to start, and a point at which you can stop for today.",
+    "rationale": "Breaks avoidance into a bounded action with a clear stopping point.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "low_014",
+    "mood": "low",
+    "topic": "Behavioural activation",
+    "prompt": "Recall one activity you did today. What did you notice about your mood or energy just before and just after it? 'No change' is a useful observation too.",
+    "rationale": "Builds a nonjudgmental record of activity–mood links without treating a single observation as proof.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "low_015",
+    "mood": "low",
+    "topic": "Goal planning",
+    "prompt": "Choose one small action that could help today. Name a likely obstacle, then complete: 'If that obstacle appears, I can try...'. Keep the alternative easy.",
+    "rationale": "Adapts obstacle planning and if–then intentions to a modest, feasible action.",
+    "reference_ids": [
+      "R21"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.565202"
+    ]
+  },
+  {
+    "id": "low_016",
+    "mood": "low",
+    "topic": "CBT reflection",
+    "prompt": "Choose one upsetting prediction about the next few hours. Write what you know for sure, what remains uncertain, and one way to cope if the difficult part happens.",
+    "rationale": "Distinguishes facts from predictions and adds coping options without forcing reassurance.",
+    "reference_ids": [
+      "R08"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/wps.21069"
+    ]
+  },
+  {
+    "id": "low_017",
+    "mood": "low",
+    "topic": "CBT reflection",
+    "prompt": "Write one thought that is making today harder. What is a more balanced sentence that acknowledges the difficulty and leaves room for something you do not yet know?",
+    "rationale": "Rehearses flexible appraisal without requiring a positive interpretation of a painful situation.",
+    "reference_ids": [
+      "R08"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/wps.21069"
+    ]
+  },
+  {
+    "id": "low_018",
+    "mood": "low",
+    "topic": "CBT reflection",
+    "prompt": "If your mind is using a word such as 'always' or 'nothing', describe one specific event instead. What more precise sentence fits the facts of that event?",
+    "rationale": "Replaces global conclusions with a limited, testable description.",
+    "reference_ids": [
+      "R08",
+      "R06"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/wps.21069",
+      "10.1017/S0033291711002480"
+    ]
+  },
+  {
+    "id": "low_019",
+    "mood": "low",
+    "topic": "Self-distancing",
+    "prompt": "Imagine a calm, caring observer describing a manageable difficulty you faced today. What would they notice about the situation and the support you needed? Write two sentences.",
+    "rationale": "Uses an observer perspective to reduce immersion in self-critical replay.",
+    "reference_ids": [
+      "R23"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1111/j.1751-9004.2010.00301.x"
+    ]
+  },
+  {
+    "id": "low_020",
+    "mood": "low",
+    "topic": "Concrete reflection",
+    "prompt": "Describe a mildly difficult moment as a camera might record it: where you were, what happened, and what you did next. Stop before judging what it says about you.",
+    "rationale": "Practises specific, contextual description rather than abstract self-evaluation.",
+    "reference_ids": [
+      "R06"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S0033291711002480"
+    ]
+  },
+  {
+    "id": "low_021",
+    "mood": "low",
+    "topic": "Concrete problem solving",
+    "prompt": "Name one small, solvable problem in one sentence. List two possible next steps, then choose the easier one to test. Leave larger problems aside for this entry.",
+    "rationale": "Keeps reflection focused on a bounded problem and an actionable experiment.",
+    "reference_ids": [
+      "R06",
+      "R08"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S0033291711002480",
+      "10.1002/wps.21069"
+    ]
+  },
+  {
+    "id": "low_022",
+    "mood": "low",
+    "topic": "Acceptance and values",
+    "prompt": "For one current concern, write one part you can influence today and one part you cannot settle now. What small action fits the part you can influence?",
+    "rationale": "Directs effort toward workable action while making room for unresolved circumstances.",
+    "reference_ids": [
+      "R18"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "low_023",
+    "mood": "low",
+    "topic": "Rumination interruption",
+    "prompt": "If the same thought has been circling, give the loop a short title. Write one useful action it points to, or 'No action available now', then choose what to attend to next.",
+    "rationale": "Creates an endpoint for repetitive analysis and shifts toward a concrete next focus.",
+    "reference_ids": [
+      "R05"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/0033-2909.134.2.163"
+    ]
+  },
+  {
+    "id": "low_024",
+    "mood": "low",
+    "topic": "Rumination interruption",
+    "prompt": "What have you understood well enough for today? Write one sentence to keep, one question you can leave unanswered, and a simple activity to return to after closing the journal.",
+    "rationale": "Sets a boundary around reflection instead of making complete understanding a requirement for stopping.",
+    "reference_ids": [
+      "R05"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/0033-2909.134.2.163"
+    ]
+  },
+  {
+    "id": "low_025",
+    "mood": "low",
+    "topic": "Values",
+    "prompt": "Choose a quality you care about, such as kindness, honesty, or curiosity. What is one very small way to express it today, even with your current mood?",
+    "rationale": "Links action to a chosen value without waiting for motivation or emotional certainty.",
+    "reference_ids": [
+      "R18"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "low_026",
+    "mood": "low",
+    "topic": "Values",
+    "prompt": "Name one part of life that matters to you beyond how well today is going. Describe a simple example of how that value has appeared in your life.",
+    "rationale": "Broadens self-perspective beyond a current setback through a concrete, personally meaningful value.",
+    "reference_ids": [
+      "R17"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1146/annurev-psych-010213-115137"
+    ]
+  },
+  {
+    "id": "low_027",
+    "mood": "low",
+    "topic": "Gentle gratitude",
+    "prompt": "If anything made today slightly easier, name it and describe how it helped. If gratitude does not fit, simply record one useful or dependable thing you noticed.",
+    "rationale": "Offers low-pressure attention to support while allowing a neutral response.",
+    "reference_ids": [
+      "R12"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.31744/einstein_journal/2023RW0371"
+    ]
+  },
+  {
+    "id": "low_028",
+    "mood": "low",
+    "topic": "Gentle gratitude",
+    "prompt": "Think of one small kindness you received or witnessed recently, if one comes to mind. What exactly happened? You do not need to feel grateful or repay it.",
+    "rationale": "Makes appreciation specific while avoiding obligation or comparison with others' difficulties.",
+    "reference_ids": [
+      "R13"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.84.2.377"
+    ]
+  },
+  {
+    "id": "low_029",
+    "mood": "low",
+    "topic": "Positive affect",
+    "prompt": "Notice one thing around you that feels neutral or mildly pleasant: a colour, a texture, a sound, or something else. Describe it in two concrete sentences.",
+    "rationale": "Provides a low-demand opportunity to notice sensory experience and possible comfort.",
+    "reference_ids": [
+      "R16"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1037/ccp0000396"
+    ]
+  },
+  {
+    "id": "low_030",
+    "mood": "low",
+    "topic": "Savoring",
+    "prompt": "If there was a brief moment of ease today, describe one detail you would like to remember. If none comes to mind, write about a place or object that feels familiar.",
+    "rationale": "Allows gentle attention to ease without insisting on happiness or a positive memory.",
+    "reference_ids": [
+      "R14"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1111/aphw.70134"
+    ]
+  },
+  {
+    "id": "low_031",
+    "mood": "low",
+    "topic": "Emotional acceptance",
+    "prompt": "Finish: 'Right now I notice..., and I do not have to judge myself for noticing it.' What would giving this feeling a little room look like for the next few minutes?",
+    "rationale": "Practises acceptance of inner experience while avoiding a demand to resolve the feeling.",
+    "reference_ids": [
+      "R24"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/pspp0000157"
+    ]
+  },
+  {
+    "id": "low_032",
+    "mood": "low",
+    "topic": "Emotional acceptance",
+    "prompt": "Can two things be true today, such as feeling sad and wanting company? Write a pair that fits you without trying to make one cancel out the other.",
+    "rationale": "Makes room for mixed experience rather than adding pressure to replace distress with positivity.",
+    "reference_ids": [
+      "R24"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/pspp0000157"
+    ]
+  },
+  {
+    "id": "low_033",
+    "mood": "low",
+    "topic": "Bounded expressive writing",
+    "prompt": "Choose a small, manageable frustration, not your most painful experience. Write three sentences: what happened, how you felt, and what might help now. Then pause and notice your surroundings.",
+    "rationale": "Combines emotional expression with a concrete endpoint; this shorter format deliberately differs from traditional expressive-writing protocols.",
+    "reference_ids": [
+      "R02",
+      "R05"
+    ],
+    "evidence_basis": "Writing / mechanism adaptation",
+    "citation_dois": [
+      "10.1111/bjc.12408",
+      "10.1037/0033-2909.134.2.163"
+    ]
+  },
+  {
+    "id": "low_034",
+    "mood": "low",
+    "topic": "Compassionate expression",
+    "prompt": "Write a short, unsent note beginning, 'What I wish someone understood about today is...'. End with one kind sentence you would like to hear. You can leave out any details.",
+    "rationale": "Offers private expression with a compassionate ending and control over disclosure.",
+    "reference_ids": [
+      "R01",
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1136/fmch-2021-001154",
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "low_035",
+    "mood": "low",
+    "topic": "Flexible goals",
+    "prompt": "What goal could be made smaller or postponed for today? Write a version that respects your current capacity and name when you might review it again.",
+    "rationale": "Adapts goal flexibility to present capacity without treating a temporary adjustment as failure.",
+    "reference_ids": [
+      "R27"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1038/s41562-025-02312-4"
+    ]
+  },
+  {
+    "id": "low_036",
+    "mood": "low",
+    "topic": "Goal reflection",
+    "prompt": "Record one step you have already taken toward something that matters, however incomplete. What would count as enough progress for today?",
+    "rationale": "Makes progress observable and defines a stopping point instead of measuring worth by completion.",
+    "reference_ids": [
+      "R20"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1037/bul0000025"
+    ]
+  },
+  {
+    "id": "low_037",
+    "mood": "low",
+    "topic": "Concrete coping reflection",
+    "prompt": "Recall one recent difficult hour that became a little more manageable. What specific action or circumstance helped? Is any small part of that available today?",
+    "rationale": "Looks for practical coping details rather than a general explanation for distress.",
+    "reference_ids": [
+      "R06"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S0033291711002480"
+    ]
+  },
+  {
+    "id": "low_038",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "What is one way to treat your body with basic respect today, without judging its appearance or productivity? Write a kind, practical plan.",
+    "rationale": "Translates compassionate intention into care without performance or appearance demands.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "low_039",
+    "mood": "low",
+    "topic": "Self-compassion",
+    "prompt": "Write a three-line care note for another low day: something you may need, something you are allowed to make easier, and someone or somewhere you can turn to.",
+    "rationale": "Creates a compassionate reminder that can be used when reflection feels harder.",
+    "reference_ids": [
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "low_040",
+    "mood": "low",
+    "topic": "Reflection closure",
+    "prompt": "After this entry, what feels useful to keep and what can wait? Write one next step, or give yourself permission to stop writing and rest.",
+    "rationale": "Treats usefulness and a clear endpoint as guides, rather than continuing until mood improves.",
+    "reference_ids": [
+      "R05"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/0033-2909.134.2.163"
+    ]
+  },
+  {
+    "id": "average_001",
+    "mood": "average",
+    "topic": "Affect labeling",
+    "prompt": "Which two emotions best describe today so far? For each, name a moment that brought it into focus and a word that captures it more precisely.",
+    "rationale": "Practises emotion differentiation through specific examples rather than broad mood judgments.",
+    "reference_ids": [
+      "R04"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1177/1754073917742706"
+    ]
+  },
+  {
+    "id": "average_002",
+    "mood": "average",
+    "topic": "Affect labeling",
+    "prompt": "Choose an ordinary interaction from today. What did you feel during it, what did you notice afterwards, and what would you like to communicate more clearly next time?",
+    "rationale": "Connects emotion recognition with a concrete communication intention.",
+    "reference_ids": [
+      "R04"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1177/1754073917742706"
+    ]
+  },
+  {
+    "id": "average_003",
+    "mood": "average",
+    "topic": "Expressive writing",
+    "prompt": "Choose a manageable event that is still on your mind. Write what happened, what you felt, and what you understand about your response now. Finish with what you need next.",
+    "rationale": "Adapts emotional disclosure into a bounded account with a present-focused ending.",
+    "reference_ids": [
+      "R02"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1111/bjc.12408"
+    ]
+  },
+  {
+    "id": "average_004",
+    "mood": "average",
+    "topic": "Expressive writing",
+    "prompt": "Write briefly about a recent change in your routine. What have you missed, what has been easier, and what would help you adjust over the coming week?",
+    "rationale": "Gives a transition a coherent account without requiring it to be wholly positive.",
+    "reference_ids": [
+      "R01",
+      "R02"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1136/fmch-2021-001154",
+      "10.1111/bjc.12408"
+    ]
+  },
+  {
+    "id": "average_005",
+    "mood": "average",
+    "topic": "Expressive writing",
+    "prompt": "Describe something you have found difficult to put into words, choosing only a detail that feels manageable. What do you want this page to understand about that detail?",
+    "rationale": "Invites chosen, limited emotional expression while leaving control over depth with the writer.",
+    "reference_ids": [
+      "R01"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1136/fmch-2021-001154"
+    ]
+  },
+  {
+    "id": "average_006",
+    "mood": "average",
+    "topic": "Self-distancing",
+    "prompt": "Look at a recent minor disagreement from the perspective of a fair observer. What might each person have needed, and what is one constructive response available to you?",
+    "rationale": "Uses distance to explore perspective and response options without rehearsing blame.",
+    "reference_ids": [
+      "R23"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1111/j.1751-9004.2010.00301.x"
+    ]
+  },
+  {
+    "id": "average_007",
+    "mood": "average",
+    "topic": "CBT reflection",
+    "prompt": "Pick one interpretation you made today. Separate the observable facts from your interpretation, then write another plausible explanation. What information would help distinguish them?",
+    "rationale": "Practises evaluating interpretations instead of assuming the first explanation is certain.",
+    "reference_ids": [
+      "R08"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/wps.21069"
+    ]
+  },
+  {
+    "id": "average_008",
+    "mood": "average",
+    "topic": "CBT reflection",
+    "prompt": "Name a low-stakes situation you have been avoiding. What do you predict would happen if you tried a small step, and what observation could fairly test that prediction?",
+    "rationale": "Turns an assumption into a modest behavioural experiment with an observable outcome.",
+    "reference_ids": [
+      "R08"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/wps.21069"
+    ]
+  },
+  {
+    "id": "average_009",
+    "mood": "average",
+    "topic": "CBT reflection",
+    "prompt": "Think of a standard you set for yourself this week. Is it clear, realistic, and within your control? Rewrite it so that you could tell when you had done enough.",
+    "rationale": "Makes expectations specific and proportionate, reducing vague or all-or-nothing evaluation.",
+    "reference_ids": [
+      "R08"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/wps.21069"
+    ]
+  },
+  {
+    "id": "average_010",
+    "mood": "average",
+    "topic": "Concrete reflection",
+    "prompt": "Recall a task that went differently from expected. Describe the sequence of events, identify one useful lesson, and choose one adjustment to try next time.",
+    "rationale": "Focuses learning on process details and a practical adjustment rather than global self-judgment.",
+    "reference_ids": [
+      "R06"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S0033291711002480"
+    ]
+  },
+  {
+    "id": "average_011",
+    "mood": "average",
+    "topic": "Behavioural activation",
+    "prompt": "Review yesterday's activities. Which offered enjoyment, a sense of accomplishment, or connection? Choose one category you would like to make room for this week.",
+    "rationale": "Uses activity reflection to plan balanced contact with potentially rewarding experiences.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "average_012",
+    "mood": "average",
+    "topic": "Behavioural activation",
+    "prompt": "Choose a neglected activity that matters to you. What is a manageable version, what time could it fit, and what could make starting easier?",
+    "rationale": "Connects a valued activity with scheduling and reduced practical barriers.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "average_013",
+    "mood": "average",
+    "topic": "Positive affect",
+    "prompt": "What activity absorbed your attention in a satisfying way recently? Describe the conditions that helped and one small way to recreate them.",
+    "rationale": "Identifies personally rewarding experiences and conditions that may support renewed engagement.",
+    "reference_ids": [
+      "R16"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1037/ccp0000396"
+    ]
+  },
+  {
+    "id": "average_014",
+    "mood": "average",
+    "topic": "Behavioural activation",
+    "prompt": "Think of a routine that tends to leave you drained. What small change in its timing, setting, or support could you try once, and what would you observe afterwards?",
+    "rationale": "Encourages a concrete activity experiment rather than assuming a routine has a fixed effect.",
+    "reference_ids": [
+      "R07"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1002/14651858.CD013305.pub2"
+    ]
+  },
+  {
+    "id": "average_015",
+    "mood": "average",
+    "topic": "Self-compassion",
+    "prompt": "Write about a minor mistake using three parts: what happened, what you can learn, and how you can treat yourself kindly while making any needed repair.",
+    "rationale": "Combines accountability with compassionate language instead of using self-criticism as motivation.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "average_016",
+    "mood": "average",
+    "topic": "Self-compassion",
+    "prompt": "Where are you expecting yourself to know something you are still learning? Write the encouragement and practical guidance you would offer a beginner.",
+    "rationale": "Rehearses a supportive response to ordinary limits and skill development.",
+    "reference_ids": [
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "average_017",
+    "mood": "average",
+    "topic": "Self-compassion",
+    "prompt": "Choose one comparison you have been making with someone else. What important differences in circumstances are missing, and what personal measure of progress would be fairer?",
+    "rationale": "Places self-evaluation in context and shifts attention toward a kinder, personally relevant standard.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "average_018",
+    "mood": "average",
+    "topic": "Gratitude",
+    "prompt": "Name one ordinary thing you appreciated today. Describe the exact detail that mattered and the difference it made to your experience.",
+    "rationale": "Makes appreciation concrete rather than a repetitive or obligatory list.",
+    "reference_ids": [
+      "R13"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.84.2.377"
+    ]
+  },
+  {
+    "id": "average_019",
+    "mood": "average",
+    "topic": "Gratitude",
+    "prompt": "Think of someone whose contribution you may have overlooked. What did they do, and what did it make possible? Draft a thank-you sentence if it feels appropriate.",
+    "rationale": "Directs attention toward specific interpersonal support; expressing thanks remains optional.",
+    "reference_ids": [
+      "R11"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1073/pnas.2425193122"
+    ]
+  },
+  {
+    "id": "average_020",
+    "mood": "average",
+    "topic": "Gratitude",
+    "prompt": "What resource, place, or everyday convenience supported you this week? Describe how you used it and what you appreciate about having access to it.",
+    "rationale": "Broadens appreciation beyond major events to practical sources of support.",
+    "reference_ids": [
+      "R12"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.31744/einstein_journal/2023RW0371"
+    ]
+  },
+  {
+    "id": "average_021",
+    "mood": "average",
+    "topic": "Gratitude",
+    "prompt": "Write about a kindness you freely chose to offer or receive. What did you value about the exchange, without keeping score or deciding what anyone owes?",
+    "rationale": "Explores appreciation without turning it into indebtedness or a demand for reciprocation.",
+    "reference_ids": [
+      "R11"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1073/pnas.2425193122"
+    ]
+  },
+  {
+    "id": "average_022",
+    "mood": "average",
+    "topic": "Values",
+    "prompt": "Choose one value that feels important this month. Describe a recent moment when you expressed it and a small choice that could express it again.",
+    "rationale": "Links personally important values with concrete examples and future action.",
+    "reference_ids": [
+      "R17",
+      "R18"
+    ],
+    "evidence_basis": "Writing / therapy adaptation",
+    "citation_dois": [
+      "10.1146/annurev-psych-010213-115137",
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "average_023",
+    "mood": "average",
+    "topic": "Values",
+    "prompt": "Look at one commitment on your calendar. Which value does it serve, if any? What adjustment would bring the commitment closer to what matters to you?",
+    "rationale": "Uses values as a guide to workable choices rather than as a test of moral worth.",
+    "reference_ids": [
+      "R18"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "average_024",
+    "mood": "average",
+    "topic": "Meaning",
+    "prompt": "Describe one ordinary moment this week that felt worthwhile. Was its meaning connected to a person, a contribution, learning, or something else? What made it matter to you?",
+    "rationale": "Explores personally experienced meaning at an everyday scale.",
+    "reference_ids": [
+      "R19"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S1478951517000931"
+    ]
+  },
+  {
+    "id": "average_025",
+    "mood": "average",
+    "topic": "Values",
+    "prompt": "When two important priorities compete, what do you want your decision to respect? Write one possible choice and one trade-off you are willing to acknowledge.",
+    "rationale": "Clarifies values in a real decision without assuming every priority can be satisfied.",
+    "reference_ids": [
+      "R18"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "average_026",
+    "mood": "average",
+    "topic": "Meaning",
+    "prompt": "What role, practice, or relationship gives your week a sense of continuity? Describe one way to care for it while allowing your life to change.",
+    "rationale": "Invites reflection on continuity and meaning without demanding a single overarching life purpose.",
+    "reference_ids": [
+      "R19"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S1478951517000931"
+    ]
+  },
+  {
+    "id": "average_027",
+    "mood": "average",
+    "topic": "Savoring",
+    "prompt": "Choose a pleasant moment from today and slow it down in words. What did you see, hear, or feel that you might otherwise have passed over?",
+    "rationale": "Uses sensory detail to attend to a positive experience more fully.",
+    "reference_ids": [
+      "R14"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1111/aphw.70134"
+    ]
+  },
+  {
+    "id": "average_028",
+    "mood": "average",
+    "topic": "Savoring",
+    "prompt": "What small, realistic experience are you looking forward to? Write what you anticipate enjoying and one simple arrangement that would make space for it.",
+    "rationale": "Adapts anticipatory savoring while keeping expectations grounded in an ordinary event.",
+    "reference_ids": [
+      "R15"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.771698"
+    ]
+  },
+  {
+    "id": "average_029",
+    "mood": "average",
+    "topic": "Positive expressive writing",
+    "prompt": "Describe a recent moment of curiosity, amusement, or quiet satisfaction. What happened, and what was it like to be there? Let the event be enough without drawing a lesson.",
+    "rationale": "Offers positive emotional expression without requiring a major achievement or an explanation.",
+    "reference_ids": [
+      "R03",
+      "R25"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1371/journal.pone.0308928",
+      "10.1016/S0092-6566(03)00058-8"
+    ]
+  },
+  {
+    "id": "average_030",
+    "mood": "average",
+    "topic": "Positive connection",
+    "prompt": "What piece of good news, however small, would you enjoy sharing with a receptive person? Write how you would tell it and what kind of response you would welcome.",
+    "rationale": "Prepares for sharing a positive event with someone likely to respond supportively.",
+    "reference_ids": [
+      "R26"
+    ],
+    "evidence_basis": "Social-research adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.87.2.228"
+    ]
+  },
+  {
+    "id": "average_031",
+    "mood": "average",
+    "topic": "Goal planning",
+    "prompt": "Choose one realistic goal for this week. Describe the outcome, a likely obstacle, and an if–then plan for handling that obstacle.",
+    "rationale": "Combines a desired outcome with obstacle awareness and a specific response plan.",
+    "reference_ids": [
+      "R21"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.565202"
+    ]
+  },
+  {
+    "id": "average_032",
+    "mood": "average",
+    "topic": "Goal reflection",
+    "prompt": "For one goal already underway, record what you actually did this week. What helped progress, and what single adjustment follows from the evidence?",
+    "rationale": "Uses recorded behaviour to guide the next step instead of relying only on a general sense of progress.",
+    "reference_ids": [
+      "R20"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1037/bul0000025"
+    ]
+  },
+  {
+    "id": "average_033",
+    "mood": "average",
+    "topic": "Flexible goals",
+    "prompt": "Is there a goal you are pursuing mainly because it used to matter? Explore whether to keep, modify, or release it, and what meaningful alternative might deserve attention.",
+    "rationale": "Invites deliberate goal adjustment when priorities or circumstances have changed.",
+    "reference_ids": [
+      "R27"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1038/s41562-025-02312-4"
+    ]
+  },
+  {
+    "id": "average_034",
+    "mood": "average",
+    "topic": "Future-self reflection",
+    "prompt": "Imagine an ordinary day three months from now that is going reasonably well. What are you doing, who is around, and which small habit helped you get there?",
+    "rationale": "Adapts future-self writing to an attainable everyday scenario rather than an idealized life.",
+    "reference_ids": [
+      "R22"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1371/journal.pone.0222386"
+    ]
+  },
+  {
+    "id": "average_035",
+    "mood": "average",
+    "topic": "Goal planning",
+    "prompt": "Name a useful intention you often forget. What existing event could remind you to act? Finish: 'After..., I will...'. Choose an action small enough to repeat.",
+    "rationale": "Uses a concrete cue to connect intention with action; this is one component of broader planning research.",
+    "reference_ids": [
+      "R21"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.565202"
+    ]
+  },
+  {
+    "id": "average_036",
+    "mood": "average",
+    "topic": "Goal reflection",
+    "prompt": "What would meaningful progress look like for one project before your next journal entry? Define one observable sign and a realistic point at which to review it.",
+    "rationale": "Makes progress measurable while keeping the review limited and purposeful.",
+    "reference_ids": [
+      "R20"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1037/bul0000025"
+    ]
+  },
+  {
+    "id": "average_037",
+    "mood": "average",
+    "topic": "Flexible goals",
+    "prompt": "Where would doing less allow you to do something important more sustainably? Describe one boundary or reduction and the value it would protect.",
+    "rationale": "Explores adjusting effort and commitments in light of capacity and meaningful alternatives.",
+    "reference_ids": [
+      "R27",
+      "R18"
+    ],
+    "evidence_basis": "Goal / therapy adaptation",
+    "citation_dois": [
+      "10.1038/s41562-025-02312-4",
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "average_038",
+    "mood": "average",
+    "topic": "Emotional acceptance",
+    "prompt": "What feeling have you been treating as something you should not have? Describe it neutrally, then write how you might respond without judging yourself for it.",
+    "rationale": "Practises a less evaluative relationship to emotional experience.",
+    "reference_ids": [
+      "R24"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/pspp0000157"
+    ]
+  },
+  {
+    "id": "average_039",
+    "mood": "average",
+    "topic": "Reflective learning",
+    "prompt": "Look over one recent journal entry, if you have one. What led to a useful action or understanding, and what became repetitive? Choose one change to how you write next time.",
+    "rationale": "Evaluates reflection by its function and helps distinguish learning from unproductive repetition.",
+    "reference_ids": [
+      "R05"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/0033-2909.134.2.163"
+    ]
+  },
+  {
+    "id": "average_040",
+    "mood": "average",
+    "topic": "Balanced daily reflection",
+    "prompt": "Write three brief lines about today: something that mattered, something that was difficult, and something you would like to try tomorrow. No final verdict on the day is needed.",
+    "rationale": "Allows a balanced account and a concrete next step without a global rating of the day or self.",
+    "reference_ids": [
+      "R01",
+      "R06"
+    ],
+    "evidence_basis": "Writing / therapy adaptation",
+    "citation_dois": [
+      "10.1136/fmch-2021-001154",
+      "10.1017/S0033291711002480"
+    ]
+  },
+  {
+    "id": "high_001",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "Choose a good moment from today and describe it slowly, including two sensory details. Which detail helps you reconnect with the pleasure of that moment?",
+    "rationale": "Uses attentive description to revisit an enjoyable experience.",
+    "reference_ids": [
+      "R14"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1111/aphw.70134"
+    ]
+  },
+  {
+    "id": "high_002",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "What is enjoyable about this moment before you move on to the next thing? Write a few lines about the experience itself, without needing to improve or extend it.",
+    "rationale": "Encourages present-focused enjoyment without turning it into another achievement task.",
+    "reference_ids": [
+      "R15"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.771698"
+    ]
+  },
+  {
+    "id": "high_003",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "Recall a small pleasure you almost overlooked today. What helped you notice it, and what did you enjoy once you paused?",
+    "rationale": "Practises noticing and attending to ordinary positive experience.",
+    "reference_ids": [
+      "R14"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1111/aphw.70134"
+    ]
+  },
+  {
+    "id": "high_004",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "Write a short description of a happy memory you would like to revisit later. Include where you were, one vivid detail, and the feeling you want the words to preserve.",
+    "rationale": "Creates a concrete cue for positive reminiscence.",
+    "reference_ids": [
+      "R15"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.771698"
+    ]
+  },
+  {
+    "id": "high_005",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "What modest event are you looking forward to soon? Describe one part you expect to enjoy, while leaving room for the event to unfold differently from your plan.",
+    "rationale": "Uses anticipation while keeping expectations flexible.",
+    "reference_ids": [
+      "R15"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.771698"
+    ]
+  },
+  {
+    "id": "high_006",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "Think of something familiar that still gives you pleasure. Describe it as if you were noticing it for the first time, focusing on details rather than its price or status.",
+    "rationale": "Renews attention to an ordinary source of enjoyment.",
+    "reference_ids": [
+      "R14"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1111/aphw.70134"
+    ]
+  },
+  {
+    "id": "high_007",
+    "mood": "high",
+    "topic": "Positive expressive writing",
+    "prompt": "Write about a moment of joy from today in the present tense. Stay with what is happening and how it feels, without needing to explain why you deserve it.",
+    "rationale": "Adapts positive-event writing into a brief, experiential account.",
+    "reference_ids": [
+      "R25"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1016/S0092-6566(03)00058-8"
+    ]
+  },
+  {
+    "id": "high_008",
+    "mood": "high",
+    "topic": "Positive expressive writing",
+    "prompt": "Tell the story of a satisfying experience from its beginning to its end. Include what surprised you and one detail that makes the story distinctly yours.",
+    "rationale": "Invites a coherent narrative of positive experience and its emotional texture.",
+    "reference_ids": [
+      "R03"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1371/journal.pone.0308928"
+    ]
+  },
+  {
+    "id": "high_009",
+    "mood": "high",
+    "topic": "Positive expressive writing",
+    "prompt": "Describe a recent moment of play, humour, or creativity. What did you enjoy about participating, even if nothing useful or impressive resulted?",
+    "rationale": "Makes room for positive experience that is independent of productivity or external approval.",
+    "reference_ids": [
+      "R03"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1371/journal.pone.0308928"
+    ]
+  },
+  {
+    "id": "high_010",
+    "mood": "high",
+    "topic": "Affect labeling",
+    "prompt": "Which words best describe your good mood: content, relieved, interested, connected, excited, or something else? Describe one distinction between the feelings you notice.",
+    "rationale": "Uses affect labeling for awareness; the aim is clarity rather than making positive emotion more intense.",
+    "reference_ids": [
+      "R04"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1177/1754073917742706"
+    ]
+  },
+  {
+    "id": "high_011",
+    "mood": "high",
+    "topic": "Emotional acceptance",
+    "prompt": "What quieter or mixed feeling is present alongside your good mood? Write how both can belong in today's experience without needing either to disappear.",
+    "rationale": "Allows emotional complexity and reduces pressure to feel uniformly positive.",
+    "reference_ids": [
+      "R24"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.1037/pspp0000157"
+    ]
+  },
+  {
+    "id": "high_012",
+    "mood": "high",
+    "topic": "Gratitude",
+    "prompt": "Name one person whose specific action contributed to a good part of your week. Describe the action and what it meant to you in your own words.",
+    "rationale": "Grounds gratitude in an identifiable contribution rather than a general obligation to be thankful.",
+    "reference_ids": [
+      "R11"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1073/pnas.2425193122"
+    ]
+  },
+  {
+    "id": "high_013",
+    "mood": "high",
+    "topic": "Gratitude",
+    "prompt": "Write a thank-you note for a small kindness, including a detail the other person might not know mattered. Keep it private or share it only if you want to.",
+    "rationale": "Adapts gratitude expression while preserving choice about disclosure.",
+    "reference_ids": [
+      "R11"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1073/pnas.2425193122"
+    ]
+  },
+  {
+    "id": "high_014",
+    "mood": "high",
+    "topic": "Gratitude",
+    "prompt": "What ordinary support helped make today's enjoyment possible? Describe one contribution from a place, resource, routine, or community that you would like to appreciate.",
+    "rationale": "Draws attention to everyday supports behind a positive experience.",
+    "reference_ids": [
+      "R12"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.31744/einstein_journal/2023RW0371"
+    ]
+  },
+  {
+    "id": "high_015",
+    "mood": "high",
+    "topic": "Gratitude",
+    "prompt": "List three different things you appreciated this week. For each, add one concrete detail so that the list records an experience rather than just a category.",
+    "rationale": "Adds specificity to gratitude listing and encourages attention to varied experiences.",
+    "reference_ids": [
+      "R13"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.84.2.377"
+    ]
+  },
+  {
+    "id": "high_016",
+    "mood": "high",
+    "topic": "Gratitude",
+    "prompt": "What opportunity are you glad you had recently? Describe what you valued about it, including any help or circumstances that made it possible.",
+    "rationale": "Encourages appreciation of opportunity without attributing every good outcome solely to personal effort.",
+    "reference_ids": [
+      "R11"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1073/pnas.2425193122"
+    ]
+  },
+  {
+    "id": "high_017",
+    "mood": "high",
+    "topic": "Positive connection",
+    "prompt": "Who would likely enjoy hearing about a good moment you had? Draft a brief account that includes how you felt and invites them into the experience.",
+    "rationale": "Prepares for sharing good news with a receptive person.",
+    "reference_ids": [
+      "R26"
+    ],
+    "evidence_basis": "Social-research adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.87.2.228"
+    ]
+  },
+  {
+    "id": "high_018",
+    "mood": "high",
+    "topic": "Positive connection",
+    "prompt": "Recall someone else's good news. What interested or delighted you about it, and what genuine question could help them tell you more?",
+    "rationale": "Rehearses an engaged response to another person's positive experience.",
+    "reference_ids": [
+      "R26"
+    ],
+    "evidence_basis": "Social-research adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.87.2.228"
+    ]
+  },
+  {
+    "id": "high_019",
+    "mood": "high",
+    "topic": "Positive connection",
+    "prompt": "Describe a shared moment when you felt understood or appreciated. What did each person do that made the interaction feel good?",
+    "rationale": "Identifies concrete features of a responsive, rewarding interaction.",
+    "reference_ids": [
+      "R26"
+    ],
+    "evidence_basis": "Social-research adaptation",
+    "citation_dois": [
+      "10.1037/0022-3514.87.2.228"
+    ]
+  },
+  {
+    "id": "high_020",
+    "mood": "high",
+    "topic": "Values",
+    "prompt": "What does today's enjoyment reveal about something you value? Describe the connection using one actual moment rather than a broad claim about the life you should lead.",
+    "rationale": "Connects positive experience with a personally important value.",
+    "reference_ids": [
+      "R17"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1146/annurev-psych-010213-115137"
+    ]
+  },
+  {
+    "id": "high_021",
+    "mood": "high",
+    "topic": "Values",
+    "prompt": "Choose a success you feel good about. Which way of behaving matters most to you within it, and how could you practise that quality even when outcomes are uncertain?",
+    "rationale": "Separates valued ways of acting from the need to keep achieving favourable outcomes.",
+    "reference_ids": [
+      "R18"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "high_022",
+    "mood": "high",
+    "topic": "Meaning",
+    "prompt": "What contribution felt meaningful recently, however small? Describe whom or what it served and what made the contribution worthwhile to you.",
+    "rationale": "Explores meaning through a specific contribution rather than status or scale.",
+    "reference_ids": [
+      "R19"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S1478951517000931"
+    ]
+  },
+  {
+    "id": "high_023",
+    "mood": "high",
+    "topic": "Values",
+    "prompt": "If you use some of today's energy to care for a relationship or cause, what small action would fit both your values and your available time?",
+    "rationale": "Translates positive energy into a bounded, values-guided choice.",
+    "reference_ids": [
+      "R18"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1016/j.jcbs.2020.09.009"
+    ]
+  },
+  {
+    "id": "high_024",
+    "mood": "high",
+    "topic": "Meaning",
+    "prompt": "Describe a moment when you felt part of something larger than your individual concerns. What about that connection would you like to remember?",
+    "rationale": "Invites reflection on belonging and personally experienced meaning without prescribing a belief system.",
+    "reference_ids": [
+      "R19"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1017/S1478951517000931"
+    ]
+  },
+  {
+    "id": "high_025",
+    "mood": "high",
+    "topic": "Goal reflection",
+    "prompt": "Choose one recent success and separate what you did, what others contributed, and what depended on circumstances. Which part of your own process would be useful to repeat?",
+    "rationale": "Focuses goal learning on observable, repeatable behaviour rather than assuming success will automatically recur.",
+    "reference_ids": [
+      "R20"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1037/bul0000025"
+    ]
+  },
+  {
+    "id": "high_026",
+    "mood": "high",
+    "topic": "Goal planning",
+    "prompt": "Choose one idea you are excited about. What is the desired outcome, the most likely practical obstacle, and an if–then plan for one small first step?",
+    "rationale": "Balances a desired outcome with feasibility and a specific plan.",
+    "reference_ids": [
+      "R21"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.565202"
+    ]
+  },
+  {
+    "id": "high_027",
+    "mood": "high",
+    "topic": "Goal planning",
+    "prompt": "Of the ideas that appeal to you today, which one best fits your time this week? Define a small trial and a clear stopping point before committing further.",
+    "rationale": "Adapts planning to a bounded experiment rather than an open-ended commitment.",
+    "reference_ids": [
+      "R21",
+      "R27"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.565202",
+      "10.1038/s41562-025-02312-4"
+    ]
+  },
+  {
+    "id": "high_028",
+    "mood": "high",
+    "topic": "Flexible goals",
+    "prompt": "Before adding a new commitment, what existing priority would it take time from? Write the trade-off and decide whether to proceed, scale down, or revisit later.",
+    "rationale": "Encourages deliberate adjustment of effort across competing goals.",
+    "reference_ids": [
+      "R27"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1038/s41562-025-02312-4"
+    ]
+  },
+  {
+    "id": "high_029",
+    "mood": "high",
+    "topic": "Goal reflection",
+    "prompt": "What progress are you pleased with that a result alone would not show? Record one skill, habit, or effort you developed and an example that demonstrates it.",
+    "rationale": "Makes process progress visible using concrete evidence.",
+    "reference_ids": [
+      "R20"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1037/bul0000025"
+    ]
+  },
+  {
+    "id": "high_030",
+    "mood": "high",
+    "topic": "Future-self reflection",
+    "prompt": "Imagine a satisfying but ordinary week a few months from now. What steady choices helped create it, and which one could you begin in a modest way?",
+    "rationale": "Adapts future-self writing to realistic routines and attainable action.",
+    "reference_ids": [
+      "R22"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1371/journal.pone.0222386"
+    ]
+  },
+  {
+    "id": "high_031",
+    "mood": "high",
+    "topic": "Goal reflection",
+    "prompt": "How will you know whether a new plan is helping? Choose one observable sign, a date to review it, and a change you could make if the plan does not fit.",
+    "rationale": "Pairs progress monitoring with willingness to revise the plan.",
+    "reference_ids": [
+      "R20",
+      "R27"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1037/bul0000025",
+      "10.1038/s41562-025-02312-4"
+    ]
+  },
+  {
+    "id": "high_032",
+    "mood": "high",
+    "topic": "Goal planning",
+    "prompt": "Think of one habit that supported a good week. What cue could help you repeat its smallest useful version on a busier or less motivated day?",
+    "rationale": "Uses cue-based planning to make action less dependent on current enthusiasm.",
+    "reference_ids": [
+      "R21"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.565202"
+    ]
+  },
+  {
+    "id": "high_033",
+    "mood": "high",
+    "topic": "Flexible goals",
+    "prompt": "What goal can stay as it is, even though you feel capable of doing more today? Describe what enough looks like and what else you want your time to include.",
+    "rationale": "Invites a deliberate limit on goal expansion while considering other meaningful activities.",
+    "reference_ids": [
+      "R27"
+    ],
+    "evidence_basis": "Goal-research adaptation",
+    "citation_dois": [
+      "10.1038/s41562-025-02312-4"
+    ]
+  },
+  {
+    "id": "high_034",
+    "mood": "high",
+    "topic": "Self-compassion",
+    "prompt": "Write a kind note to a future version of yourself who is having a less cheerful day. Include something you want them to know that does not depend on achievement or mood.",
+    "rationale": "Extends compassionate regard across changing emotional states.",
+    "reference_ids": [
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "high_035",
+    "mood": "high",
+    "topic": "Self-compassion",
+    "prompt": "What helped you reach a good moment despite being imperfect? Describe one human limitation you can allow yourself to have while still appreciating the experience.",
+    "rationale": "Combines enjoyment with realistic self-acceptance.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "high_036",
+    "mood": "high",
+    "topic": "Self-compassion",
+    "prompt": "What would caring for yourself look like at the end of a satisfying day? Write a gentle transition into rest that does not require earning it with one more task.",
+    "rationale": "Applies compassionate care to ending activity, not only to coping with distress.",
+    "reference_ids": [
+      "R09"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1007/s12671-023-02148-x"
+    ]
+  },
+  {
+    "id": "high_037",
+    "mood": "high",
+    "topic": "Self-compassion",
+    "prompt": "If today's good mood changed tomorrow, what would still make you worthy of kindness? Write a short reminder in words you would naturally use with someone you love.",
+    "rationale": "Rehearses support that is not conditional on maintaining a positive emotional state.",
+    "reference_ids": [
+      "R10"
+    ],
+    "evidence_basis": "Writing adaptation",
+    "citation_dois": [
+      "10.1080/17439760.2010.516763"
+    ]
+  },
+  {
+    "id": "high_038",
+    "mood": "high",
+    "topic": "Positive affect",
+    "prompt": "Which enjoyable activity felt nourishing rather than merely busy? Describe what you noticed during and afterwards, and whether you would like to make space for it again.",
+    "rationale": "Encourages discrimination among rewarding activities using observed experience.",
+    "reference_ids": [
+      "R16"
+    ],
+    "evidence_basis": "Therapy adaptation",
+    "citation_dois": [
+      "10.1037/ccp0000396"
+    ]
+  },
+  {
+    "id": "high_039",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "Choose a phrase, image, or sensory detail that captures a good part of today. Write a few lines explaining what you want that reminder to bring back later.",
+    "rationale": "Creates a personal reminder for positive reminiscence without trying to preserve the mood permanently.",
+    "reference_ids": [
+      "R15"
+    ],
+    "evidence_basis": "Mechanism-informed",
+    "citation_dois": [
+      "10.3389/fpsyg.2021.771698"
+    ]
+  },
+  {
+    "id": "high_040",
+    "mood": "high",
+    "topic": "Savoring",
+    "prompt": "End this entry with one experience you enjoyed, one detail you want to remember, and one way to give the rest of the day some unhurried space.",
+    "rationale": "Closes with attention to positive experience and room to enjoy it at an ordinary pace.",
+    "reference_ids": [
+      "R14"
+    ],
+    "evidence_basis": "Intervention adaptation",
+    "citation_dois": [
+      "10.1111/aphw.70134"
+    ]
+  }
+]

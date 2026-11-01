@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::{EncryptedNote, Entry, EntryDraft};
+use crate::{EncryptedNote, Entry, EntryDraft, JournalPrompt, Mood};
 
 const MAX_HEADER_BYTES: usize = 1024 * 1024;
 
@@ -34,6 +34,10 @@ struct JournalMetadata {
     id: String,
     #[serde(default)]
     priority: Option<u32>,
+    #[serde(default)]
+    mood: Option<Mood>,
+    #[serde(default)]
+    journal_prompt: Option<JournalPrompt>,
     #[serde(default)]
     protection: Option<ProtectionMetadata>,
 }
@@ -141,6 +145,8 @@ impl JournalDocument {
             metadata.tui_journal.priority,
         );
         entry.protection = protection;
+        entry.mood = metadata.tui_journal.mood;
+        entry.journal_prompt = metadata.tui_journal.journal_prompt;
         entry.validate_protection()?;
         Ok(entry)
     }
@@ -192,6 +198,25 @@ impl JournalDocument {
             } else {
                 app.remove("priority");
             }
+        }
+        for (name, value) in [
+            ("mood", serde_json::to_value(entry.mood)?),
+            (
+                "journal_prompt",
+                serde_json::to_value(&entry.journal_prompt)?,
+            ),
+        ] {
+            let app = document.metadata["tui_journal"]
+                .as_object_mut()
+                .context("Invalid journal metadata")?;
+            if value.is_null() {
+                app.remove(name);
+            } else {
+                app.insert(name.into(), value);
+            }
+        }
+        if entry.mood.is_some() || entry.journal_prompt.is_some() {
+            document.metadata["tui_journal"]["version"] = 3.into();
         }
         if document.metadata != self.metadata {
             document.original_header = None;
@@ -278,12 +303,18 @@ fn validate_metadata(value: &Value) -> Result<Metadata> {
     let metadata: Metadata =
         serde_json::from_value(value.clone()).context("Invalid journal metadata fields")?;
     ensure!(
-        matches!(metadata.tui_journal.version, 1 | 2),
+        matches!(metadata.tui_journal.version, 1..=3),
         "Unsupported journal format version"
     );
     ensure!(
         (metadata.tui_journal.version == 2) == metadata.tui_journal.protection.is_some(),
         "Journal protection does not match its format version"
+    );
+    ensure!(
+        metadata.tui_journal.version == 3
+            || (metadata.tui_journal.mood.is_none()
+                && metadata.tui_journal.journal_prompt.is_none()),
+        "Mood and prompts require journal format version 3"
     );
     ensure!(!metadata.title.is_empty(), "Entry title can't be empty");
     let uid = Uuid::parse_str(&metadata.tui_journal.id).context("Invalid journal UUID")?;

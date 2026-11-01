@@ -73,11 +73,11 @@ fn priority_visibility_toggle_is_available_in_entries_and_restores_default() {
     assert!(!popup.current_field().restart);
     assert_eq!(
         popup.value(popup.current_field()),
-        Some(Value::Boolean(true))
+        Some(Value::Boolean(false))
     );
     assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::Keep);
     let settings: Settings = toml::from_str(&popup.settings_document.text()).unwrap();
-    assert!(!settings.show_entry_priority);
+    assert!(settings.show_entry_priority);
     assert_eq!(settings.default_journal_priority, Some(3));
     assert!(settings.auto_title.is_some());
     key(&mut popup, KeyCode::Char('d'));
@@ -89,8 +89,27 @@ fn priority_visibility_toggle_is_available_in_entries_and_restores_default() {
     );
     assert_eq!(
         popup.value(popup.current_field()),
-        Some(Value::Boolean(true))
+        Some(Value::Boolean(false))
     );
+}
+
+#[test]
+fn mood_and_prompt_toggles_preserve_other_preferences() {
+    let (_, mut popup) = popup("auto_title = 'Daily'\nshow_entry_priority = false\n", "");
+    for path in ["show_entry_mood", "journal_prompts"] {
+        select(&mut popup, Tab::Entries, &[path]);
+        assert!(!popup.current_field().restart);
+        assert_eq!(
+            popup.value(popup.current_field()),
+            Some(Value::Boolean(true))
+        );
+        key(&mut popup, KeyCode::Enter);
+    }
+    let saved: Settings = toml::from_str(&popup.settings_document.text()).unwrap();
+    assert!(!saved.show_entry_mood);
+    assert!(!saved.journal_prompts);
+    assert!(!saved.show_entry_priority);
+    assert!(saved.auto_title.is_some());
 }
 
 #[test]

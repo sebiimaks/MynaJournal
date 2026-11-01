@@ -102,6 +102,8 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         Field::new(General, &["entry_time_format"], "Time format", Choice(vec!["24h", "12h"]), "Use 24-hour time (22:09) or 12-hour time with am/pm (10:09 pm)."),
         Field::new(General, &["scroll_per_page"], "Entries per page step", number(), "Number of entries moved by list page navigation. Zero disables list page movement."),
         Field::new(General, &["history_limit"], "Journal undo limit", number(), "Maximum saved journal changes in each undo/redo stack. Zero disables journal undo. Editor text undo is separate. Restart required.").restart(),
+        Field::new(Entries, &["show_entry_mood"], "Show mood", Bool, "Show Low, Average and High in entry dialogs and mood markers in the list. Turning this off also hides journal prompts, without deleting saved moods or prompts."),
+        Field::new(Entries, &["journal_prompts"], "Journal prompts", Bool, "Choose a random prompt for new entries with a mood. Show or hide the saved prompt with Ctrl-G. Requires Show mood; existing prompts are retained."),
         Field::new(Entries, &["show_entry_priority"], "Show priority field", Bool, "Show Priority in the entry dialog. Hiding it preserves existing priorities; the new-entry priority default still applies."),
         Field::new(Entries, &["default_journal_priority"], "New-entry priority", Number { min: 0, max: u32::MAX as u64 }, "Default priority for new entries; use default to leave it unset."),
         Field::new(Entries, &["auto_title"], "New-entry title mode", TitleMode, "None, current date, or a literal title. Applies to new entries."),

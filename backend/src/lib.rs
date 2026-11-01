@@ -3,7 +3,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
+mod mood;
 mod persistence;
+pub use mood::{JournalPrompt, Mood};
 pub mod protection;
 pub use protection::EncryptedNote;
 
@@ -27,7 +29,8 @@ mod vjournal;
 #[cfg(feature = "vjournal")]
 pub use vjournal::VjournalDataProvide;
 
-pub const TRANSFER_DATA_VERSION: u16 = 101;
+pub const TRANSFER_DATA_VERSION: u16 = 102;
+pub const PROTECTED_TRANSFER_DATA_VERSION: u16 = 101;
 pub const LEGACY_TRANSFER_DATA_VERSION: u16 = 100;
 
 #[derive(Debug, thiserror::Error)]
@@ -87,6 +90,10 @@ pub struct Entry {
     pub priority: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protection: Option<EncryptedNote>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mood: Option<Mood>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journal_prompt: Option<JournalPrompt>,
 }
 
 impl Entry {
@@ -107,6 +114,8 @@ impl Entry {
             tags,
             priority,
             protection: None,
+            mood: None,
+            journal_prompt: None,
         }
     }
 
@@ -119,6 +128,8 @@ impl Entry {
             tags: draft.tags,
             priority: draft.priority,
             protection: draft.protection,
+            mood: draft.mood,
+            journal_prompt: draft.journal_prompt,
         }
     }
 
@@ -132,6 +143,8 @@ impl Entry {
         self.tags.zeroize();
         self.priority.zeroize();
         self.priority = None;
+        self.mood.zeroize();
+        self.journal_prompt.zeroize();
         self.protection = Some(protection);
         self
     }
@@ -155,6 +168,10 @@ pub struct EntryDraft {
     pub priority: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protection: Option<EncryptedNote>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mood: Option<Mood>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journal_prompt: Option<JournalPrompt>,
 }
 
 impl EntryDraft {
@@ -172,6 +189,8 @@ impl EntryDraft {
             tags,
             priority,
             protection: None,
+            mood: None,
+            journal_prompt: None,
         }
     }
 
@@ -190,6 +209,8 @@ impl EntryDraft {
             tags: entry.tags,
             priority: entry.priority,
             protection: entry.protection,
+            mood: entry.mood,
+            journal_prompt: entry.journal_prompt,
         }
     }
 }
@@ -221,7 +242,9 @@ impl EntriesDTO {
         anyhow::ensure!(
             matches!(
                 self.version,
-                LEGACY_TRANSFER_DATA_VERSION | TRANSFER_DATA_VERSION
+                LEGACY_TRANSFER_DATA_VERSION
+                    | PROTECTED_TRANSFER_DATA_VERSION
+                    | TRANSFER_DATA_VERSION
             ),
             "Unsupported journal transfer version {}",
             self.version
@@ -231,11 +254,20 @@ impl EntriesDTO {
                 self.version != LEGACY_TRANSFER_DATA_VERSION || draft.protection.is_none(),
                 "Encrypted records require the current journal transfer format"
             );
+            anyhow::ensure!(
+                self.version == TRANSFER_DATA_VERSION
+                    || (draft.mood.is_none() && draft.journal_prompt.is_none()),
+                "Mood and prompts require the current journal transfer format"
+            );
             anyhow::ensure!(!draft.title.is_empty(), "Entry title can't be empty");
             if let Some(protection) = &draft.protection {
                 protection.validate()?;
                 anyhow::ensure!(
-                    draft.content.is_empty() && draft.tags.is_empty() && draft.priority.is_none(),
+                    draft.content.is_empty()
+                        && draft.tags.is_empty()
+                        && draft.priority.is_none()
+                        && draft.mood.is_none()
+                        && draft.journal_prompt.is_none(),
                     protection::ProtectionError::PlaintextFields
                 );
             }
@@ -289,6 +321,8 @@ impl<'de> Deserialize<'de> for EntriesDTO {
                     tags: Vec::new(),
                     priority: None,
                     protection: Some(protected.protection),
+                    mood: None,
+                    journal_prompt: None,
                 },
                 transfer_format::TransferEntry::Plain(plain) => EntryDraft {
                     date: plain.date,
@@ -297,6 +331,8 @@ impl<'de> Deserialize<'de> for EntriesDTO {
                     tags: plain.tags,
                     priority: plain.priority,
                     protection: None,
+                    mood: plain.mood,
+                    journal_prompt: plain.journal_prompt,
                 },
             })
             .collect();
@@ -362,6 +398,10 @@ mod transfer_format {
         pub content: String,
         pub tags: Vec<String>,
         pub priority: Option<u32>,
+        #[serde(default)]
+        pub mood: Option<Mood>,
+        #[serde(default)]
+        pub journal_prompt: Option<JournalPrompt>,
     }
 }
 
@@ -379,6 +419,8 @@ mod tests {
             tags: vec![String::from("one"), String::from("two")],
             priority: Some(3),
             protection: None,
+            mood: None,
+            journal_prompt: None,
         }
     }
 

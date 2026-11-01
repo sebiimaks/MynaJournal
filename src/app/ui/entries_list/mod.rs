@@ -65,6 +65,16 @@ impl EntriesList {
         let items: Vec<ListItem> = app
             .get_active_entries()
             .map(|entry| {
+                let mood = app
+                    .settings
+                    .show_entry_mood
+                    .then(|| app.entry_mood(entry))
+                    .flatten();
+                let marker = mood.filter(|_| width >= 7).map(|mood| mood.marker());
+                let full_width = width;
+                let width = width
+                    .saturating_sub(if marker.is_some() { 4 } else { 0 })
+                    .max(1);
                 let highlight_selected =
                     self.multi_select_mode && app.selected_entries.contains(&entry.id);
 
@@ -165,6 +175,14 @@ impl EntriesList {
                     spans.extend(tag_lines);
                 }
 
+                if let Some(marker) = marker {
+                    let middle = (spans.len() - 1) / 2;
+                    let line = &mut spans[middle];
+                    line.push_span(Span::raw(
+                        " ".repeat(full_width.saturating_sub(line.width() + marker.len())),
+                    ));
+                    line.push_span(Span::styled(marker, title_style));
+                }
                 ListItem::new(spans)
             })
             .collect();
@@ -425,6 +443,40 @@ mod tests {
             Vec::new(),
             None,
         )
+    }
+
+    #[test]
+    fn mood_markers_are_right_aligned_on_the_middle_line_and_can_be_hidden() {
+        for mood in backend::Mood::ALL {
+            let mut app = create_default_app();
+            let mut entry = entry_at(22, 9);
+            entry.tags = vec!["A tag".into()];
+            entry.mood = Some(mood);
+            app.entries = vec![entry];
+            let mut list = EntriesList::new();
+            list.state.select(Some(0));
+            for visible in [true, false] {
+                app.settings.show_entry_mood = visible;
+                let mut terminal = Terminal::new(TestBackend::new(45, 10)).unwrap();
+                terminal
+                    .draw(|frame| list.render_list(frame, &app, frame.area(), &Styles::default()))
+                    .unwrap();
+                let lines: Vec<String> = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .chunks(45)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                let found = lines
+                    .iter()
+                    .enumerate()
+                    .find_map(|(y, row)| row.find(mood.marker()).map(|x| (row[..x].width(), y)));
+                assert_eq!(found, visible.then_some((40, 2)));
+                assert!(lines[1].contains("Entry title"));
+                assert!(lines[3].contains("A tag"));
+            }
+        }
     }
 
     #[test]

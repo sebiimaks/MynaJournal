@@ -32,13 +32,20 @@ base, rather than a claim about every future upstream version:
 | Themes | A named theme list with activation, editing and creation. Only Tui (default) is bundled. |
 | Storage | A fourth backend: one plain-text or Markdown file per entry, with YAML metadata and date/time filenames. JSON, SQLite and VJOURNAL remain available. |
 | Privacy | Password protection for individual entries across all four backends. Titles and dates stay visible; private contents are encrypted. |
-| Entry dialogs | An option to hide the Priority field without removing existing values. New titles are blank unless `auto_title` is configured. |
+| Entry dialogs | Priority is hidden by default and can be enabled without changing existing values. New titles are blank unless `auto_title` is configured. |
+| Reflection | Optional Low, Average and High mood markers, with a saved random journal prompt shown at the top inside the content pane. |
 | Interface | Clearer footer commands, an Entries heading, and period-separated list dates. |
 | Linux console | Rendering, startup and exit fixes for Debian TTY sessions. |
 | Distribution | The `mjournal` command, `myna-journal` default directories, Debian packages, and accessible bundled license notices. |
 
 MynaJournal does not add network synchronization. All four backends operate on
 local storage; an external program may manage a directory independently.
+
+Mood and prompts are enabled by default and can be disabled under **Config →
+Entries**. In the Mood row, use Left/Right and Space to choose Low `[-]`, Average
+`[~]` or High `[+]`. Leaving all boxes unchecked is allowed. A new entry with a
+mood receives one matching prompt; **Ctrl-G** hides or shows it. Changing mood
+later keeps the original prompt. See [Configuration](CONFIGURATION.md) for details.
 
 ## Installation
 
@@ -180,7 +187,7 @@ mjournal
 ```
 
 1. Press `n` in the Entries pane to create an entry. Type a title, use `Tab` to
-   move through its date, optional priority and comma-separated tags, then press
+   move through its optional mood, date/time, priority and comma-separated tags, then press
    `Enter` to confirm.
 2. Press `Enter` on the entry to edit its content. Type your note and press
    `Ctrl-S` to save it.
@@ -198,7 +205,8 @@ entry-list action is involved. In insertion mode, letters are ordinary text.
 | --- | --- |
 | Select previous/next entry | `Up` / `Down`, or `k` / `j` |
 | Create an entry | `n` |
-| Edit title, date, tags or priority | `e` |
+| Edit title, mood, date, tags or priority | `e` |
+| Show or hide the saved journal prompt | `Ctrl-G` (also while typing) |
 | Edit content | `Enter` or `Ctrl-M` |
 | Save content | `Ctrl-S` while editing; `s` in normal mode |
 | Use an external terminal editor | `y` from the list, or `Ctrl-Y` in normal mode |
@@ -287,8 +295,8 @@ entry's date. **Time format** offers `24h` (`30.10.2026 22:09`, the default) and
 use your local timezone. With time enabled, entry dialogs show an editable
 **Date and Time** field in the selected format; otherwise they show **Date**.
 
-Under **Entries**, turn off **Show priority field** to hide Priority in the entry
-dialog. Existing priorities and the configured default for new entries are
+Priority is hidden by default. Under **Entries**, enable **Show priority field**
+to show it in the entry dialog. Existing priorities and the configured default for new entries are
 preserved. Titles start blank by default; `auto_title = "Daily Note"` supplies
 literal text, while `auto_title = { kind = "date" }` supplies the current date.
 
@@ -307,7 +315,7 @@ Omit the name to create `theme_tui_custom.toml`, then `theme_tui_custom_01.toml`
 `theme_tui_custom_02.toml`, and so on. See [Themes](THEMES.md).
 
 Press `L` to protect an entry with a password. Its title and date remain visible;
-its body, tags, priority and private metadata are encrypted. Press `Enter` on a
+its body, tags, priority, mood, prompt and private metadata are encrypted. Press `Enter` on a
 locked entry to unlock it. There is no password recovery. Automatic locking,
 clipboard restrictions and export behavior are described in
 [Note locking](NOTE-LOCKING.md).

@@ -58,9 +58,30 @@ entered time that occurs twice during a clock change uses the earlier occurrence
 an unchanged value keeps its original occurrence. Older entries may show a time
 derived from midnight UTC because earlier versions saved only a calendar date.
 
-In Entries, turn off **Show priority field** to hide Priority in the entry dialog.
+Priority is hidden by default. In Entries, enable **Show priority field** to show it
+in the entry dialog.
 This applies to the next dialog you open. Existing priority values are preserved,
 and the configured new-entry priority still applies when creating entries.
+
+In **Entries**, **Show mood** enables the optional Low, Average and High checkboxes
+and the `[-]`, `[~]` and `[+]` markers in the list. Use `Tab` to focus Mood,
+`Left`/`Right` to move between choices, and `Space` to select one. Pressing Space
+on the selected choice clears it. A highlighted **Space** hint appears while the
+checkboxes have focus. Existing entries start without a mood.
+
+**Journal prompts** chooses one of the 120 bundled prompts when you create an
+entry with a mood. The prompt appears in a centred box at the top inside the content
+pane, occupying 60% of its inner width; **Ctrl-G**
+hides or shows it while browsing or typing. The chosen prompt is saved with the
+entry and remains unchanged when its mood changes. Reopening an entry shows its
+saved prompt again. Editing an older entry does not create a prompt for it.
+
+Both preferences default to on. Turning off Show mood also disables prompt
+creation and display; it preserves saved moods, prompts and the Journal prompts
+preference. Turning off Journal prompts alone preserves mood controls. These
+changes apply immediately after saving. Prompts work entirely offline, are not
+inserted into the note body, and are included in structured transfers and backups.
+Protected entries encrypt mood and the saved prompt; both are hidden while locked.
 
 Viewing settings does not create files. Saving preserves unrelated configuration,
 comments, and backend sections, including those unavailable in the current build.
@@ -79,7 +100,9 @@ theme = "tui"  # Active theme ID; reads themes/theme_tui.toml when present, othe
 # Omit this key to retain an existing legacy themes.toml, or use Tui when none exists.
 
 default_journal_priority = 3  # Sets the suggested priority while creating a new journal
-show_entry_priority = true   # Show Priority in entry dialogs; false hides it without clearing saved values.
+show_entry_priority = false  # Hidden by default; true shows Priority without changing saved values.
+show_entry_mood = true       # Optional Low / Average / High selector and list markers.
+journal_prompts = true       # Saved prompts for new entries with a mood; requires show_entry_mood.
 
 auto_title = { kind = "date" } # Pre-populates the title field when creating a new entry. Two forms are accepted:
 #   - Literal string: `auto_title = "Daily Note"` inserts the text as-is.

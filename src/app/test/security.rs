@@ -16,9 +16,15 @@ async fn protected_app() -> App<MockDataProvider> {
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(0);
     let entry = app.get_current_entry().unwrap().clone();
-    app.update_current_entry_attributes(entry.title, entry.date, vec![PRIVATE_TAG.into()], Some(3))
-        .await
-        .unwrap();
+    app.update_current_entry_attributes(
+        entry.title,
+        entry.date,
+        vec![PRIVATE_TAG.into()],
+        Some(3),
+        None,
+    )
+    .await
+    .unwrap();
     app.protect_note(0, password(PASSWORD), PRIVATE_BODY.into())
         .await
         .unwrap();
@@ -199,7 +205,7 @@ async fn locked_edits_are_rejected_and_unlocked_public_metadata_is_resealed() {
             .is_err()
     );
     assert!(
-        app.update_current_entry_attributes("Rejected".into(), date, vec![], None)
+        app.update_current_entry_attributes("Rejected".into(), date, vec![], None, None)
             .await
             .is_err()
     );
@@ -211,6 +217,7 @@ async fn locked_edits_are_rejected_and_unlocked_public_metadata_is_resealed() {
         date,
         vec!["NEW_PRIVATE_TAG".into()],
         Some(4),
+        None,
     )
     .await
     .unwrap();

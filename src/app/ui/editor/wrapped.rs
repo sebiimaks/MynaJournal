@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Margin, Rect},
     style::Style,
     symbols,
-    widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Padding, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use tui_textarea::{CursorMove, TextArea};
 use unicode_segmentation::UnicodeSegmentation;
@@ -309,7 +309,13 @@ impl Editor<'_> {
         }
     }
 
-    pub(super) fn render_wrapped(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+    pub(super) fn render_wrapped(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        styles: &Styles,
+        top_inset: u16,
+    ) {
         let estyles = &styles.editor;
         let border_style = match (self.mode, self.is_active) {
             (EditorMode::Insert, _) => estyles.block_insert,
@@ -331,6 +337,7 @@ impl Editor<'_> {
         let block = Block::default()
             .borders(Borders::ALL)
             .style(border_style)
+            .padding(Padding::new(0, 0, top_inset, 0))
             .title(title);
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -418,10 +425,7 @@ impl Editor<'_> {
                     .end_symbol(Some("▼"))
                     .track_symbol(Some(symbols::line::VERTICAL))
                     .thumb_symbol(symbols::block::FULL),
-                area.inner(Margin {
-                    horizontal: 0,
-                    vertical: 1,
-                }),
+                Rect::new(area.x, inner.y, area.width, inner.height),
                 &mut state,
             );
         }

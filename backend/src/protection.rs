@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::Entry;
+use crate::{Entry, JournalPrompt, Mood};
 
 pub const PROTECTION_VERSION: u32 = 1;
 pub const MAX_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
@@ -65,6 +65,10 @@ pub struct UnlockedNote {
     pub content: String,
     pub tags: Vec<String>,
     pub priority: Option<u32>,
+    #[serde(default)]
+    pub mood: Option<Mood>,
+    #[serde(default)]
+    pub journal_prompt: Option<JournalPrompt>,
     pub native_metadata: Option<String>,
 }
 
@@ -79,6 +83,8 @@ impl Drop for UnlockedNote {
         self.content.zeroize();
         self.tags.zeroize();
         self.priority.zeroize();
+        self.mood.zeroize();
+        self.journal_prompt.zeroize();
         self.native_metadata.zeroize();
     }
 }
@@ -122,6 +128,10 @@ struct NoteRef<'a> {
     content: &'a str,
     tags: &'a [String],
     priority: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mood: Option<Mood>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    journal_prompt: Option<&'a JournalPrompt>,
     native_metadata: Option<&'a str>,
 }
 
@@ -155,7 +165,12 @@ impl Write for PlaintextBuffer {
 pub fn validate_protected_entry(entry: &Entry) -> Result<(), ProtectionError> {
     if let Some(protection) = &entry.protection {
         protection.validate()?;
-        if !entry.content.is_empty() || !entry.tags.is_empty() || entry.priority.is_some() {
+        if !entry.content.is_empty()
+            || !entry.tags.is_empty()
+            || entry.priority.is_some()
+            || entry.mood.is_some()
+            || entry.journal_prompt.is_some()
+        {
             return Err(ProtectionError::PlaintextFields);
         }
     }
@@ -213,6 +228,8 @@ fn encrypt_note(
             content: &entry.content,
             tags: &entry.tags,
             priority: entry.priority,
+            mood: entry.mood,
+            journal_prompt: entry.journal_prompt.as_ref(),
             native_metadata: native_metadata.as_ref().map(|value| value.as_str()),
         },
     };

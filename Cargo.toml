@@ -60,6 +60,7 @@ shlex = "2.0"
 sha2 = "0.10"
 git2 = { version = "0.21", default-features = false }
 rayon = "1.12"
+rand = "0.8.8"
 fuzzy-matcher = "0.3"
 path-absolutize = "4.0"
 tui-textarea = { package = "ratatui-textarea", version = "0.9.3" }
