@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use super::{
-    ActiveText, CursorMove, DateTime, EntryPopup, TextArea, Utc,
+    ActiveText, CursorMove, DateTime, EntryPopup, EntryTimeFormat, TextArea, Utc,
     tags::{TagsPopup, TagsSnapshot},
 };
 
@@ -49,6 +49,8 @@ struct EntrySnapshot {
     tags: TextSnapshot,
     priority: TextSnapshot,
     show_priority: bool,
+    #[serde(default)]
+    time_format: Option<EntryTimeFormat>,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
     active: u8,
@@ -64,6 +66,7 @@ impl EntryPopup<'_> {
             tags: TextSnapshot::capture(&self.tags_txt),
             priority: TextSnapshot::capture(&self.priority_txt),
             show_priority: self.show_priority,
+            time_format: self.time_format,
             is_edit_entry: self.is_edit_entry,
             original_date: self.original_date,
             active: match self.active_txt {
@@ -97,6 +100,7 @@ impl EntryPopup<'_> {
             tags_txt: snapshot.tags.restore()?,
             priority_txt: snapshot.priority.restore()?,
             show_priority: snapshot.show_priority,
+            time_format: snapshot.time_format,
             is_edit_entry: snapshot.is_edit_entry,
             original_date: snapshot.original_date,
             active_txt,

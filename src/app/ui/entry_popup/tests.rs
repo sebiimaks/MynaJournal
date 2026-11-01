@@ -1,6 +1,284 @@
 use super::*;
 use crate::app::test::create_default_app;
 
+#[test]
+fn tags_picker_keeps_its_cancel_shortcuts_visible_in_narrow_entry_dialogs() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    for (width, height) in [(42, 20), (31, 21)] {
+        let mut popup = TagsPopup::new("saved tag", vec!["saved tag".into()]);
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("saved tag"));
+        assert!(
+            text.contains("<Ctrl-c>"),
+            "Cancel shortcut clipped at {width} columns"
+        );
+        assert!(
+            text.contains("Cancel"),
+            "Cancel label clipped at {width} columns"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ctrl_m_confirms_from_each_field_without_inserting_a_newline() {
+    for is_edit in [false, true] {
+        let mut app = create_default_app();
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(1);
+        for active in [
+            ActiveText::Title,
+            ActiveText::Date,
+            ActiveText::Priority,
+            ActiveText::Tags,
+        ] {
+            let mut popup = if is_edit {
+                EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings)
+            } else {
+                EntryPopup::new_entry(&app.settings)
+            };
+            popup.title_txt = TextArea::new(vec!["Shortcut entry".into()]);
+            popup.active_txt = active;
+            let timestamp = popup.original_date.unwrap();
+            let result = popup
+                .handle_input(
+                    &Input::new(KeyCode::Char('m'), KeyModifiers::CONTROL),
+                    &mut app,
+                )
+                .await
+                .unwrap();
+            let id = if is_edit {
+                assert_eq!(result, EntryPopupInputReturn::UpdateCurrentEntry);
+                app.current_entry_id.unwrap()
+            } else {
+                let EntryPopupInputReturn::AddEntry(id) = result else {
+                    panic!("Ctrl-M did not create the entry");
+                };
+                id
+            };
+            assert_eq!(app.get_entry(id).unwrap().title, "Shortcut entry");
+            assert_eq!(app.get_entry(id).unwrap().date, timestamp);
+            assert_eq!(popup.title_txt.lines(), ["Shortcut entry"]);
+            assert_eq!(popup.date_txt.lines().len(), 1);
+            assert_eq!(popup.priority_txt.lines().len(), 1);
+            assert_eq!(popup.tags_txt.lines().len(), 1);
+        }
+    }
+}
+
+#[test]
+fn date_field_label_and_value_follow_time_settings_in_new_and_edit_dialogs() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    for (show_time, format, pattern, label) in [
+        (false, EntryTimeFormat::TwelveHour, "%d-%m-%Y", "Date"),
+        (
+            true,
+            EntryTimeFormat::TwentyFourHour,
+            "%d-%m-%Y %H:%M",
+            "Date and Time",
+        ),
+        (
+            true,
+            EntryTimeFormat::TwelveHour,
+            "%d-%m-%Y %I:%M %P",
+            "Date and Time",
+        ),
+    ] {
+        let settings = Settings {
+            show_entry_time: show_time,
+            entry_time_format: format,
+            ..Settings::default()
+        };
+        for hour in [0, 12, 22] {
+            let timestamp = Local
+                .with_ymd_and_hms(2026, 11, 1, hour, 9, 42)
+                .earliest()
+                .unwrap();
+            let entry = Entry::new(
+                7,
+                timestamp.with_timezone(&Utc),
+                "Example".into(),
+                String::new(),
+                vec![],
+                None,
+            );
+            for mut popup in [
+                EntryPopup::new_entry(&settings),
+                EntryPopup::from_entry(&entry, &settings),
+            ] {
+                let expected = popup
+                    .original_date
+                    .unwrap()
+                    .with_timezone(&Local)
+                    .format(pattern)
+                    .to_string();
+                assert_eq!(popup.date_txt.lines(), [expected.as_str()]);
+                let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+                terminal
+                    .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+                    .unwrap();
+                let text: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(text.contains(&format!("{label}─")), "{text}");
+                assert!(text.contains(&expected));
+                assert_eq!(text.contains("Date and Time"), show_time);
+
+                popup.date_txt = TextArea::new(vec!["invalid".into()]);
+                popup.validate_date();
+                terminal
+                    .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+                    .unwrap();
+                let text: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(text.contains(&format!("{label} : ")));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn edited_times_use_selected_format_and_survive_snapshot_retry_and_reload() {
+    for (format, text, hour) in [
+        (EntryTimeFormat::TwentyFourHour, "01-11-2026 00:09", 0),
+        (EntryTimeFormat::TwentyFourHour, "01-11-2026 22:09", 22),
+        (EntryTimeFormat::TwelveHour, "01-11-2026 12:09 am", 0),
+        (EntryTimeFormat::TwelveHour, "01-11-2026 12:09 pm", 12),
+        (EntryTimeFormat::TwelveHour, "01-11-2026 10:09 pm", 22),
+        (EntryTimeFormat::TwelveHour, "01-11-2026 10:09 PM", 22),
+    ] {
+        let mut app = create_default_app();
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(1);
+        app.settings.entry_time_format = format;
+        for is_new in [false, true] {
+            let mut popup = if is_new {
+                EntryPopup::new_entry(&app.settings)
+            } else {
+                EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings)
+            };
+            if is_new {
+                // Exercise a changed minute even when the test runs at the entered time.
+                popup.original_date = Some(Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap());
+            }
+            popup.title_txt = TextArea::new(vec!["Timed entry".into()]);
+            popup.date_txt = TextArea::new(vec![text.into()]);
+            let mut popup = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+            assert_eq!(popup.time_format, Some(format));
+            app.data_provide.set_return_err(true);
+            assert!(popup.handle_confirm(&mut app).await.is_err());
+            app.data_provide.set_return_err(false);
+            let id = match popup.handle_confirm(&mut app).await.unwrap() {
+                EntryPopupInputReturn::AddEntry(id) => id,
+                EntryPopupInputReturn::UpdateCurrentEntry => app.current_entry_id.unwrap(),
+                EntryPopupInputReturn::KeepPopup | EntryPopupInputReturn::Cancel => {
+                    panic!("valid time rejected: {text}")
+                }
+            };
+            app.load_entries().await.unwrap();
+            let expected = Local
+                .with_ymd_and_hms(2026, 11, 1, hour, 9, 0)
+                .earliest()
+                .unwrap()
+                .with_timezone(&Utc);
+            assert_eq!(app.get_entry(id).unwrap().date, expected);
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_times_keep_the_form_and_saved_entry_unchanged() {
+    for (format, inputs) in [
+        (
+            EntryTimeFormat::TwentyFourHour,
+            vec![
+                "01-11-2026",
+                "01-11-2026 24:00",
+                "01-11-2026 22:60",
+                "31-11-2026 22:09",
+                "01-11-2026 10:09 pm",
+            ],
+        ),
+        (
+            EntryTimeFormat::TwelveHour,
+            vec![
+                "01-11-2026",
+                "01-11-2026 10:09",
+                "01-11-2026 00:09 am",
+                "01-11-2026 13:09 pm",
+                "01-11-2026 10:60 pm",
+            ],
+        ),
+    ] {
+        let mut app = create_default_app();
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(1);
+        app.settings.entry_time_format = format;
+        let original = app.get_current_entry().unwrap().clone();
+        for text in inputs {
+            let mut popup = EntryPopup::from_entry(&original, &app.settings);
+            popup.title_txt = TextArea::new(vec!["Unsaved title".into()]);
+            popup.date_txt = TextArea::new(vec![text.into()]);
+            assert_eq!(
+                popup
+                    .handle_input(
+                        &Input::new(KeyCode::Char('m'), KeyModifiers::CONTROL),
+                        &mut app
+                    )
+                    .await
+                    .unwrap(),
+                EntryPopupInputReturn::KeepPopup,
+                "{text}"
+            );
+            assert!(!popup.date_err_msg.is_empty());
+            assert_eq!(popup.date_txt.lines(), [text]);
+            assert_eq!(popup.title_txt.lines(), ["Unsaved title"]);
+            assert_eq!(app.get_current_entry(), Some(&original));
+        }
+    }
+}
+
+#[tokio::test]
+async fn older_date_only_snapshots_restore_without_reinterpreting_the_input() {
+    let mut app = create_default_app();
+    app.load_entries().await.unwrap();
+    app.current_entry_id = Some(1);
+    let original = app.get_current_entry().unwrap().clone();
+    app.settings.show_entry_time = false;
+    let popup = EntryPopup::from_entry(&original, &app.settings);
+    let mut snapshot: serde_json::Value = serde_json::from_str(&popup.snapshot().unwrap()).unwrap();
+    snapshot.as_object_mut().unwrap().remove("time_format");
+    app.settings.show_entry_time = true;
+    let mut restored = EntryPopup::from_snapshot(&snapshot.to_string()).unwrap();
+    assert_eq!(restored.time_format, None);
+    assert_eq!(restored.date_txt.lines(), popup.date_txt.lines());
+    assert_eq!(
+        restored.handle_confirm(&mut app).await.unwrap(),
+        EntryPopupInputReturn::UpdateCurrentEntry
+    );
+    assert_eq!(app.get_current_entry(), Some(&original));
+}
+
 #[tokio::test]
 async fn editing_metadata_preserves_the_full_original_timestamp() {
     let mut app = create_default_app();
@@ -14,14 +292,24 @@ async fn editing_metadata_preserves_the_full_original_timestamp() {
         .await
         .unwrap();
 
-    let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
-    popup.title_txt = TextArea::new(vec!["Edited title".into()]);
-    popup.tags_txt = TextArea::new(vec!["first, second".into()]);
-    popup.priority_txt = TextArea::new(vec!["3".into()]);
-    assert_eq!(
-        popup.handle_confirm(&mut app).await.unwrap(),
-        EntryPopupInputReturn::UpdateCurrentEntry
-    );
+    for (show_time, format) in [
+        (false, EntryTimeFormat::TwentyFourHour),
+        (true, EntryTimeFormat::TwentyFourHour),
+        (true, EntryTimeFormat::TwelveHour),
+    ] {
+        app.settings.show_entry_time = show_time;
+        app.settings.entry_time_format = format;
+        let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+        popup.title_txt = TextArea::new(vec!["Edited title".into()]);
+        popup.tags_txt = TextArea::new(vec!["first, second".into()]);
+        popup.priority_txt = TextArea::new(vec!["3".into()]);
+        assert_eq!(
+            popup.handle_confirm(&mut app).await.unwrap(),
+            EntryPopupInputReturn::UpdateCurrentEntry
+        );
+        app.load_entries().await.unwrap();
+        assert_eq!(app.get_current_entry().unwrap().date, timestamp);
+    }
 
     let entry = app.get_current_entry().unwrap();
     assert_eq!(entry.date, timestamp);
@@ -35,6 +323,7 @@ async fn editing_metadata_preserves_the_full_original_timestamp() {
 #[tokio::test]
 async fn changing_the_calendar_date_uses_local_midnight_on_the_new_day() {
     let mut app = create_default_app();
+    app.settings.show_entry_time = false;
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     let mut popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
@@ -52,6 +341,7 @@ async fn changing_the_calendar_date_uses_local_midnight_on_the_new_day() {
 #[tokio::test]
 async fn calendar_date_selection_handles_local_midnight_transitions_without_panicking() {
     let mut app = create_default_app();
+    app.settings.show_entry_time = false;
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     let original = app.get_current_entry().unwrap().clone();
@@ -101,6 +391,7 @@ async fn local_calendar_days_handle_clock_changes_in_isolated_timezones() {
         let expected = expected.map(|value| value.parse::<DateTime<Utc>>().unwrap());
         assert_eq!(local_day_start(date), expected, "{zone}");
         let mut app = create_default_app();
+        app.settings.show_entry_time = false;
         app.load_entries().await.unwrap();
         app.current_entry_id = Some(1);
         let original = app.get_current_entry().unwrap().clone();
@@ -137,6 +428,74 @@ async fn local_calendar_days_handle_clock_changes_in_isolated_timezones() {
             popup.title_txt = TextArea::new(vec!["Edited".into()]);
             popup.handle_confirm(&mut app).await.unwrap();
             assert_eq!(app.get_current_entry().unwrap().date, repeated_time);
+        }
+
+        app.settings.show_entry_time = true;
+        let (invalid, valid, expected) = match zone.as_str() {
+            "America/Sao_Paulo" => (
+                Some("04-11-2018 00:30"),
+                "04-11-2018 01:00",
+                "2018-11-04T03:00:00Z",
+            ),
+            "America/Havana" => (None, "01-11-2020 00:30", "2020-11-01T04:30:00Z"),
+            "Asia/Kathmandu" => (
+                Some("01-01-1986 00:00"),
+                "01-01-1986 00:15",
+                "1985-12-31T18:30:00Z",
+            ),
+            "Africa/Monrovia" => (
+                Some("07-01-1972 00:44"),
+                "07-01-1972 00:45",
+                "1972-01-07T00:45:00Z",
+            ),
+            "Pacific/Apia" => (
+                Some("30-12-2011 12:00"),
+                "31-12-2011 00:00",
+                "2011-12-30T10:00:00Z",
+            ),
+            _ => unreachable!(),
+        };
+        let mut popup = EntryPopup::new_entry(&app.settings);
+        popup.title_txt = TextArea::new(vec!["Timed draft".into()]);
+        if let Some(invalid) = invalid {
+            let before = app.get_current_entry().unwrap().clone();
+            popup.date_txt = TextArea::new(vec![invalid.into()]);
+            assert_eq!(
+                popup.handle_confirm(&mut app).await.unwrap(),
+                EntryPopupInputReturn::KeepPopup
+            );
+            assert_eq!(
+                popup.date_err_msg,
+                "This time does not exist in your local timezone"
+            );
+            assert_eq!(app.get_current_entry(), Some(&before));
+            assert_eq!(popup.title_txt.lines(), ["Timed draft"]);
+        }
+        popup.date_txt = TextArea::new(vec![valid.into()]);
+        let EntryPopupInputReturn::AddEntry(id) = popup.handle_confirm(&mut app).await.unwrap()
+        else {
+            panic!("valid local time was rejected in {zone}");
+        };
+        assert_eq!(
+            app.get_entry(id).unwrap().date,
+            expected.parse::<DateTime<Utc>>().unwrap()
+        );
+
+        if zone == "America/Havana" {
+            let repeated = "2020-11-01T05:30:47.123456789Z"
+                .parse::<DateTime<Utc>>()
+                .unwrap();
+            app.update_current_entry_attributes("Second occurrence".into(), repeated, vec![], None)
+                .await
+                .unwrap();
+            for format in [EntryTimeFormat::TwentyFourHour, EntryTimeFormat::TwelveHour] {
+                app.settings.entry_time_format = format;
+                let popup = EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings);
+                let mut popup = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+                popup.title_txt = TextArea::new(vec!["Same repeated minute".into()]);
+                popup.handle_confirm(&mut app).await.unwrap();
+                assert_eq!(app.get_current_entry().unwrap().date, repeated);
+            }
         }
         return;
     }
@@ -186,7 +545,7 @@ async fn failed_metadata_save_can_retry_without_losing_the_timestamp() {
 #[tokio::test]
 async fn new_entries_keep_auto_title_and_calendar_date_behavior() {
     let mut app = create_default_app();
-    app.settings = toml::from_str("auto_title = 'Daily journal'").unwrap();
+    app.settings = toml::from_str("auto_title = 'Daily journal'\nshow_entry_time = false").unwrap();
     let mut popup = EntryPopup::new_entry(&app.settings);
     assert_eq!(popup.title_txt.lines(), ["Daily journal"]);
     popup.original_date = Some(
@@ -235,6 +594,7 @@ async fn new_entry_keeps_creation_time_through_snapshot_retry_and_reload() {
 #[tokio::test]
 async fn metadata_dialog_uses_local_calendar_day_without_changing_timestamp() {
     let mut app = create_default_app();
+    app.settings.show_entry_time = false;
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     for hour in [0, 23] {
@@ -254,6 +614,7 @@ async fn metadata_dialog_uses_local_calendar_day_without_changing_timestamp() {
 #[tokio::test]
 async fn calendar_date_can_be_replaced_for_timestamps_at_chronos_limits() {
     let mut app = create_default_app();
+    app.settings.show_entry_time = false;
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     for timestamp in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {

@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Show an editable **Date and Time** field in entry dialogs when time display is enabled, using the selected 24-hour or am/pm format
+- Use **Create Entry** for the new-entry heading, reduce its width by 25%, and highlight entry-dialog shortcuts to match the main menu
+- Handle explicit Ctrl-M confirmation and keep tag-picker shortcuts visible in narrower entry dialogs
 - Show local entry times beside period-separated dates, with live settings to hide the time or use 12-hour am/pm format instead of the default 24-hour format
 - Retain the time for new entries and use the same local calendar date in the entry list and metadata dialog; preserve existing timestamps when editing other metadata
 - Handle calendar dates whose local midnight is skipped or repeated by clock changes without losing the entry draft

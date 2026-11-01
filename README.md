@@ -284,7 +284,8 @@ marked **restart required** apply on the next launch. See
 Under **General**, use **Show entry time** to show or hide the time beside each
 entry's date. **Time format** offers `24h` (`30.10.2026 22:09`, the default) and
 `12h` (`30.10.2026 10:09 pm`). These display preferences apply after saving and
-use your local timezone.
+use your local timezone. With time enabled, entry dialogs show an editable
+**Date and Time** field in the selected format; otherwise they show **Date**.
 
 Under **Entries**, turn off **Show priority field** to hide Priority in the entry
 dialog. Existing priorities and the configured default for new entries are

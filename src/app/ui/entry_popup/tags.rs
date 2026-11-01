@@ -19,7 +19,6 @@ use super::text_to_tags;
 
 const FOOTER_TEXT: &str =
     r"<Space>: Toggle Selected | Enter or <Ctrl-m>: Confirm | Esc, q or <Ctrl-c>: Cancel";
-const FOOTER_MARGINE: u16 = 4;
 
 pub enum TagsPopupReturn {
     Keep,
@@ -115,11 +114,17 @@ impl TagsPopup {
         frame.render_widget(Clear, area);
         frame.render_widget(block, area);
 
-        let footer_height = if area.width < FOOTER_TEXT.len() as u16 + FOOTER_MARGINE {
-            3
-        } else {
-            2
-        };
+        let footer = Paragraph::new(FOOTER_TEXT)
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .style(Style::default()),
+            );
+        let footer_height = footer
+            .line_count(area.width.saturating_sub(2))
+            .min(u16::MAX as usize) as u16;
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -133,15 +138,6 @@ impl TagsPopup {
         } else {
             self.render_tags_list(frame, chunks[0], styles);
         }
-
-        let footer = Paragraph::new(FOOTER_TEXT)
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .style(Style::default()),
-            );
 
         frame.render_widget(footer, chunks[1]);
     }

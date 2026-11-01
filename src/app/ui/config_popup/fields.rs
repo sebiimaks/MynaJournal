@@ -98,7 +98,7 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         Field::new(Security, &["security", "lock_on_leave"], "Lock when leaving note", Bool, "Forget a protected note's password when selecting another note. Titles and dates remain visible."),
         Field::new(General, &["colored_tags"], "Colored tags", Bool, "Use a distinct color for each tag."),
         Field::new(General, &["datum_visibility"], "Entry dates", Choice(vec!["show", "hide", "empty_line"]), "Show dates and times, hide both, or reserve an empty line."),
-        Field::new(General, &["show_entry_time"], "Show entry time", Bool, "Show the entry's local time beside its date. Hiding entry dates also hides times."),
+        Field::new(General, &["show_entry_time"], "Show entry time", Bool, "Show local times in the entry list and enable time editing in entry dialogs. Hiding entry dates also hides list times."),
         Field::new(General, &["entry_time_format"], "Time format", Choice(vec!["24h", "12h"]), "Use 24-hour time (22:09) or 12-hour time with am/pm (10:09 pm)."),
         Field::new(General, &["scroll_per_page"], "Entries per page step", number(), "Number of entries moved by list page navigation. Zero disables list page movement."),
         Field::new(General, &["history_limit"], "Journal undo limit", number(), "Maximum saved journal changes in each undo/redo stack. Zero disables journal undo. Editor text undo is separate. Restart required.").restart(),

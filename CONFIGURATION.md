@@ -40,15 +40,23 @@ In General, **Show entry time** toggles the time beside each entry's date, and
 **Time format** selects `24h` (for example, `30.10.2026 22:09`) or `12h`
 (`30.10.2026 10:09 pm`). Time is shown in 24-hour format by default. Save with
 `Ctrl-S` to apply these preferences immediately. **Entry dates** hides both the
-date and time when set to `hide` or `empty_line`.
+date and time in the entry list when set to `hide` or `empty_line`.
+
+With **Show entry time** enabled, new and edited entry dialogs show a **Date and
+Time** field, for example `01-11-2026 22:09` or `01-11-2026 10:09 pm`. You can edit
+both values using the selected format. With time display off, the field shows
+only **Date**. These preferences apply to the next entry dialog you open.
 
 Dates and times are displayed in your computer's local timezone. New entries
 retain the time when their dialog was opened. Editing metadata preserves the
-saved timestamp unless you choose another calendar date, which uses the first
-valid local time on that day (usually midnight). A date skipped entirely by a
-timezone change is rejected without changing the entry. Existing timestamps are
-not rewritten. Older entries may show a time derived from midnight UTC because
-earlier versions saved only a calendar date.
+full saved timestamp, including seconds, when the displayed date and time are
+unchanged. Editing the date or time in **Date and Time** saves the entered local
+minute with seconds set to zero. In date-only mode, choosing another calendar
+date uses the first valid local time on that day (usually midnight). A date or
+time skipped by a timezone change is rejected without losing the draft. A newly
+entered time that occurs twice during a clock change uses the earlier occurrence;
+an unchanged value keeps its original occurrence. Older entries may show a time
+derived from midnight UTC because earlier versions saved only a calendar date.
 
 In Entries, turn off **Show priority field** to hide Priority in the entry dialog.
 This applies to the next dialog you open. Existing priority values are preserved,

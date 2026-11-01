@@ -1,32 +1,38 @@
 use anyhow::Ok;
-use chrono::{DateTime, Datelike, Local, LocalResult, NaiveDate, TimeZone, Utc};
+use chrono::{
+    DateTime, Datelike, Local, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+    Timelike, Utc,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 use tui_textarea::{CursorMove, TextArea};
 
 use crate::{
     app::{App, keymap::Input},
-    settings::Settings,
+    settings::{EntryTimeFormat, Settings},
 };
 
 use backend::{DataProvider, Entry};
 
 use self::tags::{TagsPopup, TagsPopupReturn};
 
-use super::{Styles, ui_functions::centered_rect_exact_height};
+use super::{
+    Styles,
+    ui_functions::{centered_rect_exact_dimensions, centered_rect_exact_height, menu_key_style},
+};
 
 mod snapshot;
 mod tags;
 #[cfg(test)]
 mod tests;
 
-const FOOTER_TEXT: &str = "Enter or <Ctrl-m>: confirm | Esc or <Ctrl-c>: Cancel | Tab: Change focused control | <Ctrl-Space> or <Ctrl-t>: Open tags";
-const FOOTER_MARGIN: u16 = 15;
+const HORIZONTAL_MARGIN: u16 = 4;
 
 pub struct EntryPopup<'a> {
     title_txt: TextArea<'a>,
@@ -34,6 +40,7 @@ pub struct EntryPopup<'a> {
     tags_txt: TextArea<'a>,
     priority_txt: TextArea<'a>,
     show_priority: bool,
+    time_format: Option<EntryTimeFormat>,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
     active_txt: ActiveText,
@@ -70,13 +77,10 @@ impl EntryPopup<'_> {
         title_txt.move_cursor(CursorMove::End);
 
         let date = Local::now();
-
-        let date_txt = TextArea::new(vec![format!(
-            "{:02}-{:02}-{}",
-            date.day(),
-            date.month(),
-            date.year()
-        )]);
+        let time_format = settings
+            .show_entry_time
+            .then_some(settings.entry_time_format);
+        let date_txt = TextArea::new(vec![date_input_text(date, time_format)]);
 
         let tags_txt = TextArea::default();
 
@@ -92,6 +96,7 @@ impl EntryPopup<'_> {
             tags_txt,
             priority_txt,
             show_priority: settings.show_entry_priority,
+            time_format,
             is_edit_entry: false,
             original_date: Some(date.with_timezone(&Utc)),
             active_txt: ActiveText::Title,
@@ -108,12 +113,10 @@ impl EntryPopup<'_> {
         title_txt.move_cursor(CursorMove::End);
 
         let date = entry.date.with_timezone(&Local);
-        let date_txt = TextArea::new(vec![format!(
-            "{:02}-{:02}-{}",
-            date.day(),
-            date.month(),
-            date.year()
-        )]);
+        let time_format = settings
+            .show_entry_time
+            .then_some(settings.entry_time_format);
+        let date_txt = TextArea::new(vec![date_input_text(date, time_format)]);
 
         let tags = tags_to_text(&entry.tags);
 
@@ -131,6 +134,7 @@ impl EntryPopup<'_> {
             tags_txt,
             priority_txt,
             show_priority: settings.show_entry_priority,
+            time_format,
             is_edit_entry: true,
             original_date: Some(entry.date),
             active_txt: ActiveText::Title,
@@ -147,23 +151,46 @@ impl EntryPopup<'_> {
     }
 
     pub fn render_widget(&mut self, frame: &mut Frame, area: Rect, styles: &Styles) {
+        let command_style = menu_key_style();
+        let footer_text = Line::from(vec![
+            Span::raw("Confirm: "),
+            Span::styled("Enter", command_style),
+            Span::raw(", "),
+            Span::styled("<Ctrl-m>", command_style),
+            Span::raw(" | Cancel: "),
+            Span::styled("Esc", command_style),
+            Span::raw(", "),
+            Span::styled("<Ctrl-c>", command_style),
+            Span::raw(" | Change focus: "),
+            Span::styled("Tab", command_style),
+            Span::raw(" | Open Tags: "),
+            Span::styled("<Ctrl-Space>", command_style),
+            Span::raw(", "),
+            Span::styled("<Ctrl-t>", command_style),
+        ]);
+        let footer = Paragraph::new(footer_text)
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false });
         let bounds = area;
-        let height = if self.show_priority { 17 } else { 14 };
-        let mut area = centered_rect_exact_height(70, height, area);
-
-        const FOOTER_LEN: u16 = FOOTER_TEXT.len() as u16 + FOOTER_MARGIN;
-
-        if area.width > 0 && area.width < FOOTER_LEN {
-            area.height += FOOTER_LEN / area.width;
-        }
-        area = area.intersection(bounds);
+        let height: u16 = if self.show_priority { 17 } else { 14 };
+        let width = centered_rect_exact_height(70, height, bounds).width;
+        let width = if self.is_edit_entry {
+            width
+        } else {
+            (u32::from(width) * 3 / 4) as u16
+        };
+        let footer_height = footer
+            .line_count(width.saturating_sub(2 * HORIZONTAL_MARGIN))
+            .min(u16::MAX as usize) as u16;
+        let height = height.saturating_add(footer_height.saturating_sub(1));
+        let area = centered_rect_exact_dimensions(width, height, bounds).intersection(bounds);
 
         let block = Block::default()
             .borders(Borders::ALL)
             .title(if self.is_edit_entry {
                 "Edit journal"
             } else {
-                "Create journal"
+                "Create Entry"
             });
 
         frame.render_widget(Clear, area);
@@ -171,7 +198,7 @@ impl EntryPopup<'_> {
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .horizontal_margin(4)
+            .horizontal_margin(HORIZONTAL_MARGIN)
             .vertical_margin(2)
             .constraints([
                 Constraint::Length(3),
@@ -227,6 +254,11 @@ impl EntryPopup<'_> {
             );
         }
 
+        let date_label = if self.time_format.is_some() {
+            "Date and Time"
+        } else {
+            "Date"
+        };
         if self.date_err_msg.is_empty() {
             let (block, cursor) = match self.active_txt {
                 ActiveText::Date => (active_block_style, active_cursor_style),
@@ -238,7 +270,7 @@ impl EntryPopup<'_> {
                 Block::default()
                     .borders(Borders::ALL)
                     .style(block)
-                    .title("Date"),
+                    .title(date_label),
             );
         } else {
             let cursor = if self.active_txt == ActiveText::Date {
@@ -252,7 +284,7 @@ impl EntryPopup<'_> {
                 Block::default()
                     .borders(Borders::ALL)
                     .style(invalid_block_style)
-                    .title(format!("Date : {}", self.date_err_msg)),
+                    .title(format!("{date_label} : {}", self.date_err_msg)),
             );
         }
 
@@ -325,15 +357,6 @@ impl EntryPopup<'_> {
         }
         frame.render_widget(&self.tags_txt, chunks[3]);
 
-        let footer = Paragraph::new(FOOTER_TEXT)
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::NONE)
-                    .style(Style::default()),
-            );
-
         frame.render_widget(footer, chunks[4]);
 
         if let Some(tags_popup) = self.tags_popup.as_mut() {
@@ -364,10 +387,25 @@ impl EntryPopup<'_> {
     }
 
     fn validate_date(&mut self) {
-        if let Err(err) = NaiveDate::parse_from_str(self.date_txt.lines()[0].as_str(), "%d-%m-%Y") {
+        if let Err(err) = self.parse_date() {
             self.date_err_msg = err.to_string();
         } else {
             self.date_err_msg.clear();
+        }
+    }
+
+    fn parse_date(&self) -> Result<(NaiveDate, Option<NaiveTime>), chrono::ParseError> {
+        let text = self.date_txt.lines()[0].as_str();
+        match self.time_format {
+            Some(format) => {
+                let format = match format {
+                    EntryTimeFormat::TwentyFourHour => "%d-%m-%Y %H:%M",
+                    EntryTimeFormat::TwelveHour => "%d-%m-%Y %I:%M %P",
+                };
+                NaiveDateTime::parse_from_str(text, format)
+                    .map(|value| (value.date(), Some(value.time())))
+            }
+            None => NaiveDate::parse_from_str(text, "%d-%m-%Y").map(|date| (date, None)),
         }
     }
 
@@ -411,6 +449,7 @@ impl EntryPopup<'_> {
             KeyCode::Esc => Ok(EntryPopupInputReturn::Cancel),
             KeyCode::Char('c') if has_ctrl => Ok(EntryPopupInputReturn::Cancel),
             KeyCode::Enter => self.handle_confirm(app).await,
+            KeyCode::Char('m') if has_ctrl => self.handle_confirm(app).await,
             KeyCode::Tab | KeyCode::Down => {
                 self.active_txt = match self.active_txt {
                     ActiveText::Title => ActiveText::Date,
@@ -502,19 +541,31 @@ impl EntryPopup<'_> {
         }
 
         let title = self.title_txt.lines()[0].to_owned();
-        let date = NaiveDate::parse_from_str(self.date_txt.lines()[0].as_str(), "%d-%m-%Y")
-            .expect("Date must be valid here");
+        let (date, time) = self.parse_date().expect("Date must be valid here");
 
         let date = if let Some(original) = self.original_date.filter(|original| {
             let local = original.with_timezone(&Local);
             (local.year(), local.month(), local.day()) == (date.year(), date.month(), date.day())
+                && time.is_none_or(|time| {
+                    (local.hour(), local.minute()) == (time.hour(), time.minute())
+                })
         }) {
             original
-        } else if let Some(start) = local_day_start(date) {
-            start
         } else {
-            self.date_err_msg = "This date does not exist in your local timezone".into();
-            return Ok(EntryPopupInputReturn::KeepPopup);
+            let resolved = match time {
+                Some(time) => local_instant(date.and_time(time)),
+                None => local_day_start(date),
+            };
+            let Some(resolved) = resolved else {
+                self.date_err_msg = if time.is_some() {
+                    "This time does not exist in your local timezone"
+                } else {
+                    "This date does not exist in your local timezone"
+                }
+                .into();
+                return Ok(EntryPopupInputReturn::KeepPopup);
+            };
+            resolved
         };
 
         let tags = text_to_tags(
@@ -540,26 +591,44 @@ impl EntryPopup<'_> {
     }
 }
 
+fn date_input_text(date: DateTime<Local>, time_format: Option<EntryTimeFormat>) -> String {
+    let mut text = format!("{:02}-{:02}-{}", date.day(), date.month(), date.year());
+    if let Some(format) = time_format {
+        text.push_str(
+            &date
+                .format(match format {
+                    EntryTimeFormat::TwentyFourHour => " %H:%M",
+                    EntryTimeFormat::TwelveHour => " %I:%M %P",
+                })
+                .to_string(),
+        );
+    }
+    text
+}
+
+fn local_instant(time: NaiveDateTime) -> Option<DateTime<Utc>> {
+    let candidates = match Local.from_local_datetime(&time) {
+        LocalResult::Single(value) => [Some(value), None],
+        LocalResult::Ambiguous(first, second) => [Some(first), Some(second)],
+        LocalResult::None => [None, None],
+    };
+    // Verify transition-boundary offsets and order ambiguous results by their instant.
+    candidates
+        .into_iter()
+        .flatten()
+        .filter(|value| value.with_timezone(&Local).offset() == value.offset())
+        .min()
+        .map(|value| value.with_timezone(&Utc))
+}
+
 fn local_day_start(date: NaiveDate) -> Option<DateTime<Utc>> {
     // Clock changes can skip midnight, including historical changes of less than a minute.
-    (0..86_400)
-        .find_map(|second| {
-            let time = date
-                .and_hms_opt(second / 3_600, second % 3_600 / 60, second % 60)
-                .expect("Valid time within a day");
-            let candidates = match Local.from_local_datetime(&time) {
-                LocalResult::Single(value) => [Some(value), None],
-                LocalResult::Ambiguous(first, second) => [Some(first), Some(second)],
-                LocalResult::None => [None, None],
-            };
-            // Verify transition-boundary offsets and order ambiguous results by their instant.
-            candidates
-                .into_iter()
-                .flatten()
-                .filter(|value| value.with_timezone(&Local).offset() == value.offset())
-                .min()
-        })
-        .map(|start| start.with_timezone(&Utc))
+    (0..86_400).find_map(|second| {
+        let time = date
+            .and_hms_opt(second / 3_600, second % 3_600 / 60, second % 60)
+            .expect("Valid time within a day");
+        local_instant(time)
+    })
 }
 
 fn tags_to_text(tags: &[String]) -> String {
