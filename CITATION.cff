@@ -4,7 +4,7 @@ message: Please cite MynaJournal using this metadata and acknowledge its TUI-Jou
 
 # Version information.
 date-released: 2026-11-01
-version: 0.21.0
+version: 0.22.0
 
 # Project information.
 abstract: A terminal journal and note manager based on TUI-Journal by Ammar Abou Zor and contributors.

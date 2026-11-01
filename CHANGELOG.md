@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.22.0 - 2026-11-01
+
 - Add optional Low, Average and High moods to entry dialogs, with `[-]`, `[~]` and `[+]` markers in the entries pane
 - Choose a matching prompt locally from 120 bundled prompts when creating an entry with a mood; retain the original prompt through mood edits, undo/redo and reopening
 - Show the prompt in a centred box at the top inside the content pane, with Ctrl-G to hide or show it while browsing or editing
@@ -15,6 +17,12 @@ JSON stores with mood/prompt data use version 3, plain-text/Markdown entries wit
 these fields use front-matter version 3, and structured transfers use version 102.
 Earlier formats remain readable. SQLite adds the new columns automatically.
 Use a mood-aware MynaJournal build with these stores and transfers.
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.22.0-1_amd64.deb`.
+Existing journals and settings are preserved. Mood and prompts can be disabled
+under **Config → Entries** without deleting their saved values.
 
 ## 0.21.0 - 2026-11-01
 
