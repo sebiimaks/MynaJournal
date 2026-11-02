@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Add a per-entry Yes/No prompt choice, defaulting to Yes, beside the mood question in new-entry dialogs; stack the questions on narrow terminals
+- Preserve the choice through save retries and encrypted draft recovery, while respecting the mood and prompt settings
+
 ## 0.22.0 - 2026-11-01
 
 - Add optional Low, Average and High moods to entry dialogs, with `[-]`, `[~]` and `[+]` markers in the entries pane

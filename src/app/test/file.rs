@@ -18,6 +18,7 @@ async fn file_history_preserves_identity_metadata_and_retryable_restore_conflict
             vec!["personal".into()],
             Some(2),
             None,
+            true,
         )
         .await
         .unwrap();
@@ -82,7 +83,7 @@ async fn saving_after_reloading_an_externally_deleted_last_file_returns_an_error
     let mut app = App::new(provider, Settings::default());
     app.load_entries().await.unwrap();
     let id = app
-        .add_entry("Last journal".into(), Utc::now(), vec![], None, None)
+        .add_entry("Last journal".into(), Utc::now(), vec![], None, None, true)
         .await
         .unwrap();
     let mut ui = UIComponents::new(Styles::default());

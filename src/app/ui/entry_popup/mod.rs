@@ -43,6 +43,9 @@ pub struct EntryPopup<'a> {
     show_mood: bool,
     mood: Option<Mood>,
     mood_focus: usize,
+    show_prompt: bool,
+    include_prompt: bool,
+    prompt_focus_yes: bool,
     time_format: Option<EntryTimeFormat>,
     is_edit_entry: bool,
     original_date: Option<DateTime<Utc>>,
@@ -58,6 +61,7 @@ pub struct EntryPopup<'a> {
 enum ActiveText {
     Title,
     Mood,
+    Prompt,
     Date,
     Tags,
     Priority,
@@ -103,6 +107,9 @@ impl EntryPopup<'_> {
             show_mood: settings.show_entry_mood,
             mood: None,
             mood_focus: 0,
+            show_prompt: settings.show_entry_mood && settings.journal_prompts,
+            include_prompt: true,
+            prompt_focus_yes: true,
             time_format,
             is_edit_entry: false,
             original_date: Some(date.with_timezone(&Utc)),
@@ -147,6 +154,9 @@ impl EntryPopup<'_> {
                 .mood
                 .and_then(|m| Mood::ALL.iter().position(|candidate| *candidate == m))
                 .unwrap_or(0),
+            show_prompt: false,
+            include_prompt: true,
+            prompt_focus_yes: true,
             time_format,
             is_edit_entry: true,
             original_date: Some(entry.date),
@@ -200,9 +210,31 @@ impl EntryPopup<'_> {
         };
         let horizontal_margin = if width < 42 { 1 } else { HORIZONTAL_MARGIN };
         let inner_width = width.saturating_sub(2 * horizontal_margin);
-        let mood_lines = self.mood_lines(inner_width, styles);
+        let paired_choices = self.show_prompt && inner_width >= 68;
+        let mood_width = if paired_choices {
+            (inner_width - 4) / 2
+        } else {
+            inner_width
+        };
+        let prompt_width = if paired_choices {
+            inner_width - mood_width - 4
+        } else {
+            inner_width
+        };
+        let mood_lines = self.mood_lines(mood_width, styles);
         let mood_height = mood_lines.len() as u16;
-        let height = height + if self.show_mood { mood_height } else { 0 };
+        let mut prompt_lines = self.prompt_lines(prompt_width, styles);
+        if !paired_choices {
+            prompt_lines.remove(0);
+        }
+        let prompt_height = prompt_lines.len() as u16;
+        let choice_height = if paired_choices {
+            mood_height.max(prompt_height)
+        } else {
+            (if self.show_mood { mood_height } else { 0 })
+                + if self.show_prompt { prompt_height } else { 0 }
+        };
+        let height = height + choice_height;
         let mut mood_hint = vec![
             Span::raw("Press "),
             Span::styled("Space", command_style),
@@ -268,7 +300,18 @@ impl EntryPopup<'_> {
         }
         let mut fields = vec![(0, ActiveText::Title, 3)];
         if self.show_mood {
-            fields.push((1, ActiveText::Mood, mood_height));
+            fields.push((
+                1,
+                ActiveText::Mood,
+                if paired_choices {
+                    choice_height
+                } else {
+                    mood_height
+                },
+            ));
+        }
+        if self.show_prompt && !paired_choices {
+            fields.push((5, ActiveText::Prompt, prompt_height));
         }
         fields.push((2, ActiveText::Date, 3));
         if self.show_priority {
@@ -277,7 +320,12 @@ impl EntryPopup<'_> {
         fields.push((4, ActiveText::Tags, 3));
         let focus = fields
             .iter()
-            .position(|(_, field, _)| *field == self.active_txt)
+            .position(|(_, field, _)| {
+                *field == self.active_txt
+                    || (paired_choices
+                        && *field == ActiveText::Mood
+                        && self.active_txt == ActiveText::Prompt)
+            })
             .unwrap_or(0);
         if fields[focus].2 > body_height {
             frame.render_widget(Paragraph::new("Enlarge terminal"), inner);
@@ -293,7 +341,7 @@ impl EntryPopup<'_> {
         {
             start += 1;
         }
-        let mut chunks = [Rect::default(); 6];
+        let mut chunks = [Rect::default(); 7];
         let mut y = inner.y;
         for (index, _, height) in &fields[start..] {
             if y + height > inner.y + body_height {
@@ -302,15 +350,28 @@ impl EntryPopup<'_> {
             chunks[*index] = Rect::new(inner.x, y, inner.width, *height);
             y += height;
         }
-        chunks[5] = Rect::new(
+        chunks[6] = Rect::new(
             inner.x,
             inner.bottom() - footer_height,
             inner.width,
             footer_height,
         );
 
+        if paired_choices && chunks[1].height > 0 {
+            let choices = chunks[1];
+            chunks[1].width = mood_width;
+            chunks[5] = Rect::new(
+                choices.x + mood_width + 4,
+                choices.y,
+                prompt_width,
+                choices.height,
+            );
+        }
         if self.show_mood {
             frame.render_widget(Paragraph::new(mood_lines), chunks[1]);
+        }
+        if self.show_prompt {
+            frame.render_widget(Paragraph::new(prompt_lines), chunks[5]);
         }
         self.title_txt.set_cursor_line_style(Style::default());
         self.date_txt.set_cursor_line_style(Style::default());
@@ -460,21 +521,21 @@ impl EntryPopup<'_> {
         }
         frame.render_widget(&self.tags_txt, chunks[4]);
 
-        let hint_height = hint_height.min(chunks[5].height);
+        let hint_height = hint_height.min(chunks[6].height);
         let footer_area = Rect::new(
-            chunks[5].x,
-            chunks[5].y,
-            chunks[5].width,
-            chunks[5].height - hint_height,
+            chunks[6].x,
+            chunks[6].y,
+            chunks[6].width,
+            chunks[6].height - hint_height,
         );
         frame.render_widget(footer, footer_area);
-        if self.show_mood && self.active_txt == ActiveText::Mood {
+        if self.show_mood && matches!(self.active_txt, ActiveText::Mood | ActiveText::Prompt) {
             frame.render_widget(
                 mood_hint,
                 Rect::new(
-                    chunks[5].x,
+                    chunks[6].x,
                     footer_area.bottom(),
-                    chunks[5].width,
+                    chunks[6].width,
                     hint_height,
                 ),
             );
@@ -509,31 +570,32 @@ impl EntryPopup<'_> {
                 Span::styled(choice, choice_style)
             })
             .collect();
-        let mut lines = vec![Line::default()];
-        lines.extend(
-            textwrap::wrap("How is your mood at the moment?", usize::from(width.max(1)))
-                .into_iter()
-                .map(|question| {
-                    Line::from(Span::styled(question.into_owned(), style))
-                        .alignment(Alignment::Center)
-                }),
-        );
-        lines.push(Line::default());
-        let mut row = Vec::new();
-        for choice in choices {
-            if !row.is_empty() {
-                row.push(Span::raw(" "));
-            }
-            row.push(choice);
-            if width < 28 {
-                lines.push(Line::from(std::mem::take(&mut row)).alignment(Alignment::Center));
-            }
-        }
-        if !row.is_empty() {
-            lines.push(Line::from(row).alignment(Alignment::Center));
-        }
-        lines.push(Line::default());
-        lines
+        checkbox_lines("How is your mood at the moment?", choices, width, style)
+    }
+
+    fn prompt_lines(&self, width: u16, styles: &Styles) -> Vec<Line<'static>> {
+        let active = self.active_txt == ActiveText::Prompt;
+        let style = if active {
+            Style::from(styles.general.input_block_active)
+        } else {
+            Style::reset()
+        };
+        let choices = [(true, "Yes"), (false, "No")]
+            .into_iter()
+            .map(|(yes, label)| {
+                let text = format!(
+                    "[{}] {label}",
+                    if self.include_prompt == yes { 'x' } else { ' ' }
+                );
+                let style = if active && self.prompt_focus_yes == yes {
+                    Style::from(styles.general.input_cursor_active)
+                } else {
+                    style
+                };
+                Span::styled(text, style)
+            })
+            .collect();
+        checkbox_lines("Would you like a journal prompt?", choices, width, style)
     }
 
     pub fn is_input_valid(&self) -> bool {
@@ -625,7 +687,8 @@ impl EntryPopup<'_> {
             KeyCode::Tab | KeyCode::Down => {
                 self.active_txt = match self.active_txt {
                     ActiveText::Title if self.show_mood => ActiveText::Mood,
-                    ActiveText::Title | ActiveText::Mood => ActiveText::Date,
+                    ActiveText::Mood if self.show_prompt => ActiveText::Prompt,
+                    ActiveText::Title | ActiveText::Mood | ActiveText::Prompt => ActiveText::Date,
                     ActiveText::Date if self.show_priority => ActiveText::Priority,
                     ActiveText::Date => ActiveText::Tags,
                     ActiveText::Priority => ActiveText::Tags,
@@ -636,7 +699,9 @@ impl EntryPopup<'_> {
             KeyCode::Up | KeyCode::BackTab => {
                 self.active_txt = match self.active_txt {
                     ActiveText::Title => ActiveText::Tags,
+                    ActiveText::Date if self.show_prompt => ActiveText::Prompt,
                     ActiveText::Date if self.show_mood => ActiveText::Mood,
+                    ActiveText::Prompt => ActiveText::Mood,
                     ActiveText::Date | ActiveText::Mood => ActiveText::Title,
                     ActiveText::Priority => ActiveText::Date,
                     ActiveText::Tags if self.show_priority => ActiveText::Priority,
@@ -660,6 +725,15 @@ impl EntryPopup<'_> {
             }
             _ => {
                 match self.active_txt {
+                    ActiveText::Prompt => match input.key_code {
+                        KeyCode::Left | KeyCode::Right => {
+                            self.prompt_focus_yes = !self.prompt_focus_yes
+                        }
+                        KeyCode::Char(' ') if input.modifiers.is_empty() => {
+                            self.include_prompt = self.prompt_focus_yes;
+                        }
+                        _ => {}
+                    },
                     ActiveText::Mood => match input.key_code {
                         KeyCode::Left => self.mood_focus = (self.mood_focus + 2) % 3,
                         KeyCode::Right => self.mood_focus = (self.mood_focus + 1) % 3,
@@ -783,11 +857,46 @@ impl EntryPopup<'_> {
             Ok(EntryPopupInputReturn::UpdateCurrentEntry)
         } else {
             let entry_id = app
-                .add_entry(title, date, tags, priority, self.mood)
+                .add_entry(title, date, tags, priority, self.mood, self.include_prompt)
                 .await?;
             Ok(EntryPopupInputReturn::AddEntry(entry_id))
         }
     }
+}
+
+fn checkbox_lines(
+    question: &str,
+    choices: Vec<Span<'static>>,
+    width: u16,
+    style: Style,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::default()];
+    lines.extend(
+        textwrap::wrap(question, usize::from(width.max(1)))
+            .into_iter()
+            .map(|question| {
+                Line::from(Span::styled(question.into_owned(), style)).alignment(Alignment::Center)
+            }),
+    );
+    lines.push(Line::default());
+    let separate_rows = choices.iter().map(Span::width).sum::<usize>()
+        + choices.len().saturating_sub(1)
+        > usize::from(width);
+    let mut row = Vec::new();
+    for choice in choices {
+        if !row.is_empty() {
+            row.push(Span::raw(" "));
+        }
+        row.push(choice);
+        if separate_rows {
+            lines.push(Line::from(std::mem::take(&mut row)).alignment(Alignment::Center));
+        }
+    }
+    if !row.is_empty() {
+        lines.push(Line::from(row).alignment(Alignment::Center));
+    }
+    lines.push(Line::default());
+    lines
 }
 
 fn date_input_text(date: DateTime<Local>, time_format: Option<EntryTimeFormat>) -> String {

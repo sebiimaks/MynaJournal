@@ -518,6 +518,61 @@ async fn idle_lock_restores_unfinished_metadata_form_without_saving_it() {
 }
 
 #[tokio::test]
+async fn idle_lock_preserves_new_entry_prompt_opt_out_and_checkbox_focus() {
+    let (mut app, mut ui) = setup().await;
+    app.unlock_note(0, password()).await.unwrap();
+    ui.editor.set_current_entry(Some(0), &app);
+    UICommand::CreateEntry
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    for ch in "New reflection".chars() {
+        ui.handle_input(&key(KeyCode::Char(ch)), &mut app)
+            .await
+            .unwrap();
+    }
+    for code in [
+        KeyCode::Tab,
+        KeyCode::Char(' '),
+        KeyCode::Tab,
+        KeyCode::Right,
+        KeyCode::Char(' '),
+        KeyCode::Left,
+    ] {
+        ui.handle_input(&key(code), &mut app).await.unwrap();
+    }
+    assert!(screen(&mut ui, &app).contains("[ ] Yes [x] No"));
+    let before = match ui.popup_stack.last().unwrap() {
+        Popup::Entry(popup) => popup.snapshot().unwrap(),
+        _ => panic!("new entry form expected"),
+    };
+    ui.hide_for_auto_lock();
+    ui.auto_lock(&mut app).await.unwrap();
+    assert!(app.is_locked(0));
+    assert!(app.has_sealed_draft(0));
+    assert!(!screen(&mut ui, &app).contains("New reflection"));
+    UICommand::StartEditEntryContent
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    submit_password(&mut ui, &mut app).await;
+    let Popup::Entry(popup) = ui.popup_stack.last().unwrap() else {
+        panic!("new entry form must be restored after unlock");
+    };
+    assert_eq!(popup.snapshot().unwrap(), before);
+    ui.handle_input(&key(KeyCode::Enter), &mut app)
+        .await
+        .unwrap();
+    let entry = app.get_current_entry().unwrap();
+    assert_eq!(entry.title, "New reflection");
+    assert_eq!(entry.mood, Some(backend::Mood::Low));
+    assert!(entry.journal_prompt.is_none());
+    assert!(app.is_locked(0));
+    app.unlock_note(0, password()).await.unwrap();
+    assert_eq!(app.get_entry(0).unwrap().content, "Private body");
+}
+
+#[tokio::test]
 async fn bulk_delete_checks_all_encrypted_drafts_before_deleting_any_selected_note() {
     let mut app = create_default_app();
     app.load_entries().await.unwrap();

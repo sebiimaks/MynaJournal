@@ -69,8 +69,15 @@ and the `[-]`, `[~]` and `[+]` markers in the list. Use `Tab` to focus Mood,
 on the selected choice clears it. A highlighted **Space** hint appears while the
 checkboxes have focus. Existing entries start without a mood.
 
-**Journal prompts** chooses one of the 120 bundled prompts when you create an
-entry with a mood. The prompt appears in a centred box at the top inside the content
+With **Journal prompts** enabled, new-entry dialogs also ask **Would you like a
+journal prompt?** beside the mood question (stacked on narrow terminals).
+**Yes** is selected by default for each new entry. Use Tab to focus the question,
+Left/Right to focus Yes or No, and Space to select. No skips the prompt for that
+entry without changing its mood or your preferences. A prompt requires a selected
+mood; existing entries keep their original prompt when edited.
+
+Choosing Yes creates one of the 120 bundled prompts matching the entry's mood.
+The prompt appears in a centred box at the top inside the content
 pane, occupying 60% of its inner width; **Ctrl-G**
 hides or shows it while browsing or typing. The chosen prompt is saved with the
 entry and remains unchanged when its mood changes. Reopening an entry shows its

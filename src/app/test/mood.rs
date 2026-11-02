@@ -13,6 +13,7 @@ async fn changing_mood_undo_redo_and_delete_restore_keep_the_original_prompt() {
             vec![],
             None,
             Some(Mood::Low),
+            true,
         )
         .await
         .unwrap();
@@ -45,23 +46,32 @@ async fn changing_mood_undo_redo_and_delete_restore_keep_the_original_prompt() {
 }
 
 #[tokio::test]
-async fn prompt_creation_requires_both_settings_and_a_selected_mood() {
+async fn prompt_creation_requires_both_settings_a_selected_mood_and_entry_consent() {
     for show_mood in [false, true] {
         for prompts in [false, true] {
             for mood in [None, Some(Mood::Average)] {
-                let mut app = create_default_app();
-                app.settings.show_entry_mood = show_mood;
-                app.settings.journal_prompts = prompts;
-                let id = app
-                    .add_entry("Title".into(), Utc::now(), vec![], None, mood)
-                    .await
-                    .unwrap();
-                let entry = app.get_entry(id).unwrap();
-                assert_eq!(entry.mood, mood.filter(|_| show_mood));
-                assert_eq!(
-                    entry.journal_prompt.is_some(),
-                    show_mood && prompts && mood.is_some()
-                );
+                for include_prompt in [false, true] {
+                    let mut app = create_default_app();
+                    app.settings.show_entry_mood = show_mood;
+                    app.settings.journal_prompts = prompts;
+                    let id = app
+                        .add_entry(
+                            "Title".into(),
+                            Utc::now(),
+                            vec![],
+                            None,
+                            mood,
+                            include_prompt,
+                        )
+                        .await
+                        .unwrap();
+                    let entry = app.get_entry(id).unwrap();
+                    assert_eq!(entry.mood, mood.filter(|_| show_mood));
+                    assert_eq!(
+                        entry.journal_prompt.is_some(),
+                        show_mood && prompts && mood.is_some() && include_prompt
+                    );
+                }
             }
         }
     }
@@ -99,6 +109,7 @@ async fn locking_seals_mood_and_prompt_and_unlock_restores_them() {
             vec![],
             None,
             Some(Mood::Average),
+            true,
         )
         .await
         .unwrap();

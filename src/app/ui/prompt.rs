@@ -136,6 +136,7 @@ mod tests {
                 vec![],
                 None,
                 Some(Mood::Average),
+                true,
             )
             .await
             .unwrap();
@@ -176,6 +177,7 @@ mod tests {
                 vec![],
                 None,
                 Some(Mood::Low),
+                true,
             )
             .await
             .unwrap();
@@ -254,6 +256,7 @@ mod tests {
                 vec![],
                 None,
                 Some(Mood::High),
+                true,
             )
             .await
             .unwrap();

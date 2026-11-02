@@ -40,10 +40,14 @@ async fn ctrl_m_confirms_from_each_field_without_inserting_a_newline() {
         for active in [
             ActiveText::Title,
             ActiveText::Mood,
+            ActiveText::Prompt,
             ActiveText::Date,
             ActiveText::Priority,
             ActiveText::Tags,
         ] {
+            if is_edit && active == ActiveText::Prompt {
+                continue;
+            }
             let mut popup = if is_edit {
                 EntryPopup::from_entry(app.get_current_entry().unwrap(), &app.settings)
             } else {
@@ -91,7 +95,9 @@ async fn mood_is_optional_exclusive_and_between_title_and_date() {
         (KeyCode::Right, ActiveText::Mood, Some(Mood::Average)),
         (KeyCode::Char(' '), ActiveText::Mood, Some(Mood::High)),
         (KeyCode::Char(' '), ActiveText::Mood, None),
+        (KeyCode::Tab, ActiveText::Prompt, None),
         (KeyCode::Tab, ActiveText::Date, None),
+        (KeyCode::BackTab, ActiveText::Prompt, None),
         (KeyCode::BackTab, ActiveText::Mood, None),
         (KeyCode::BackTab, ActiveText::Title, None),
     ] {
@@ -128,6 +134,7 @@ async fn hidden_mood_survives_editing_and_draft_recovery_without_replacing_promp
             vec![],
             None,
             Some(Mood::Low),
+            true,
         )
         .await
         .unwrap();
@@ -173,6 +180,7 @@ fn mood_choices_and_the_focused_field_remain_visible_in_small_terminals() {
         for (active, label) in [
             (ActiveText::Title, "Title"),
             (ActiveText::Mood, "How is your mood"),
+            (ActiveText::Prompt, "Would you like"),
             (ActiveText::Date, "Date"),
             (ActiveText::Tags, "Tags"),
             (ActiveText::Priority, "Priority"),
@@ -194,7 +202,7 @@ fn mood_choices_and_the_focused_field_remain_visible_in_small_terminals() {
             assert!(text.contains("cancel") || text.contains("Cancel"));
             assert_eq!(
                 text.contains("Press Space to select"),
-                popup.active_txt == ActiveText::Mood
+                matches!(popup.active_txt, ActiveText::Mood | ActiveText::Prompt)
             );
             if popup.active_txt == ActiveText::Mood {
                 assert!(text.contains("How is your mood"));
@@ -205,6 +213,9 @@ fn mood_choices_and_the_focused_field_remain_visible_in_small_terminals() {
                     );
                 }
                 assert!(!text.contains("Medium"));
+            }
+            if popup.active_txt == ActiveText::Prompt {
+                assert!(text.contains("[x] Yes [ ] No"));
             }
         }
     }
@@ -879,6 +890,12 @@ async fn hidden_priority_is_not_rendered_or_focused_in_new_and_edit_dialogs() {
                 .await
                 .unwrap();
         }
+        if popup.show_prompt {
+            popup
+                .handle_input(&Input::new(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+                .await
+                .unwrap();
+        }
         assert_eq!(popup.active_txt, ActiveText::Tags);
         popup
             .handle_input(
@@ -894,7 +911,7 @@ async fn hidden_priority_is_not_rendered_or_focused_in_new_and_edit_dialogs() {
             .await
             .unwrap();
         assert_eq!(popup.active_txt, ActiveText::Date);
-        for size in [(100, 30), (60, 21)] {
+        for size in [(100, 30), (60, 26)] {
             let mut terminal = Terminal::new(TestBackend::new(size.0, size.1)).unwrap();
             terminal
                 .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
@@ -990,4 +1007,160 @@ async fn hidden_priority_keeps_new_entry_defaults_and_auto_title() {
         assert_eq!(saved.title, "Daily journal");
         assert_eq!(saved.priority, priority);
     }
+}
+
+#[tokio::test]
+async fn prompt_choice_defaults_yes_and_survives_failed_save_snapshot_and_undo() {
+    for include_prompt in [false, true] {
+        let mut app = create_default_app();
+        app.settings.auto_title = toml::from_str::<Settings>("auto_title = 'Daily'")
+            .unwrap()
+            .auto_title;
+        let mut popup = EntryPopup::new_entry(&app.settings);
+        assert!(popup.include_prompt);
+        assert!(popup.prompt_focus_yes);
+        assert_eq!(popup.title_txt.lines(), ["Daily"]);
+        for code in [
+            KeyCode::Tab,
+            KeyCode::Char(' '),
+            KeyCode::Tab,
+            KeyCode::Right,
+            KeyCode::Char(' '),
+            KeyCode::Char(' '),
+        ] {
+            popup
+                .handle_input(&Input::new(code, KeyModifiers::NONE), &mut app)
+                .await
+                .unwrap();
+        }
+        assert_eq!(popup.active_txt, ActiveText::Prompt);
+        assert_eq!(popup.mood, Some(Mood::Low));
+        assert!(!popup.include_prompt);
+        if include_prompt {
+            for code in [KeyCode::Left, KeyCode::Char(' ')] {
+                popup
+                    .handle_input(&Input::new(code, KeyModifiers::NONE), &mut app)
+                    .await
+                    .unwrap();
+            }
+        }
+        let mut restored = EntryPopup::from_snapshot(&popup.snapshot().unwrap()).unwrap();
+        assert_eq!(restored.include_prompt, include_prompt);
+        assert_eq!(restored.prompt_focus_yes, include_prompt);
+        assert_eq!(restored.active_txt, ActiveText::Prompt);
+        app.data_provide.set_return_err(true);
+        assert!(restored.handle_confirm(&mut app).await.is_err());
+        assert_eq!(restored.include_prompt, include_prompt);
+        assert!(app.history.pop_undo().is_none());
+        app.data_provide.set_return_err(false);
+        let EntryPopupInputReturn::AddEntry(id) = restored.handle_confirm(&mut app).await.unwrap()
+        else {
+            panic!("Entry was not created");
+        };
+        let saved = app.get_entry(id).unwrap().clone();
+        assert_eq!(saved.title, "Daily");
+        assert_eq!(saved.mood, Some(Mood::Low));
+        assert_eq!(saved.journal_prompt.is_some(), include_prompt);
+        app.undo().await.unwrap();
+        app.redo().await.unwrap();
+        app.load_entries().await.unwrap();
+        assert_eq!(app.get_entry(id), Some(&saved));
+        assert!(EntryPopup::new_entry(&app.settings).include_prompt);
+    }
+}
+
+#[tokio::test]
+async fn prompt_choice_is_only_offered_for_new_entries_with_mood_and_prompts_enabled() {
+    for mood in [false, true] {
+        for prompts in [false, true] {
+            let mut app = create_default_app();
+            app.load_entries().await.unwrap();
+            app.settings.show_entry_mood = mood;
+            app.settings.journal_prompts = prompts;
+            for mut popup in [
+                EntryPopup::new_entry(&app.settings),
+                EntryPopup::from_entry(&app.entries[0], &app.settings),
+            ] {
+                let visible = mood && prompts && !popup.is_edit_entry;
+                assert_eq!(popup.show_prompt, visible);
+                let mut visited_prompt = false;
+                for _ in 0..6 {
+                    popup
+                        .handle_input(&Input::new(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+                        .await
+                        .unwrap();
+                    visited_prompt |= popup.active_txt == ActiveText::Prompt;
+                }
+                assert_eq!(visited_prompt, visible);
+                let mut terminal =
+                    ratatui::Terminal::new(ratatui::backend::TestBackend::new(240, 40)).unwrap();
+                terminal
+                    .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+                    .unwrap();
+                let text: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert_eq!(text.contains("Would you like a journal prompt?"), visible);
+            }
+        }
+    }
+}
+
+#[test]
+fn mood_and_prompt_questions_share_a_row_with_choices_centred_in_each_half() {
+    let mut popup = EntryPopup::new_entry(&Settings::default());
+    popup.active_txt = ActiveText::Prompt;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(240, 40)).unwrap();
+    terminal
+        .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let lines: Vec<String> = buffer
+        .content
+        .chunks(240)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect();
+    let locate = |text: &str| {
+        lines
+            .iter()
+            .enumerate()
+            .find_map(|(y, row)| row.find(text).map(|x| (row[..x].chars().count(), y)))
+            .unwrap()
+    };
+    let mood = "How is your mood at the moment?";
+    let prompt = "Would you like a journal prompt?";
+    let choices = "[ ] Low [ ] Average [ ] High";
+    let answers = "[x] Yes [ ] No";
+    let (mx, my) = locate(mood);
+    let (px, py) = locate(prompt);
+    let (cx, cy) = locate(choices);
+    let (ax, ay) = locate(answers);
+    assert_eq!(my, py);
+    assert_eq!(cy, ay);
+    assert_eq!(cy, my + 2);
+    assert!(px > mx + mood.len());
+    assert!((2 * mx + mood.len()).abs_diff(2 * cx + choices.len()) <= 1);
+    assert!((2 * px + prompt.len()).abs_diff(2 * ax + answers.len()) <= 1);
+    let (sx, sy) = locate("Press Space");
+    assert_eq!(
+        buffer[(sx as u16 + 6, sy as u16)].fg,
+        menu_key_style().fg.unwrap()
+    );
+}
+
+#[test]
+fn older_entry_snapshots_keep_the_default_prompt_choice() {
+    let popup = EntryPopup::new_entry(&Settings::default());
+    let mut snapshot: serde_json::Value = serde_json::from_str(&popup.snapshot().unwrap()).unwrap();
+    for field in ["show_prompt", "include_prompt", "prompt_focus_yes"] {
+        snapshot.as_object_mut().unwrap().remove(field);
+    }
+    let restored = EntryPopup::from_snapshot(&snapshot.to_string()).unwrap();
+    assert!(restored.include_prompt);
+    assert!(restored.prompt_focus_yes);
+    assert!(!restored.show_prompt);
 }

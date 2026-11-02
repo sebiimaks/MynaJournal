@@ -113,6 +113,7 @@ async fn applying_a_filter_with_multiple_matches_reconciles_the_existing_selecti
         Vec::new(),
         None,
         None,
+        true,
     )
     .await
     .unwrap();

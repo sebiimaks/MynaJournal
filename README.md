@@ -43,9 +43,11 @@ local storage; an external program may manage a directory independently.
 
 Mood and prompts are enabled by default and can be disabled under **Config →
 Entries**. In the Mood row, use Left/Right and Space to choose Low `[-]`, Average
-`[~]` or High `[+]`. Leaving all boxes unchecked is allowed. A new entry with a
-mood receives one matching prompt; **Ctrl-G** hides or shows it. Changing mood
-later keeps the original prompt. See [Configuration](CONFIGURATION.md) for details.
+`[~]` or High `[+]`. Leaving all boxes unchecked is allowed. The new-entry prompt
+question defaults to **Yes**; choose **No** to skip a prompt for that entry. Yes
+with a selected mood creates one matching prompt; **Ctrl-G** hides or shows it.
+Changing mood later keeps the original prompt. See [Configuration](CONFIGURATION.md)
+for details.
 
 ## Installation
 

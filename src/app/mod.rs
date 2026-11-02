@@ -207,10 +207,11 @@ where
         tags: Vec<String>,
         priority: Option<u32>,
         mood: Option<backend::Mood>,
+        include_prompt: bool,
     ) -> anyhow::Result<u32> {
         let mut draft = EntryDraft::new(date, title, tags, priority);
         draft.mood = mood.filter(|_| self.settings.show_entry_mood);
-        if self.settings.journal_prompts {
+        if include_prompt && self.settings.journal_prompts {
             draft.journal_prompt = draft.mood.and_then(prompts::choose);
         }
         let entry = self.data_provide.add_entry(draft).await?;

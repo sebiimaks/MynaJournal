@@ -11,7 +11,14 @@ async fn add() {
     let added_title = "Added";
 
     let id = app
-        .add_entry(added_title.into(), DateTime::default(), vec![], None, None)
+        .add_entry(
+            added_title.into(),
+            DateTime::default(),
+            vec![],
+            None,
+            None,
+            true,
+        )
         .await
         .unwrap();
 
@@ -131,11 +138,11 @@ async fn undo_redo_after_restoring_deleted_entry_keeps_history_id() {
     app.load_entries().await.unwrap();
 
     let a_id = app
-        .add_entry("A".into(), DateTime::default(), vec![], None, None)
+        .add_entry("A".into(), DateTime::default(), vec![], None, None, true)
         .await
         .unwrap();
     let _b_id = app
-        .add_entry("B".into(), DateTime::default(), vec![], None, None)
+        .add_entry("B".into(), DateTime::default(), vec![], None, None, true)
         .await
         .unwrap();
 
@@ -247,7 +254,14 @@ async fn redo_restore_metadata_survives_new_undo_history() {
     app.load_entries().await.unwrap();
     app.current_entry_id = Some(1);
     let id = app
-        .add_entry("New entry".into(), DateTime::default(), vec![], None, None)
+        .add_entry(
+            "New entry".into(),
+            DateTime::default(),
+            vec![],
+            None,
+            None,
+            true,
+        )
         .await
         .unwrap();
     app.undo().await.unwrap();
@@ -276,7 +290,7 @@ async fn history_eviction_releases_deleted_entry_metadata() {
 
         match operation {
             "add" => {
-                app.add_entry("New".into(), DateTime::default(), vec![], None, None)
+                app.add_entry("New".into(), DateTime::default(), vec![], None, None, true)
                     .await
                     .unwrap();
             }

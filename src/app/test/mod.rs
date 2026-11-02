@@ -68,7 +68,7 @@ async fn test_data_provider_errors() {
     assert!(app.get_entry(0).is_none());
     assert!(app.get_all_tags().is_empty());
     assert!(
-        app.add_entry("title".into(), Utc::now(), Vec::new(), Some(1), None)
+        app.add_entry("title".into(), Utc::now(), Vec::new(), Some(1), None, true)
             .await
             .is_err()
     );
@@ -175,7 +175,7 @@ async fn test_add_entry() {
     let title = String::from("Added Title");
     let date = Utc::now();
 
-    app.add_entry(title.clone(), date, vec![tag.clone()], Some(1), None)
+    app.add_entry(title.clone(), date, vec![tag.clone()], Some(1), None, true)
         .await
         .unwrap();
 
@@ -238,9 +238,16 @@ async fn add_extra_entries_drafts(app: &mut App<MockDataProvider>) {
     ];
 
     for draft in drafts {
-        app.add_entry(draft.title, draft.date, draft.tags, draft.priority, None)
-            .await
-            .unwrap();
+        app.add_entry(
+            draft.title,
+            draft.date,
+            draft.tags,
+            draft.priority,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
     }
 }
 
@@ -323,6 +330,7 @@ async fn new_tag_palette_reassigns_colors_in_order_and_same_palette_keeps_them()
         vec!["Tag 0".into()],
         None,
         None,
+        true,
     )
     .await
     .unwrap();
