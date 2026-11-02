@@ -4,8 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.22.1 - 2026-11-02
+
 - Add a per-entry Yes/No prompt choice, defaulting to Yes, beside the mood question in new-entry dialogs; stack the questions on narrow terminals
 - Preserve the choice through save retries and encrypted draft recovery, while respecting the mood and prompt settings
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.22.1-1_amd64.deb`.
+Existing journals and settings are preserved; no migration is needed from 0.22.0.
+Choosing No skips the new entry's prompt while retaining its mood. Existing
+entries keep their saved prompts.
 
 ## 0.22.0 - 2026-11-01
 
