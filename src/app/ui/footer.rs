@@ -32,7 +32,7 @@ pub fn render_footer<D: DataProvider>(
 }
 
 fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static> {
-    let mut text = match (
+    let (mut text, help_keymaps) = match (
         ui.editor.is_insert_mode(),
         ui.entries_list.multi_select_mode,
     ) {
@@ -41,23 +41,30 @@ fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static
             let mut line = command_text(&command.get_info().name, &ui.editor_keymaps, command);
             line.push_span(Span::raw(SEPARATOR));
             line.push_span(Span::raw("Edit using Emacs motions"));
-            line
+            (line, None)
         }
         (false, true) => {
             let command = UICommand::LeaveMultiSelectMode;
-            join_parts(vec![
-                command_text(&command.get_info().name, &ui.multi_select_keymaps, command),
-                command_text("Help", &ui.multi_select_keymaps, UICommand::ShowHelp),
-                command_text("Config", &ui.multi_select_keymaps, UICommand::ShowConfig),
-            ])
+            (
+                join_parts(vec![
+                    command_text(&command.get_info().name, &ui.multi_select_keymaps, command),
+                    command_text("Config", &ui.multi_select_keymaps, UICommand::ShowConfig),
+                ]),
+                Some(&ui.multi_select_keymaps),
+            )
         }
-        _ => standard_text(ui, app),
+        _ => (standard_text(ui, app), Some(&ui.global_keymaps)),
     };
     if ui.current_prompt(app).is_some() {
         text.push_span(Span::raw(SEPARATOR));
         text.spans.extend(
             command_text("Prompt", &ui.global_keymaps, UICommand::ToggleJournalPrompt).spans,
         );
+    }
+    if let Some(keymaps) = help_keymaps {
+        text.push_span(Span::raw(SEPARATOR));
+        text.spans
+            .extend(command_text("Help", keymaps, UICommand::ShowHelp).spans);
     }
     Paragraph::new(text).wrap(Wrap { trim: false })
 }
@@ -101,11 +108,6 @@ fn standard_text<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Line<'stat
             command,
         ));
     }
-    parts.push(command_text(
-        "Help",
-        &ui.global_keymaps,
-        UICommand::ShowHelp,
-    ));
     parts.push(command_text(
         "Config",
         &ui.global_keymaps,
