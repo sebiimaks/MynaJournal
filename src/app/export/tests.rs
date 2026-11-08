@@ -2,6 +2,62 @@ use super::*;
 use crate::app::test::create_default_app;
 
 #[test]
+fn journal_collection_exports_cannot_replace_metadata_archives_or_other_journals() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = crate::journals::JournalStore::new(directory.path().join("config.toml")).unwrap();
+    let work = store.create("Work", &Settings::default()).unwrap();
+    let travel = store.create("Travel", &Settings::default()).unwrap();
+    let profile = work.settings_path.parent().unwrap();
+    let archived = store.archive(&travel).unwrap();
+    let mut app = create_default_app();
+    app.settings = store.load_settings(&work).unwrap();
+    app.config_context = Some(crate::settings::ConfigContext {
+        return_to_journals: false,
+        journal_name: Some(work.name.clone()),
+        settings_path: work.settings_path.clone(),
+        themes_path: directory.path().join("themes"),
+        active_theme_id: None,
+        theme_warning: None,
+        launch_details: Vec::new(),
+    });
+    for path in [
+        profile.join("journal.toml"),
+        profile.join("config.toml"),
+        profile.join("data/inactive-backend"),
+        profile.join("state/state.json"),
+        store.root().join(".catalog.lock"),
+        store.root().join(".leases/personal.lock"),
+        travel.settings_path,
+        archived.join("journal.toml"),
+    ] {
+        assert!(
+            app.validate_export_target(&ExportTarget::from(path.clone()))
+                .is_err(),
+            "{}",
+            path.display()
+        );
+    }
+    for path in [
+        profile.join("exports/note.txt"),
+        directory.path().join("note.txt"),
+    ] {
+        assert!(
+            app.validate_export_target(&ExportTarget::from(path))
+                .is_ok()
+        );
+    }
+    #[cfg(unix)]
+    {
+        fs::remove_dir(profile.join("exports")).unwrap();
+        std::os::unix::fs::symlink(store.root().join(".leases"), profile.join("exports")).unwrap();
+        assert!(
+            app.validate_export_target(&ExportTarget::from(profile.join("exports/personal.lock")))
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn export_requires_confirmation_and_preserves_previous_file_on_write_failure() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("existing.txt");
@@ -147,6 +203,8 @@ fn active_database_sidecars_state_and_configuration_are_not_export_targets() {
     app.settings.sqlite_backend.file_path = Some(database.clone());
     app.settings.app_state_dir = Some(dir.path().join("state"));
     app.config_context = Some(crate::settings::ConfigContext {
+        journal_name: None,
+        return_to_journals: false,
         settings_path: dir.path().join("config.toml"),
         themes_path: dir.path().join("themes"),
         active_theme_id: None,

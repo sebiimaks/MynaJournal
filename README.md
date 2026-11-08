@@ -49,6 +49,15 @@ with a selected mood creates one matching prompt; **Ctrl-G** hides or shows it.
 Changing mood later keeps the original prompt. See [Configuration](CONFIGURATION.md)
 for details.
 
+A **Select Journal** dialog appears beside the logo at startup. **Personal**
+opens your existing notes. Use **n** to add a journal,
+Up/Down and **Enter** to open one, or **d** to delete an added journal after
+confirmation. Deleted journals move to **Deleted Journals** for recovery;
+Personal is protected. Press **q** inside a journal to return to this selector;
+press **q** again at the selector to close the app.
+Each added journal has separate data, settings and state. See
+[journal storage and recovery](CONFIGURATION.md#separate-journals) for details.
+
 ## Installation
 
 Download binaries and `SHA256SUMS` from the
@@ -188,17 +197,19 @@ require a note-locking-capable version of this fork.
 mjournal
 ```
 
-1. Press `n` in the Entries pane to create an entry. Type a title, use `Tab` to
+1. Select **Personal** (or another journal) and press `Enter` to open it.
+2. Press `n` in the Entries pane to create an entry. Type a title, use `Tab` to
    move through its optional mood, date/time, priority and comma-separated tags, then press
    `Enter` to confirm.
-2. Press `Enter` on the entry to edit its content. Type your note and press
+3. Press `Enter` on the entry to edit its content. Type your note and press
    `Ctrl-S` to save it.
-3. Press `Esc` to return to normal mode. Use `Tab` to move between panes.
-4. Press `?` for the full help menu, `!` for configuration, or `q` to quit.
+4. Press `Esc` to return to normal mode. Use `Tab` to move between panes.
+5. Press `?` for the full help menu, `!` for configuration, or `q` to return to
+   Select Journal. Press `q` at the selector to quit the app.
    The app prompts when an action would discard unsaved content.
 
-The startup artwork disappears on your first action. It also appears when the
-note pane is empty and has enough room to display it.
+Opening a journal replaces the startup screen with its entries. The artwork also
+appears when the note pane is empty and has enough room to display it.
 
 These shortcuts apply in normal mode, with the Entries pane focused where an
 entry-list action is involved. In insertion mode, letters are ordinary text.
@@ -221,7 +232,7 @@ entry-list action is involved. In insertion mode, letters are ordinary text.
 | Select multiple entries | `v`, then `Space` to select; `>` exports the selection |
 | Reload storage after external changes | `Ctrl-R` in normal mode |
 | Toggle the full-screen pane | `Ctrl-F` in normal mode |
-| Help / configuration / quit | `?` / `!` / `q` |
+| Help / configuration / return to journals | `?` / `!` / `q` |
 
 Content soft-wraps by default without inserting line breaks. Up/Down and page
 navigation follow displayed rows; selections, copies and saved text keep the
@@ -236,8 +247,8 @@ combinations; the configuration control remains available.
 ## Choosing storage
 
 SQLite is the default. Choose a backend under `!` → **Storage**, save with
-`Ctrl-S`, and restart when prompted. Changing a backend or path does not move
-existing entries.
+`Ctrl-S`, and close and reopen the journal when prompted. Changing a backend or
+path does not move existing entries.
 
 | Backend | Storage | Select for one launch |
 | --- | --- | --- |

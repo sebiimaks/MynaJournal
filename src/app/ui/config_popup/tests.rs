@@ -43,6 +43,38 @@ fn select(popup: &mut ConfigPopup, tab: Tab, path: &[&str]) {
 }
 
 #[test]
+fn managed_journal_defaults_shown_and_saved_in_config_stay_inside_its_profile() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = crate::journals::JournalStore::new(directory.path().join("config.toml")).unwrap();
+    let journal = store.create("Work", &Settings::default()).unwrap();
+    let settings = store.load_settings(&journal).unwrap();
+    let state = settings.app_state_dir.clone().unwrap();
+    let mut popup = ConfigPopup::new(
+        ConfigDocument::load(journal.settings_path.clone()).unwrap(),
+        ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
+        &settings,
+        &Styles::default(),
+        Some("tui"),
+        30,
+    )
+    .unwrap();
+    select(&mut popup, Tab::Storage, &["app_state_dir"]);
+    key(&mut popup, KeyCode::Char('d'));
+    assert!(popup.settings_document.value(&["app_state_dir"]).is_none());
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::String(state.to_str().unwrap().to_owned()))
+    );
+    popup.settings_document.save().unwrap();
+    popup.mark_settings_saved(&settings);
+    assert_eq!(
+        store.load_settings(&journal).unwrap().app_state_dir,
+        Some(state)
+    );
+    assert_eq!(popup.status, "Settings saved.");
+}
+
+#[test]
 fn toggles_are_staged_and_closing_requires_explicit_discard() {
     let (directory, mut popup) = popup("# kept\ncolored_tags = true\n", "");
     assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::Keep);

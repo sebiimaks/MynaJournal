@@ -19,6 +19,16 @@ mjournal --config /path/to/config --file-dir-path /path/to/entries \
   backup create /path/to/new-backup
 ```
 
+Without overrides, this backs up **Personal**. To back up an added journal,
+return to Select Journal to close it, then pass its profile directory:
+
+```sh
+mjournal --config /path/to/config/journals/j_IDENTIFIER backup create /path/to/new-backup
+```
+
+The profile path appears in Config's Context tab while that journal is open.
+Each backup covers one journal; repeat for other journals you want to preserve.
+
 SQLite uses a consistent database snapshot, including committed changes still in
 its write-ahead log. Other stores use their existing advisory locks and verify
 that source files did not change while copying. A changed source or busy store

@@ -318,6 +318,33 @@ impl<D: DataProvider> App<D> {
             if let Some(parent) = context.themes_path.parent() {
                 protected.push((parent.join("themes.toml"), false));
             }
+            let (store, exports) =
+                match crate::journals::journal_for_config(&context.settings_path)? {
+                    Some((store, journal)) => {
+                        let profile = journal
+                            .settings_path
+                            .parent()
+                            .context("Journal profile has no directory")?;
+                        protected.push((profile.join("journal.toml"), false));
+                        (store, Some(profile.join("exports")))
+                    }
+                    None => (
+                        crate::journals::JournalStore::new(context.settings_path.clone())?,
+                        None,
+                    ),
+                };
+            if destination.starts_with(resolve_path(store.root())?) {
+                let allowed = exports
+                    .map(|path| -> Result<bool> {
+                        Ok(resolve_path(&path)? == path && destination.starts_with(&path))
+                    })
+                    .transpose()?
+                    .unwrap_or(false);
+                ensure!(
+                    allowed,
+                    "Use this journal's exports folder or a destination outside the journal collection"
+                );
+            }
         } else {
             protected.push((Settings::file_path(None)?, false));
             protected.push((settings_default_dir_path()?.join("themes"), true));

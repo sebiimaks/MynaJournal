@@ -24,6 +24,7 @@ mod export;
 mod external_editor;
 mod filter;
 mod history;
+pub mod journal_startup;
 mod keymap;
 mod prompts;
 mod runner;
@@ -35,8 +36,8 @@ pub mod ui;
 #[cfg(test)]
 mod test;
 
-pub use runner::HandleInputReturnType;
 pub use runner::run;
+pub use runner::{HandleInputReturnType, RunOutcome};
 pub use ui::UIComponents;
 
 pub use ui::themes::TagColors;

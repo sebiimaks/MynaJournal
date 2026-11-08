@@ -76,7 +76,11 @@ impl ConfigPopup {
         active_theme_id: Option<&str>,
         divider: u16,
     ) -> Result<Self> {
-        let settings = settings_value(&toml::from_str(&settings_document.text())?)?;
+        let settings = settings_value(&Settings::from_config_text(
+            &settings_document.text(),
+            settings_document.path(),
+        )?)?;
+        let defaults = Settings::from_config_text("", settings_document.path())?;
         let themes = Value::try_from(active_styles)?;
         let default_themes = Value::try_from(Styles::default())?;
         let fields = fields::fields(&default_themes);
@@ -115,7 +119,7 @@ impl ConfigPopup {
             raw_settings,
             raw_themes,
             active_settings: settings_value(active_settings)?,
-            default_settings: settings_value(&Settings::default())?,
+            default_settings: settings_value(&defaults)?,
             default_themes,
             fields,
             tab: 0,
@@ -154,8 +158,10 @@ impl ConfigPopup {
                 return;
             }
         }
-        if let Ok(settings) = toml::from_str::<Settings>(&self.settings_document.text())
-            && let Ok(value) = settings_value(&settings)
+        if let Ok(settings) = Settings::from_config_text(
+            &self.settings_document.text(),
+            self.settings_document.path(),
+        ) && let Ok(value) = settings_value(&settings)
         {
             self.settings = value;
         }
@@ -664,7 +670,10 @@ impl ConfigPopup {
                 (_, value) => value,
             };
             document.set(&field.keys(), value)?;
-            let settings = settings_value(&toml::from_str::<Settings>(&document.text())?)?;
+            let settings = settings_value(&Settings::from_config_text(
+                &document.text(),
+                document.path(),
+            )?)?;
             self.raw_settings = toml::from_str(&document.text())?;
             self.settings_document = document;
             self.settings = settings;

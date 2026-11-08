@@ -63,6 +63,8 @@ fn setup(
     settings.app_state_dir = Some(dir.path().join("state"));
     let mut app = App::new(NoAccessProvider, settings);
     app.config_context = Some(ConfigContext {
+        journal_name: None,
+        return_to_journals: false,
         settings_path,
         themes_path: dir.path().join("themes"),
         active_theme_id: Some("tui".into()),

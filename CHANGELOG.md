@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Add a startup journal selector beside the MynaJournal artwork, with Personal as the existing default journal and controls to create and delete separate journals
+- Give additional journals independent backend files, settings, exports and app state while sharing the collection's themes
+- Move deleted journals into a recoverable Deleted Journals folder after confirmation; protect Personal, journals open in another window, and externally configured storage
+- Keep storage defaults inside each managed journal and protect journal collections from accidental export overwrites
+- Return to Select Journal when closing a journal, preserving save/discard/cancel checks and locking protected notes before reopening; quit the app from the selector
+- Redraw fullscreen views without cursor queries when opening a journal, locking notes or returning from an external editor
+
 ## 0.22.1 - 2026-11-02
 
 - Add a per-entry Yes/No prompt choice, defaulting to Yes, beside the mood question in new-entry dialogs; stack the questions on narrow terminals

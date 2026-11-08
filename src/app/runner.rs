@@ -29,13 +29,19 @@ pub enum HandleInputReturnType {
     Ignore,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum RunOutcome {
+    JournalClosed,
+    InputEnded,
+}
+
 pub async fn run<B: Backend>(
     terminal: &mut Terminal<B>,
     settings: Settings,
     styles: Styles,
     pending_cmd: Option<PendingCliCommand>,
     config_context: ConfigContext,
-) -> Result<()>
+) -> Result<RunOutcome>
 where
     B::Error: Send + Sync + 'static,
 {
@@ -146,14 +152,14 @@ async fn run_intern<B, D>(
     styles: Styles,
     pending_cmd: Option<PendingCliCommand>,
     config_context: ConfigContext,
-) -> anyhow::Result<()>
+) -> anyhow::Result<RunOutcome>
 where
     B: Backend,
     B::Error: Send + Sync + 'static,
     D: DataProvider,
 {
     // Some terminals keep the old display when entering the alternate screen.
-    terminal.clear()?;
+    crate::terminal_session::clear_fullscreen(terminal)?;
     let mut app = App::new(data_provider, settings);
     app.set_tag_palette(&styles.tags.palette);
     let mut ui_components = UIComponents::new(styles);
@@ -161,6 +167,7 @@ where
     if let Some(warning) = &config_context.theme_warning {
         ui_components.show_err_msg(warning.clone());
     }
+    let show_startup_artwork = config_context.journal_name.is_none();
     app.config_context = Some(config_context);
     if let Some(cmd) = pending_cmd
         && let Err(err) = exec_pending_cmd(terminal, &mut app, cmd).await
@@ -175,7 +182,9 @@ where
     }
 
     ui_components.set_current_entry(app.entries.first().map(|entry| entry.id), &mut app);
-    ui_components.show_startup_artwork();
+    if show_startup_artwork {
+        ui_components.show_startup_artwork();
+    }
 
     draw_ui(terminal, &mut app, &mut ui_components)?;
 
@@ -226,7 +235,7 @@ where
                             log::error!("Persisting app state failed: Error info {err}");
                         }
 
-                        return Ok(());
+                        return Ok(RunOutcome::JournalClosed);
                     }
                     HandleInputReturnType::Ignore => {}
                 };
@@ -238,7 +247,7 @@ where
         }
     }
 
-    Ok(())
+    Ok(RunOutcome::InputEnded)
 }
 
 async fn exec_pending_cmd<B: Backend, D: DataProvider>(
@@ -273,7 +282,7 @@ where
     B::Error: Send + Sync + 'static,
 {
     ui.hide_for_auto_lock();
-    terminal.clear()?;
+    crate::terminal_session::clear_fullscreen(terminal)?;
     draw_ui(terminal, app, ui)?;
     if let Err(error) = ui.auto_lock(app).await {
         ui.recover_failed_auto_lock(app, &error)?;
@@ -294,7 +303,7 @@ where
         // Apply hide cursor again after closing the external editor
         terminal.hide_cursor()?;
         // Clear the terminal and force a full redraw on the next draw call.
-        terminal.clear()?;
+        crate::terminal_session::clear_fullscreen(terminal)?;
     }
 
     terminal.draw(|f| ui_components.render_ui(f, app))?;
@@ -353,6 +362,7 @@ mod tests {
         screen: TestBackend,
         frames: Vec<Buffer>,
         fail_clear: bool,
+        fail_cursor_query: bool,
     }
 
     impl StartupBackend {
@@ -361,6 +371,7 @@ mod tests {
                 screen: TestBackend::with_lines(vec!["~".repeat(width.into()); height.into()]),
                 frames: Vec::new(),
                 fail_clear: false,
+                fail_cursor_query: false,
             }
         }
     }
@@ -389,6 +400,11 @@ mod tests {
         }
 
         fn get_cursor_position(&mut self) -> io::Result<Position> {
+            if self.fail_cursor_query {
+                return Err(io::Error::other(
+                    "cursor queries conflict with the event reader",
+                ));
+            }
             Ok(self.screen.get_cursor_position().unwrap())
         }
 
@@ -488,6 +504,8 @@ mod tests {
         settings.app_state_dir = Some(dir.path().join("state"));
         settings.sync_os_clipboard = false;
         let context = ConfigContext {
+            journal_name: None,
+            return_to_journals: false,
             settings_path: dir.path().join("config.toml"),
             themes_path: dir.path().join("themes"),
             active_theme_id: Some("tui".into()),
@@ -519,6 +537,15 @@ mod tests {
             text.contains(expected),
             "Missing first frame text: {expected}"
         );
+    }
+
+    #[tokio::test]
+    async fn opening_a_journal_redraws_without_querying_the_cursor() {
+        let mut backend = StartupBackend::dirty(80, 24);
+        backend.fail_cursor_query = true;
+        let (terminal, error) = startup(backend, None).await;
+        assert!(error.to_string().contains("stopped after frame"));
+        assert_clean_first_frame(&terminal, "Entries");
     }
 
     #[tokio::test]

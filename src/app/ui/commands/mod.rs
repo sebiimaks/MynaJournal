@@ -112,7 +112,7 @@ impl UICommand {
                 "Export plaintext",
                 "Export private content after confirmation",
             ),
-            UICommand::Quit => CommandInfo::new("Exit", "Exit the program"),
+            UICommand::Quit => CommandInfo::new("Exit", "Leave the current journal"),
             UICommand::ShowHelp => CommandInfo::new("Show help", "Show keybindings overview"),
             UICommand::ShowConfig => {
                 CommandInfo::new("Show config", "View and edit application configuration")
@@ -288,7 +288,7 @@ impl UICommand {
         }
         if *self == UICommand::Quit && app.has_sealed_drafts() {
             anyhow::bail!(
-                "Unlock and save your encrypted drafts before quitting, or discard them in Note security (L)"
+                "Unlock and save your encrypted drafts before leaving this journal, or discard them in Note security (L)"
             );
         }
         match self {

@@ -64,6 +64,65 @@ pub enum CliResult {
 }
 
 impl Cli {
+    pub fn shows_journal_selector(&self) -> bool {
+        if self.command.is_some() || self.backend_type.is_some() {
+            return false;
+        }
+        #[cfg(feature = "json")]
+        if self.json_file_path.is_some() {
+            return false;
+        }
+        #[cfg(feature = "sqlite")]
+        if self.sqlite_file_path.is_some() {
+            return false;
+        }
+        #[cfg(feature = "vjournal")]
+        if self.vjournal_dir_path.is_some() {
+            return false;
+        }
+        #[cfg(feature = "file")]
+        if self.file_dir_path.is_some() {
+            return false;
+        }
+        true
+    }
+
+    /// Resolve the effective CLI storage before any directories are created, so
+    /// a managed journal can be leased before a path override opens its files.
+    pub fn storage_override_settings(&self, base: &Settings) -> anyhow::Result<Option<Settings>> {
+        let mut settings = base.clone();
+        let mut overridden = false;
+        #[cfg(feature = "json")]
+        if let Some(path) = &self.json_file_path {
+            settings.json_backend.file_path = Some(path.absolutize()?.into_owned());
+            settings.backend_type = Some(BackendType::Json);
+            overridden = true;
+        }
+        #[cfg(feature = "sqlite")]
+        if let Some(path) = &self.sqlite_file_path {
+            settings.sqlite_backend.file_path = Some(path.absolutize()?.into_owned());
+            settings.backend_type = Some(BackendType::Sqlite);
+            overridden = true;
+        }
+        #[cfg(feature = "vjournal")]
+        if let Some(path) = &self.vjournal_dir_path {
+            settings.vjournal_backend.directory = Some(path.absolutize()?.into_owned());
+            settings.backend_type = Some(BackendType::Vjournal);
+            overridden = true;
+        }
+        #[cfg(feature = "file")]
+        if let Some(path) = &self.file_dir_path {
+            settings.file_backend.directory = Some(std::path::absolute(path)?);
+            settings.backend_type = Some(BackendType::File);
+            overridden = true;
+        }
+        if let Some(backend) = self.backend_type {
+            set_backend_type(backend, &mut settings);
+            overridden = true;
+        }
+        Ok(overridden.then_some(settings))
+    }
+
     pub async fn execute_backup(&self) -> anyhow::Result<bool> {
         let Some(CliCommand::Backup(command)) = &self.command else {
             return Ok(false);
@@ -77,30 +136,24 @@ impl Cli {
                 );
             }
             backup::BackupCommand::Create { directory } => {
-                let mut settings = Settings::new(self.config_path.clone()).await?;
-                #[cfg(feature = "json")]
-                if let Some(path) = &self.json_file_path {
-                    settings.json_backend.file_path = Some(std::path::absolute(path)?);
-                    settings.backend_type = Some(BackendType::Json);
-                }
-                #[cfg(feature = "sqlite")]
-                if let Some(path) = &self.sqlite_file_path {
-                    settings.sqlite_backend.file_path = Some(std::path::absolute(path)?);
-                    settings.backend_type = Some(BackendType::Sqlite);
-                }
-                #[cfg(feature = "vjournal")]
-                if let Some(path) = &self.vjournal_dir_path {
-                    settings.vjournal_backend.directory = Some(std::path::absolute(path)?);
-                    settings.backend_type = Some(BackendType::Vjournal);
-                }
-                #[cfg(feature = "file")]
-                if let Some(path) = &self.file_dir_path {
-                    settings.file_backend.directory = Some(std::path::absolute(path)?);
-                    settings.backend_type = Some(BackendType::File);
-                }
-                if let Some(backend) = self.backend_type {
-                    settings.backend_type = Some(backend);
-                }
+                let config_path = Settings::file_path(self.config_path.clone())?;
+                let journal = crate::journals::journal_for_config(&config_path)?;
+                let _journal_lease = journal
+                    .as_ref()
+                    .map(|(store, journal)| store.acquire(journal))
+                    .transpose()?;
+                let settings = Settings::new(self.config_path.clone()).await?;
+                let settings = self
+                    .storage_override_settings(&settings)?
+                    .unwrap_or(settings);
+                let _storage_lease = crate::journals::journal_for_storage(&settings)?
+                    .filter(|(_, owner)| {
+                        journal
+                            .as_ref()
+                            .is_none_or(|(_, active)| active.settings_path != owner.settings_path)
+                    })
+                    .map(|(store, owner)| store.acquire(&owner))
+                    .transpose()?;
                 backup::create(&settings, self.config_path.as_ref(), directory).await?;
                 println!(
                     "Backup written to {}",
@@ -150,32 +203,38 @@ impl Cli {
     }
 
     pub async fn handle_cli(mut self, settings: &mut Settings) -> anyhow::Result<CliResult> {
-        #[cfg(feature = "json")]
-        if let Some(json_path) = self.json_file_path.take() {
-            set_json_path(json_path, settings).await?;
-            set_backend_type(BackendType::Json, settings);
+        if let Some(overrides) = self.storage_override_settings(settings)? {
+            *settings = overrides;
         }
-
-        #[cfg(feature = "sqlite")]
-        if let Some(sql_path) = self.sqlite_file_path.take() {
-            set_sqlite_path(sql_path, settings).await?;
-            set_backend_type(BackendType::Sqlite, settings);
-        }
-
-        #[cfg(feature = "vjournal")]
-        if let Some(vjournal_dir) = self.vjournal_dir_path.take() {
-            set_vjournal_path(vjournal_dir, settings).await?;
-            set_backend_type(BackendType::Vjournal, settings);
-        }
-
-        #[cfg(feature = "file")]
-        if let Some(file_dir) = self.file_dir_path.take() {
-            set_file_path(file_dir, settings)?;
-            set_backend_type(BackendType::File, settings);
-        }
-
-        if let Some(backend) = self.backend_type.take() {
-            set_backend_type(backend, settings);
+        // Only the selected backend needs directories. Inactive overrides must
+        // not recreate an archived journal or touch another journal's storage.
+        match settings.backend_type.unwrap_or_default() {
+            #[cfg(feature = "json")]
+            BackendType::Json => {
+                if let Some(path) = self.json_file_path.take() {
+                    set_json_path(path, settings).await?;
+                }
+            }
+            #[cfg(feature = "sqlite")]
+            BackendType::Sqlite => {
+                if let Some(path) = self.sqlite_file_path.take() {
+                    set_sqlite_path(path, settings).await?;
+                }
+            }
+            #[cfg(feature = "vjournal")]
+            BackendType::Vjournal => {
+                if let Some(path) = self.vjournal_dir_path.take() {
+                    set_vjournal_path(path, settings).await?;
+                }
+            }
+            #[cfg(feature = "file")]
+            BackendType::File => {
+                if let Some(path) = self.file_dir_path.take() {
+                    set_file_path(path, settings)?;
+                }
+            }
+            #[allow(unreachable_patterns)]
+            _ => {}
         }
 
         setup_logging(self.verbose, self.log_file.take())?;
@@ -282,6 +341,125 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+
+    #[test]
+    fn selector_is_for_normal_launches_and_preserves_explicit_cli_destinations() {
+        for args in [
+            vec!["mjournal"],
+            vec!["mjournal", "--config", "preview", "--log", "preview.log"],
+        ] {
+            assert!(Cli::parse_from(args).shows_journal_selector());
+        }
+        for args in [
+            vec!["mjournal", "print-config"],
+            vec!["mjournal", "licenses"],
+            vec!["mjournal", "theme", "print-default"],
+            vec!["mjournal", "import-journals", "--path", "import.json"],
+            vec!["mjournal", "assign-priority", "3"],
+            vec!["mjournal", "--backend-type", "json"],
+        ] {
+            assert!(!Cli::parse_from(args).shows_journal_selector());
+        }
+        #[cfg(feature = "json")]
+        assert!(
+            !Cli::parse_from(["mjournal", "--json-file-path", "entries.json"])
+                .shows_journal_selector()
+        );
+        #[cfg(feature = "sqlite")]
+        assert!(
+            !Cli::parse_from(["mjournal", "--sqlite-file-path", "entries.db"])
+                .shows_journal_selector()
+        );
+        #[cfg(feature = "file")]
+        assert!(
+            !Cli::parse_from(["mjournal", "--file-dir-path", "entries"]).shows_journal_selector()
+        );
+        #[cfg(feature = "vjournal")]
+        assert!(
+            !Cli::parse_from(["mjournal", "--vjournal-dir-path", "entries"])
+                .shows_journal_selector()
+        );
+    }
+
+    #[test]
+    fn storage_override_preflight_does_not_create_files_or_change_base_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing/storage");
+        let path_text = path.to_str().unwrap();
+        let base = Settings::default();
+        assert!(
+            Cli::parse_from(["mjournal"])
+                .storage_override_settings(&base)
+                .unwrap()
+                .is_none()
+        );
+        let overrides = [
+            #[cfg(feature = "json")]
+            ("--json-file-path", BackendType::Json),
+            #[cfg(feature = "sqlite")]
+            ("--sqlite-file-path", BackendType::Sqlite),
+            #[cfg(feature = "vjournal")]
+            ("--vjournal-dir-path", BackendType::Vjournal),
+            #[cfg(feature = "file")]
+            ("--file-dir-path", BackendType::File),
+        ];
+        for (flag, backend) in overrides {
+            let settings = Cli::parse_from(["mjournal", flag, path_text])
+                .storage_override_settings(&base)
+                .unwrap()
+                .unwrap();
+            assert_eq!(settings.backend_type, Some(backend));
+            match backend {
+                #[cfg(feature = "json")]
+                BackendType::Json => {
+                    assert_eq!(settings.json_backend.file_path.as_ref(), Some(&path))
+                }
+                #[cfg(feature = "sqlite")]
+                BackendType::Sqlite => {
+                    assert_eq!(settings.sqlite_backend.file_path.as_ref(), Some(&path))
+                }
+                #[cfg(feature = "vjournal")]
+                BackendType::Vjournal => {
+                    assert_eq!(settings.vjournal_backend.directory.as_ref(), Some(&path))
+                }
+                #[cfg(feature = "file")]
+                BackendType::File => {
+                    assert_eq!(settings.file_backend.directory.as_ref(), Some(&path))
+                }
+                #[allow(unreachable_patterns)]
+                _ => unreachable!(),
+            }
+            assert!(!path.parent().unwrap().exists());
+        }
+        assert_eq!(base.backend_type, None);
+    }
+
+    #[cfg(all(feature = "json", feature = "file"))]
+    #[test]
+    fn storage_preflight_matches_cli_backend_override_precedence() {
+        let cli = Cli::parse_from([
+            "mjournal",
+            "--json-file-path",
+            "json.json",
+            "--file-dir-path",
+            "files",
+            "--backend-type",
+            "json",
+        ]);
+        let settings = cli
+            .storage_override_settings(&Settings::default())
+            .unwrap()
+            .unwrap();
+        assert_eq!(settings.backend_type, Some(BackendType::Json));
+        assert_eq!(
+            settings.json_backend.file_path,
+            Some(std::path::absolute("json.json").unwrap())
+        );
+        assert_eq!(
+            settings.file_backend.directory,
+            Some(std::path::absolute("files").unwrap())
+        );
+    }
 
     #[cfg(unix)]
     #[test]

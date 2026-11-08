@@ -70,8 +70,17 @@ fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static
 }
 
 fn standard_text<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Line<'static> {
+    let quit_label = if app
+        .config_context
+        .as_ref()
+        .is_some_and(|context| context.return_to_journals)
+    {
+        "Journals"
+    } else {
+        "Exit"
+    };
     let mut parts = vec![
-        command_text("Exit", &ui.global_keymaps, UICommand::Quit),
+        command_text(quit_label, &ui.global_keymaps, UICommand::Quit),
         command_text(
             "Edit content",
             &ui.global_keymaps,

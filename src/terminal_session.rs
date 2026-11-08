@@ -5,7 +5,7 @@ use std::{
 
 use crossterm::{
     cursor::{MoveTo, Show},
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
     execute,
     style::{Attribute, SetAttribute},
     terminal::{
@@ -15,8 +15,40 @@ use crossterm::{
 };
 
 static SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+static BRACKETED_PASTE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 pub struct TerminalSession;
+
+pub struct BracketedPasteMode;
+
+impl BracketedPasteMode {
+    pub fn enter() -> io::Result<Self> {
+        BRACKETED_PASTE_ACTIVE.store(true, Ordering::Relaxed);
+        let mode = Self;
+        execute!(io::stdout(), EnableBracketedPaste)?;
+        Ok(mode)
+    }
+}
+
+impl Drop for BracketedPasteMode {
+    fn drop(&mut self) {
+        disable_bracketed_paste();
+    }
+}
+
+fn disable_bracketed_paste() {
+    if BRACKETED_PASTE_ACTIVE.swap(false, Ordering::Relaxed) {
+        let _ = execute!(io::stdout(), DisableBracketedPaste);
+    }
+}
+
+/// Clear a fullscreen viewport and invalidate its buffers without asking the
+/// terminal for the cursor position, which conflicts with Crossterm's event reader.
+pub fn clear_fullscreen<B: ratatui::backend::Backend>(
+    terminal: &mut ratatui::Terminal<B>,
+) -> Result<(), B::Error> {
+    terminal.resize(terminal.size()?.into())
+}
 
 impl TerminalSession {
     pub fn enter() -> io::Result<Self> {
@@ -40,6 +72,7 @@ pub fn restore_terminal() {
         return;
     }
 
+    disable_bracketed_paste();
     let mut stdout = io::stdout();
     let _ = execute!(stdout, DisableMouseCapture);
     if std::env::var("TERM").is_ok_and(|term| crate::console_backend::is_linux_console(&term)) {
@@ -154,5 +187,68 @@ mod tests {
             "terminal_session::tests::panic_cleanup_is_not_repeated_during_unwinding",
             "panic",
         );
+    }
+
+    #[test]
+    fn bracketed_paste_ends_before_journal_input_on_return_error_and_panic() {
+        const PROBE: &str = "MYNA_JOURNAL_TEST_BRACKETED_PASTE_PROBE";
+        const NEXT_INPUT: &str = "journal input resumes";
+        if let Ok(exit) = std::env::var(PROBE) {
+            crate::chain_panic_hook();
+            SESSION_ACTIVE.store(true, Ordering::Relaxed);
+            let _session = TerminalSession;
+            let result = std::panic::catch_unwind(|| -> io::Result<()> {
+                let _paste = BracketedPasteMode::enter()?;
+                match exit.as_str() {
+                    "error" => Err(io::Error::other("test selector error")),
+                    "panic" => panic!("test selector panic"),
+                    _ => Ok(()),
+                }
+            });
+            match exit.as_str() {
+                "error" => assert!(result.unwrap().is_err()),
+                "panic" => assert!(result.is_err()),
+                _ => assert!(result.unwrap().is_ok()),
+            }
+            println!("{NEXT_INPUT}");
+            return;
+        }
+
+        for exit in ["normal", "error", "panic"] {
+            for term in ["linux", "xterm-256color"] {
+                let capture = tempfile::NamedTempFile::new().unwrap();
+                let status = Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "terminal_session::tests::bracketed_paste_ends_before_journal_input_on_return_error_and_panic",
+                        "--nocapture",
+                    ])
+                    .env(PROBE, exit)
+                    .env("TERM", term)
+                    .stdout(Stdio::from(capture.as_file().try_clone().unwrap()))
+                    .stderr(Stdio::from(capture.as_file().try_clone().unwrap()))
+                    .status()
+                    .unwrap();
+                let output = fs::read_to_string(capture.path()).unwrap();
+                assert!(status.success(), "{output}");
+                assert_eq!(output.matches("\x1b[?2004h").count(), 1, "{output:?}");
+                assert_eq!(output.matches("\x1b[?2004l").count(), 1, "{output:?}");
+                assert!(
+                    output.find("\x1b[?2004h").unwrap() < output.find("\x1b[?2004l").unwrap(),
+                    "{output:?}"
+                );
+                assert!(
+                    output.find("\x1b[?2004l").unwrap() < output.find(NEXT_INPUT).unwrap(),
+                    "{output:?}"
+                );
+                if exit == "panic" {
+                    assert!(
+                        output.find("\x1b[?2004l").unwrap()
+                            < output.find("test selector panic").unwrap(),
+                        "{output:?}"
+                    );
+                }
+            }
+        }
     }
 }

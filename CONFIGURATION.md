@@ -90,6 +90,57 @@ changes apply immediately after saving. Prompts work entirely offline, are not
 inserted into the note body, and are included in structured transfers and backups.
 Protected entries encrypt mood and the saved prompt; both are hidden while locked.
 
+## Separate journals
+
+Normal startup opens **Select Journal** beside the artwork. **Personal** uses your
+existing configuration and notes without moving them. Use Up/Down and **Enter**
+to open a journal, **n** to create one, **d** to delete an added journal, and **q**
+or **Esc** to exit. Inside a journal, **q** in normal mode closes it and returns
+to the selector, with that journal highlighted. Unsaved changes still offer
+Save, Discard and Cancel; unresolved encrypted drafts must be saved or discarded
+before leaving. Protected notes require unlocking again when reopened. The
+entries pane shows the open journal's name. Smaller terminals show a compact
+wordmark when the full artwork does not fit.
+
+New journals inherit Personal's current preferences, including `auto_title`,
+but receive separate backend files, exports and app state. Config edits apply to
+the open journal. Theme files are shared by the collection; each journal can
+select a different theme. Resetting a storage setting to its default keeps that
+path inside the selected journal.
+
+The collection is stored in `journals/` beside the original `config.toml`. Each
+added journal has an internal identifier and a folder containing `journal.toml`
+(its name and collection), `config.toml`, `data/`, `state/` and `exports/`. Names
+do not become filesystem paths. When using a custom configuration file with a
+different filename, the collection has a separate `journals-…` directory. Config's
+Context tab shows the collection path after selecting a journal.
+
+Deletion asks for confirmation and moves the entire added journal folder to
+`journals/Deleted Journals/`; it does not erase its files. Personal cannot be
+deleted through this selector. A journal open in another window, or configured
+to use storage outside its managed folder, cannot be deleted here. To recover a
+deleted journal, close MynaJournal and move its identifier folder from
+`Deleted Journals/` back into the collection directory, keeping its name and
+contents. If you have since created another journal with the same display name,
+archive that one first. Reopen the app to see the recovered journal.
+
+Explicit backend/path flags and command-line operations retain their existing
+destinations and bypass the selector; quitting these direct sessions closes the
+app. To target an added journal from
+the command line, pass its profile directory to `--config`, for example:
+
+```sh
+mjournal --config "/path/to/journals/j_IDENTIFIER" backup create /path/to/backup
+```
+
+This backs up the selected profile, not the whole collection. Opening a managed
+profile directly with `--config` skips the initial selector; closing that journal
+returns to its collection's selector. Archives and backups
+preserve existing note encryption; creating a separate journal does not encrypt
+its unprotected entries.
+
+## Settings reference
+
 Viewing settings does not create files. Saving preserves unrelated configuration,
 comments, and backend sections, including those unavailable in the current build.
 CLI backend/path overrides are not copied into saved preferences. If a file changes

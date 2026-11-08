@@ -47,6 +47,9 @@ mod filter_popup;
 mod footer;
 mod fuzz_find;
 mod help_popup;
+#[cfg(test)]
+mod journal_exit_tests;
+pub mod journal_selector;
 mod msg_box;
 mod prompt;
 mod security_handlers;
