@@ -43,6 +43,12 @@ pub struct ThemeDocument {
 
 impl ThemeStore {
     pub fn new(custom_config_dir: Option<&PathBuf>) -> Result<Self> {
+        if let Some(path) = custom_config_dir {
+            let config_path = crate::settings::Settings::file_path(Some(path.clone()))?;
+            if let Some((store, _)) = crate::journals::journal_for_config(&config_path)? {
+                return Self::from_directory(store.themes_path().to_path_buf());
+            }
+        }
         let config_dir = match custom_config_dir {
             Some(path) if path.is_dir() => path.clone(),
             Some(_) => {

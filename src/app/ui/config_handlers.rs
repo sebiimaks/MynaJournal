@@ -39,8 +39,8 @@ impl UIComponents<'_> {
         match action {
             ConfigAction::SaveSettings => {
                 let document = popup.settings_document_mut();
-                let saved: Settings =
-                    toml::from_str(&document.text()).context("Invalid application settings")?;
+                let saved = Settings::from_config_text(&document.text(), document.path())
+                    .context("Invalid application settings")?;
                 document.save()?;
                 app.apply_live_settings(saved);
                 self.editor.set_word_wrap(app.settings.editor_word_wrap);

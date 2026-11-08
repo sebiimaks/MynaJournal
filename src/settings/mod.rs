@@ -35,6 +35,8 @@ pub use security::SecuritySettings;
 
 #[derive(Debug, Clone)]
 pub struct ConfigContext {
+    pub journal_name: Option<String>,
+    pub return_to_journals: bool,
     pub settings_path: PathBuf,
     pub themes_path: PathBuf,
     pub active_theme_id: Option<String>,
@@ -207,16 +209,20 @@ const fn default_colored_tags() -> bool {
 impl Settings {
     pub async fn new(custom_config_dir: Option<PathBuf>) -> anyhow::Result<Self> {
         let config_file = Self::file_path(custom_config_dir)?;
-        let settings = if config_file.exists() {
-            let file_content = tokio::fs::read_to_string(config_file)
+        let text = if config_file.exists() {
+            tokio::fs::read_to_string(&config_file)
                 .await
-                .map_err(|err| anyhow!("Failed to load configuration file. Error infos: {err}"))?;
-            toml::from_str(file_content.as_str())
-                .map_err(|err| anyhow!("Failed to read configuration file. Error infos: {err}"))?
+                .map_err(|err| anyhow!("Failed to load configuration file. Error infos: {err}"))?
         } else {
-            Settings::default()
+            String::new()
         };
+        Self::from_config_text(&text, &config_file)
+    }
 
+    pub fn from_config_text(text: &str, path: &Path) -> anyhow::Result<Self> {
+        let mut settings = toml::from_str(text)
+            .map_err(|err| anyhow!("Failed to read configuration file. Error infos: {err}"))?;
+        crate::journals::apply_profile_defaults(&mut settings, path)?;
         Ok(settings)
     }
 

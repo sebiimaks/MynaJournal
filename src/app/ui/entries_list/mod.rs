@@ -32,6 +32,7 @@ const MAX_TAG_LINES: usize = 3;
 #[derive(Debug)]
 pub struct EntriesList {
     pub state: ListState,
+    journal_name: Option<String>,
     is_active: bool,
     pub multi_select_mode: bool,
 }
@@ -40,6 +41,7 @@ impl EntriesList {
     pub fn new() -> Self {
         Self {
             state: ListState::default(),
+            journal_name: None,
             is_active: false,
             multi_select_mode: false,
         }
@@ -292,6 +294,10 @@ impl EntriesList {
             (false, true) => "Entries - Filtered",
             (false, false) => "Entries",
         };
+        let title = match &self.journal_name {
+            Some(name) => format!("{name} — {title}"),
+            None => title.to_owned(),
+        };
 
         let border_style = match (self.is_active, self.multi_select_mode) {
             (_, true) => styles.journals_list.block_multi_select,
@@ -320,6 +326,10 @@ impl EntriesList {
         list_keymaps: &[Keymap],
         styles: &Styles,
     ) {
+        self.journal_name = app
+            .config_context
+            .as_ref()
+            .and_then(|context| context.journal_name.clone());
         if app.get_active_entries().next().is_none() {
             self.render_place_holder(frame, area, list_keymaps, app.filter.is_some(), styles);
         } else {
