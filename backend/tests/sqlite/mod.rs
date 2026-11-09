@@ -2,6 +2,24 @@ use backend::*;
 use chrono::{TimeZone, Utc};
 
 #[tokio::test]
+async fn sqlite_runtime_includes_the_wal_page_initialization_security_fix() {
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let version: String = sqlx::query_scalar("SELECT sqlite_version()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let components: Vec<u32> = version
+        .split('.')
+        .map(|component| component.parse().unwrap())
+        .collect();
+    assert!(
+        components.as_slice() >= [3, 54, 0].as_slice(),
+        "SQLite {version} predates the RUSTSEC-2026-0459 fix"
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn exhausted_entry_ids_return_an_error_without_committing_a_new_entry() {
     let mut provider = SqliteDataProvide::create("sqlite::memory:").await.unwrap();
     let existing = Entry::from_draft(

@@ -73,6 +73,10 @@ arboard = { version = "3.6", default-features = false, features = ["wayland-data
 age = { version = "0.12.1", default-features = false, features = ["armor"] }
 zeroize = "1.8"
 
+[patch.crates-io]
+# Keep SQLx 0.8's MSRV while using the patched SQLite runtime; see vendor/sqlx-sqlite/MYNA-PATCH.md.
+sqlx-sqlite = { path = "vendor/sqlx-sqlite" }
+
 [features]
 default = ["json", "sqlite", "vjournal", "file"]
 json =[]

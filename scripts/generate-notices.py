@@ -76,8 +76,56 @@ def source_description(source):
             f" :: {source['path']}")
 
 
+def vendored_tree_checksum(directory):
+    digest = hashlib.sha256()
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("Vendored source cannot contain symbolic links")
+        if path.is_file():
+            digest.update(path.relative_to(directory).as_posix().encode("utf-8") + b"\0")
+            digest.update(sha256(path.read_bytes()).encode("ascii") + b"\n")
+    return digest.hexdigest()
+
+
+def vendored_snapshot(root):
+    snapshot = json.loads((root / "licenses/vendor.json").read_text())
+    if snapshot.get("schema") != 1:
+        raise ValueError("Unsupported vendored notice snapshot schema")
+    manifest = tomllib.loads((root / "Cargo.toml").read_text())
+    application = manifest["package"]
+    lock = tomllib.loads((root / "Cargo.lock").read_text())
+    local = {(p["name"], p["version"]) for p in lock["package"] if not p.get("source")}
+    local.discard((application["name"], application["version"]))
+    packages = snapshot["packages"]
+    reviewed = {(p["name"], p["version"]) for p in packages}
+    if reviewed != local or len(reviewed) != len(packages):
+        raise ValueError("Cargo.lock differs from the reviewed vendored packages")
+    patches = manifest.get("patch", {}).get("crates-io", {})
+    for package in packages:
+        directory = (root / package["path"]).resolve()
+        if not directory.is_relative_to((root / "vendor").resolve()):
+            raise ValueError("Vendored package path escapes vendor")
+        if patches.get(package["name"], {}).get("path") != package["path"]:
+            raise ValueError("Vendored package patch path differs from the reviewed snapshot")
+        source = tomllib.loads((directory / "Cargo.toml").read_text())["package"]
+        if any(source[key] != package[key] for key in ("name", "version", "license")):
+            raise ValueError("Vendored package metadata differs from the reviewed snapshot")
+        if not package.get("selected_license") or not package.get("notices"):
+            raise ValueError("Incomplete vendored package notices")
+        for record in package["notices"]:
+            path = (directory / record["source"]["path"]).resolve()
+            if not path.is_relative_to(directory):
+                raise ValueError("Vendored notice path escapes its package")
+            if sha256(path.read_bytes()) != record["sha256"]:
+                raise ValueError(f"Vendored notice hash mismatch: {path}")
+        if vendored_tree_checksum(directory) != package["checksum"]:
+            raise ValueError(f"Vendored source checksum mismatch: {directory}")
+    return packages
+
+
 def generate(root):
     snapshot = registry_snapshot(root)
+    vendored = vendored_snapshot(root)
     texts = json.loads((root / "licenses/texts.json").read_text())
     for digest, text in texts.items():
         if sha256(text.encode("utf-8")) != digest:
@@ -112,11 +160,17 @@ def generate(root):
         "template placeholders are not assertions of additional copyright.\n",
         SEPARATOR + "\nDEPENDENCY INVENTORY\n" + SEPARATOR,
     ]
-    for package in snapshot["packages"]:
+    for package in snapshot["packages"] + vendored:
         identity = f"{package['name']} {package['version']}"
         output.append(f"\n{identity}\nDeclared licence: {package['license']}\n"
-                      f"Selected licence: {package['selected_license']}\n"
-                      f"Crate SHA-256: {package['checksum']}")
+                      f"Selected licence: {package['selected_license']}")
+        if package.get("path"):
+            output.append(f"Vendored source: {package['path']}\n"
+                          f"Vendored source SHA-256: {package['checksum']}\n"
+                          f"Original crate SHA-256: {package['upstream_checksum']}\n"
+                          f"Local changes: {package['changes']}")
+        else:
+            output.append(f"Crate SHA-256: {package['checksum']}")
         if package.get("repository"):
             output.append("Repository: " + package["repository"])
         if package.get("authors"):

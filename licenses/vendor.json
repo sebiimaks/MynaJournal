@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "reviewed": "2026-11-09",
+  "packages": [
+    {
+      "name": "sqlx-sqlite",
+      "version": "0.8.6",
+      "license": "MIT OR Apache-2.0",
+      "selected_license": "MIT",
+      "repository": "https://github.com/launchbadge/sqlx",
+      "authors": [
+        "Ryan Leckey <leckey.ryan@gmail.com>",
+        "Austin Bonander <austin.bonander@gmail.com>",
+        "Chloe Ross <orangesnowfox@gmail.com>",
+        "Daniel Akhterov <akhterovd@gmail.com>"
+      ],
+      "notices": [
+        {
+          "label": "LICENSE-APACHE",
+          "sha256": "9be39331309bc958aab10457c1a8459c038ae95662f26dfcf6c9088e2b3d653f",
+          "source": {
+            "crate": "sqlx-sqlite",
+            "version": "0.8.6",
+            "path": "LICENSE-APACHE"
+          }
+        },
+        {
+          "label": "LICENSE-MIT",
+          "sha256": "44b1600a26039a75b28e1ce154a5dd163b16549f50e34fa577d9efe9c1bae179",
+          "source": {
+            "crate": "sqlx-sqlite",
+            "version": "0.8.6",
+            "path": "LICENSE-MIT"
+          }
+        }
+      ],
+      "vcs_commit": "bab1b022bd56a64f9a08b46b36b97c5cff19d77e",
+      "upstream_checksum": "c2d12fe70b2c1b4401038055f90f151b78208de1f9f89a7dbfd41587a10c3eea",
+      "path": "vendor/sqlx-sqlite",
+      "checksum": "c49a18f641f8f75bcfd31e6df614380e6eef1c95eb3f9c9f9757b118c8f96457",
+      "changes": "The Cargo.toml dependency is updated to libsqlite3-sys 0.39.1 with column_metadata enabled; driver Rust source and upstream licence files are unchanged. See vendor/sqlx-sqlite/MYNA-PATCH.md."
+    }
+  ]
+}

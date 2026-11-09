@@ -6,8 +6,8 @@ source of the MPL-2.0 dependency `option-ext` 0.2.0. Ship that file together wit
 the application's `LICENSE` and `ATTRIBUTION.md`, including with workflow binary
 artifacts. Dependencies retain their own licences.
 
-The snapshot reviewed on 28 October 2026 covers all 501 external packages in the
-current `Cargo.lock`,
+The snapshot, updated on 9 November 2026, covers all registry and vendored
+dependencies in the current `Cargo.lock`,
 including build dependencies and other target platforms. It is intentionally a
 superset of any individual Mac or Linux binary. Root licence files are not
 sufficient for every package: the snapshot also retains nested notices, including
@@ -28,6 +28,10 @@ successor `ratatui-textarea` for the application's adapted clipboard mappings.
   files are stored once. Explicitly labelled source-header excerpts preserve the
   relevant copyright/licence statements; other upstream files are complete. A
   separately labelled maintainer explanation identifies the CLDR transformation.
+- `vendor.json` records local dependency paths, the original published archive
+  checksum, the reviewed vendored source checksum, local changes and upstream
+  notices. The generator checks these packages against Cargo.lock and the root
+  patch declarations, then verifies their source tree and licence files.
 - `runtime/manifest.json` and its adjacent files cover the reviewed Rust, Zig,
   musl and unwind runtimes. See `scripts/update-runtime-notices.py` for the
   runtime snapshot procedure. `runtime-supplemental.json` records additional
@@ -45,6 +49,10 @@ missing licence texts, altered notice text, missing MPL source, and changed nati
 runtime notices. The original snapshot was checked against each cached `.crate`
 archive and its checksum in `Cargo.lock`. Unchanged records retain that review;
 all 91 added or updated package archives were checked in the 28 October update.
+The 9 November update reviewed `libsqlite3-sys` 0.39.1 and its SQLite 3.54.1
+public-domain notice. It also retains the unchanged SQLx 0.8.6 driver source and
+licences in `vendor/sqlx-sqlite`, with a dependency-only compatibility patch
+described in that directory's `MYNA-PATCH.md`.
 Declared licence metadata
 is preserved verbatim. Selected licences additionally account for bundled code
 and data; see `REVIEW.md` for the `finl_unicode` metadata mismatch and provenance
@@ -72,6 +80,12 @@ all bundled components or satisfy notice requirements.
 5. Review native runtime updates separately, then run
    `python3 scripts/generate-notices.py` and both checks above. Review the diff
    before distributing a new build.
+
+For local patched dependencies, update `vendor.json` after reviewing the original
+archive and the patch. Its source checksum hashes each sorted relative UTF-8 file
+name followed by NUL, the hexadecimal SHA-256 of its bytes, and a newline, as
+implemented by `vendored_tree_checksum` in the generator. Every vendored file is
+included; symbolic links are rejected. Retain upstream licence files unchanged.
 
 `option-ext`'s entire source archive is represented as separate files in the
 source appendix, excluding only Cargo's local `.cargo-ok` cache marker. Its

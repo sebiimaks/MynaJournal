@@ -2255,6 +2255,75 @@ mod tests {
             .unwrap();
         assert_eq!(p.load_all_entries().await.unwrap().len(), 1);
     }
+    #[test]
+    fn journal_keys_reject_non_passphrase_envelopes() {
+        let key = age::x25519::Identity::generate();
+        let header = Header {
+            format: HEADER_FORMAT.into(),
+            version: 1,
+            identity: key.to_public().to_string(),
+            wrapped_key: age::encrypt_and_armor(
+                &key.to_public(),
+                key.to_string().expose_secret().as_bytes(),
+            )
+            .unwrap(),
+        };
+        let error = unwrap_key(&header, &password()).err().unwrap();
+        assert_eq!(error.to_string(), "Invalid journal key protection");
+    }
+
+    #[test]
+    fn journal_records_reject_passphrase_and_non_x25519_envelopes() {
+        let key = age::x25519::Identity::generate();
+        let header = Header {
+            format: HEADER_FORMAT.into(),
+            version: 1,
+            identity: key.to_public().to_string(),
+            wrapped_key: String::new(),
+        };
+        let record = JournalRecord {
+            entry: Entry::from_draft(7, draft()),
+            native_metadata: None,
+        };
+        let encrypted = encrypt_record(&header, &key, &record).unwrap();
+        let mut passphrase_entry = encrypted.clone();
+        let mut recipient = age::scrypt::Recipient::new(password());
+        recipient.set_work_factor(1);
+        passphrase_entry.protection.as_mut().unwrap().ciphertext =
+            age::encrypt_and_armor(&recipient, b"{}").unwrap();
+        assert_eq!(
+            decrypt_record(&header, &key, passphrase_entry)
+                .unwrap_err()
+                .to_string(),
+            "Invalid journal entry key type"
+        );
+
+        let mut other_recipient_entry = encrypted;
+        let envelope = other_recipient_entry.protection.as_mut().unwrap();
+        let mut binary = Vec::new();
+        age::armor::ArmoredReader::new(envelope.ciphertext.as_bytes())
+            .read_to_end(&mut binary)
+            .unwrap();
+        let offset = binary
+            .windows(b"-> X25519 ".len())
+            .position(|window| window == b"-> X25519 ")
+            .unwrap();
+        binary.splice(offset..offset + b"-> X25519 ".len(), *b"-> p256tag ");
+        let mut armored = Vec::new();
+        let mut writer =
+            age::armor::ArmoredWriter::wrap_output(&mut armored, age::armor::Format::AsciiArmor)
+                .unwrap();
+        writer.write_all(&binary).unwrap();
+        writer.finish().unwrap();
+        envelope.ciphertext = String::from_utf8(armored).unwrap();
+        assert_eq!(
+            decrypt_record(&header, &key, other_recipient_entry)
+                .unwrap_err()
+                .to_string(),
+            "Journal entry is damaged or belongs to another journal"
+        );
+    }
+
     #[tokio::test]
     async fn journal_records_reject_tampering_and_cross_journal_keys() {
         let key = age::x25519::Identity::generate();

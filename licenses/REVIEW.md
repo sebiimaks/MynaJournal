@@ -163,6 +163,28 @@ as part of the notice update.
   notices even with invalid configuration, without creating settings, logs,
   themes or journal files.
 
+## SQLite security update — 9 November 2026
+
+The registry inventory now contains 500 packages, plus the explicitly recorded
+vendored `sqlx-sqlite` 0.8.6 driver. `libsqlite3-sys` 0.39.1's published archive
+matches its Cargo.lock checksum. Its original rusqlite MIT notice and the
+SQLite 3.54.1 amalgamation's public-domain notice are retained. The enabled
+bundled SQLite feature does not compile SQLCipher or enable its optional source
+dependency. Rust and Zig runtime notices are unchanged.
+
+The SQLx driver copy was compared with the checksum-verified original 0.8.6
+archive. All copied Rust sources, licence files and provenance metadata are
+unchanged. Its normalized dependency declaration selects the patched SQLite
+runtime and explicitly retains column-metadata support; `MYNA-PATCH.md` records
+those changes. The original MIT/Apache-2.0 notices remain in the distribution
+bundle even though Cargo now records the driver as a local dependency.
+
+The generator checks local dependency identities and patch paths, vendored
+source-tree checksums, and original licence-file hashes. All eleven
+notice-integrity tests pass, including regressions for an unreviewed local
+dependency, altered or missing vendored notices, changed vendor source and a
+changed patch path.
+
 ## Initial release validation — 27 October 2026
 
 - 551 Rust tests and seven notice-integrity tests passed.
