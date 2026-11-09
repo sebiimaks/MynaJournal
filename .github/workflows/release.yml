@@ -19,7 +19,7 @@ jobs:
   macos:
     if: github.repository == 'sebiimaks/MynaJournal'
     name: Build macOS Apple Silicon archive
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always

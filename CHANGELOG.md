@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-## 0.23.0 - 2026-11-09
+## 0.23.1 - 2026-11-09
 
 - Add a startup journal selector beside the MynaJournal artwork, with Personal as the existing default journal and controls to create and delete separate journals
 - Give additional journals independent backend files, settings, exports and app state while sharing the collection's themes
@@ -14,15 +14,19 @@ All notable changes to this project are documented in this file.
 - Redraw fullscreen views without cursor queries when opening a journal, locking notes or returning from an external editor
 - Release journal locks immediately when closing a session or completing a catalog update, even if a subprocess temporarily retains a file handle
 - Move Help to the end of the main screen controls
+- Build Mac release archives on the supported macOS 15 runner after GitHub retired macOS 14
+
+This is the first published release with separate journals. The 0.23.0 tag was
+created, but its release was not published because the Mac runner was retired.
 
 Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
 `brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
-your architecture, for example `sudo apt install ./myna-journal_0.23.0-1_amd64.deb`.
+your architecture, for example `sudo apt install ./myna-journal_0.23.1-1_amd64.deb`.
 Existing journals and settings appear under **Personal** without being moved.
 Press **q** inside a journal to return to **Select Journal**, then **q** again
 to exit the app. Added journals use separate storage and settings; deleting one
 moves it to **Deleted Journals** for recovery. See
-[journal storage and recovery](https://github.com/sebiimaks/MynaJournal/blob/v0.23.0/CONFIGURATION.md#separate-journals).
+[journal storage and recovery](https://github.com/sebiimaks/MynaJournal/blob/v0.23.1/CONFIGURATION.md#separate-journals).
 
 ## 0.22.1 - 2026-11-02
 
