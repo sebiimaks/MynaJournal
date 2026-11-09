@@ -237,7 +237,9 @@ impl Cli {
             _ => {}
         }
 
-        setup_logging(self.verbose, self.log_file.take())?;
+        let log_path = self.log_file.take().map_or_else(default_log_path, Ok)?;
+        crate::logging::validate_destination(&log_path, settings, self.config_path.clone())?;
+        setup_logging(self.verbose, Some(log_path))?;
 
         if let Some(cmd) = self.command.take() {
             cmd.exec(settings, self.config_path.as_ref())

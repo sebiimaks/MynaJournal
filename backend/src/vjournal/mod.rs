@@ -2,6 +2,41 @@
 
 mod calendar;
 
+pub(crate) fn validate_journal_conversion_file(
+    path: &std::path::Path,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    anyhow::ensure!(
+        path.extension().is_some_and(|e| e == "ics"),
+        "Journal conversion cannot include unrelated files"
+    );
+    let calendar = calendar::parse_vcalendar(&std::fs::read_to_string(path)?)?;
+    anyhow::ensure!(
+        !calendar.subcomponents.is_empty()
+            && calendar.subcomponents.iter().all(calendar::is_journal),
+        "Journal conversion cannot include unrelated calendar components"
+    );
+    let mut masters = std::collections::HashSet::new();
+    for component in &calendar.subcomponents {
+        let uid = calendar::get_uid(component)
+            .ok_or_else(|| anyhow::anyhow!("Journal component has no UID"))?;
+        if component.get_all("RECURRENCE-ID").is_empty() {
+            anyhow::ensure!(
+                masters.insert(uid),
+                "Journal has duplicate recurrence masters"
+            );
+            calendar::component_to_entry(component, 0)?;
+        }
+    }
+    anyhow::ensure!(!masters.is_empty(), "Journal has no recurrence master");
+    for component in &calendar.subcomponents {
+        anyhow::ensure!(
+            calendar::get_uid(component).is_some_and(|uid| masters.contains(&uid)),
+            "Journal has an orphan recurrence component"
+        );
+    }
+    Ok(masters)
+}
+
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata, OpenOptions, Permissions};
 use std::io::{Read, Write};
@@ -62,6 +97,49 @@ struct VjournalState {
 }
 
 impl VjournalDataProvide {
+    pub(crate) async fn restore_migration_metadata(
+        &mut self,
+        entry: Entry,
+        metadata: &str,
+    ) -> anyhow::Result<()> {
+        let native: serde_json::Value = serde_json::from_str(metadata)?;
+        if native["format"] != "vjournal-v1" {
+            return Ok(());
+        }
+        let mut calendar = parse_vcalendar(
+            native["document"]
+                .as_str()
+                .context("Invalid native calendar metadata")?,
+        )?;
+        let uid = calendar
+            .subcomponents
+            .first()
+            .and_then(get_uid)
+            .context("Missing native journal UID")?;
+        ensure!(
+            calendar
+                .subcomponents
+                .iter()
+                .all(|component| component.name == "VJOURNAL"
+                    && get_uid(component).as_deref() == Some(&uid)),
+            "Native calendar contains unrelated components"
+        );
+        let draft = EntryDraft::from_entry(entry.clone());
+        for component in &mut calendar.subcomponents {
+            if component.get_all("RECURRENCE-ID").is_empty() {
+                *component = restore_entry_to_component(&draft, &uid, component.clone())?;
+            }
+        }
+        let path = self
+            .state
+            .id_to_location
+            .get(&entry.id)
+            .context("Entry disappeared during conversion")?
+            .file_path
+            .clone();
+        self.save_calendar(&path, &calendar, true)?;
+        Ok(())
+    }
     /// Creates a provider backed by `directory`.
     ///
     /// The directory is created on the first write if it does not exist.
@@ -271,6 +349,7 @@ impl DataProvider for VjournalDataProvide {
         let vcal = self.current_calendar(&loc.file_path)?;
         validate_family_uids(&vcal)?;
         self.check_family_location(&loc.uid, &loc.file_path).await?;
+        let mut snapshot = vcal.clone();
         let family: Vec<_> = vcal
             .subcomponents
             .into_iter()
@@ -288,7 +367,6 @@ impl DataProvider for VjournalDataProvide {
                 == 1,
             "Cannot protect a journal with duplicate or missing recurrence masters"
         );
-        let mut snapshot = build_vcalendar(family[0].clone());
         snapshot.subcomponents = family;
         Ok(Some(
             serde_json::json!({"format": "vjournal-v1", "document": write_component(&snapshot)})
@@ -387,6 +465,7 @@ impl DataProvider for VjournalDataProvide {
                     *component = restore_entry_to_component(&draft, &uid, component.clone())?;
                 }
             }
+            vcal.props = original.props;
             vcal.subcomponents
                 .retain(|c| !is_journal(c) || get_uid(c).as_deref() != Some(&uid));
             vcal.subcomponents.extend(original.subcomponents);

@@ -25,6 +25,55 @@ pub struct SqliteDataProvide {
 }
 
 impl SqliteDataProvide {
+    pub(crate) async fn close(self) {
+        self.pool.close().await;
+    }
+    pub(crate) async fn validate_journal_conversion(&self) -> anyhow::Result<()> {
+        let tables: Vec<String> = sqlx::query_scalar("SELECT name FROM sqlite_schema WHERE type IN ('table','view') AND name NOT GLOB 'sqlite_*'").fetch_all(&self.pool).await?;
+        ensure!(
+            tables
+                .iter()
+                .all(|name| matches!(name.as_str(), "entries" | "tags" | "_sqlx_migrations")),
+            "Journal conversion cannot discard unrelated SQLite tables or views"
+        );
+        let objects:Vec<String>=sqlx::query_scalar("SELECT name FROM sqlite_schema WHERE type IN ('index','trigger') AND name NOT GLOB 'sqlite_*'").fetch_all(&self.pool).await?;
+        ensure!(
+            objects.iter().all(|name| matches!(
+                name.as_str(),
+                "protected_entry_insert"
+                    | "protected_entry_update"
+                    | "protected_entry_tag_insert"
+                    | "protected_entry_tag_update"
+            )),
+            "Journal conversion cannot discard custom SQLite indexes or triggers"
+        );
+        let entries: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_xinfo('entries')")
+                .fetch_all(&self.pool)
+                .await?;
+        ensure!(
+            entries.iter().all(|name| matches!(
+                name.as_str(),
+                "id" | "title"
+                    | "date"
+                    | "content"
+                    | "priority"
+                    | "protection"
+                    | "mood"
+                    | "journal_prompt"
+            )),
+            "Journal conversion cannot discard unknown SQLite entry columns"
+        );
+        let tags: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_table_xinfo('tags')")
+            .fetch_all(&self.pool)
+            .await?;
+        ensure!(
+            tags.iter()
+                .all(|name| matches!(name.as_str(), "entry_id" | "tag")),
+            "Journal conversion cannot discard unknown SQLite tag columns"
+        );
+        Ok(())
+    }
     pub async fn from_file(file_path: PathBuf) -> anyhow::Result<Self> {
         let file_full_path = file_path
             .absolutize()

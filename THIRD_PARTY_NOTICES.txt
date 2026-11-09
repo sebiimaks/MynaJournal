@@ -1903,15 +1903,15 @@ Published authors: 4lDO2 <4lDO2@protonmail.com>
 Published source revision: b2e7c8ba1db3e0effe93fd1ad025879e970e69d5
 Notice [8d073a6a80d1ef2d2fc2bc6c809aa221161bf1906c76d4aeef55fd2b999d9413]: LICENSE
 
-libsqlite3-sys 0.30.1
+libsqlite3-sys 0.39.1
 Declared licence: MIT
 Selected licence: MIT
-Crate SHA-256: 2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149
+Crate SHA-256: 14a5f01b87b92705d07b433c06f96cbc764637d81a0bffb5734ce17cf0f9a2b3
 Repository: https://github.com/rusqlite/rusqlite
 Published authors: The rusqlite developers
-Published source revision: 499cc7bb986e04cc66e6ed762522f7ea449178d1
-Notice [f59ba65550f2a5adff98ec6478d783402c8e0a3eb515025c0b3438f3d30dc39e]: LICENSE
-Notice [3a2a3b5bec4a761babbe66d25b33db25987c5851081e1c65da3b2a0c7dda396a]: sqlite3/sqlite3.c (public-domain notice, lines 1-45)
+Published source revision: fb7c711f4e988db149f43cac68f7865b25d0b10e
+Notice [c10c1f27337546471e5f7e4e97fdd398b35b9d4e126115dcd22de8d8e65abf6f]: LICENSE
+Notice [5010ae85f3726ed479ae9d273269e4a0eef0a4a9d992ce364edf032fa5cd64c4]: sqlite3/sqlite3.c (public-domain notice, lines 1-45)
 
 libz-sys 1.1.31
 Declared licence: MIT OR Apache-2.0
@@ -3487,16 +3487,6 @@ Published source revision: bab1b022bd56a64f9a08b46b36b97c5cff19d77e
 Notice [9be39331309bc958aab10457c1a8459c038ae95662f26dfcf6c9088e2b3d653f]: LICENSE-APACHE
 Notice [44b1600a26039a75b28e1ce154a5dd163b16549f50e34fa577d9efe9c1bae179]: LICENSE-MIT
 
-sqlx-sqlite 0.8.6
-Declared licence: MIT OR Apache-2.0
-Selected licence: MIT
-Crate SHA-256: c2d12fe70b2c1b4401038055f90f151b78208de1f9f89a7dbfd41587a10c3eea
-Repository: https://github.com/launchbadge/sqlx
-Published authors: Ryan Leckey <leckey.ryan@gmail.com>; Austin Bonander <austin.bonander@gmail.com>; Chloe Ross <orangesnowfox@gmail.com>; Daniel Akhterov <akhterovd@gmail.com>
-Published source revision: bab1b022bd56a64f9a08b46b36b97c5cff19d77e
-Notice [9be39331309bc958aab10457c1a8459c038ae95662f26dfcf6c9088e2b3d653f]: LICENSE-APACHE
-Notice [44b1600a26039a75b28e1ce154a5dd163b16549f50e34fa577d9efe9c1bae179]: LICENSE-MIT
-
 stable_deref_trait 1.2.1
 Declared licence: MIT OR Apache-2.0
 Selected licence: MIT
@@ -4926,6 +4916,19 @@ Repository: https://github.com/dtolnay/zmij
 Published authors: David Tolnay <dtolnay@gmail.com>
 Published source revision: 7b7cc48b58028e8af7be87e94c0c1c8936f1a57c
 Notice [23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3]: LICENSE-MIT
+
+sqlx-sqlite 0.8.6
+Declared licence: MIT OR Apache-2.0
+Selected licence: MIT
+Vendored source: vendor/sqlx-sqlite
+Vendored source SHA-256: c49a18f641f8f75bcfd31e6df614380e6eef1c95eb3f9c9f9757b118c8f96457
+Original crate SHA-256: c2d12fe70b2c1b4401038055f90f151b78208de1f9f89a7dbfd41587a10c3eea
+Local changes: The Cargo.toml dependency is updated to libsqlite3-sys 0.39.1 with column_metadata enabled; driver Rust source and upstream licence files are unchanged. See vendor/sqlx-sqlite/MYNA-PATCH.md.
+Repository: https://github.com/launchbadge/sqlx
+Published authors: Ryan Leckey <leckey.ryan@gmail.com>; Austin Bonander <austin.bonander@gmail.com>; Chloe Ross <orangesnowfox@gmail.com>; Daniel Akhterov <akhterovd@gmail.com>
+Published source revision: bab1b022bd56a64f9a08b46b36b97c5cff19d77e
+Notice [9be39331309bc958aab10457c1a8459c038ae95662f26dfcf6c9088e2b3d653f]: LICENSE-APACHE
+Notice [44b1600a26039a75b28e1ce154a5dd163b16549f50e34fa577d9efe9c1bae179]: LICENSE-MIT
 
 ==============================================================================
 FULL LICENCE AND NOTICE TEXTS
@@ -18554,11 +18557,11 @@ SOFTWARE.
 
 
 ==============================================================================
-NOTICE [f59ba65550f2a5adff98ec6478d783402c8e0a3eb515025c0b3438f3d30dc39e]
-libsqlite3-sys 0.30.1: LICENSE
-Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.30.1/download :: LICENSE
+NOTICE [c10c1f27337546471e5f7e4e97fdd398b35b9d4e126115dcd22de8d8e65abf6f]
+libsqlite3-sys 0.39.1: LICENSE
+Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.39.1/download :: LICENSE
 ==============================================================================
-Copyright (c) 2014-2021 The rusqlite developers
+Copyright (c) 2014 The rusqlite developers
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -18580,13 +18583,13 @@ THE SOFTWARE.
 
 
 ==============================================================================
-NOTICE [3a2a3b5bec4a761babbe66d25b33db25987c5851081e1c65da3b2a0c7dda396a]
-libsqlite3-sys 0.30.1: sqlite3/sqlite3.c (public-domain notice, lines 1-45)
-Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.30.1/download :: sqlite3/sqlite3.c
+NOTICE [5010ae85f3726ed479ae9d273269e4a0eef0a4a9d992ce364edf032fa5cd64c4]
+libsqlite3-sys 0.39.1: sqlite3/sqlite3.c (public-domain notice, lines 1-45)
+Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.39.1/download :: sqlite3/sqlite3.c
 ==============================================================================
 /******************************************************************************
 ** This file is an amalgamation of many separate C source files from SQLite
-** version 3.46.0.  By combining all the individual C code files into this
+** version 3.54.1.  By combining all the individual C code files into this
 ** single large file, the entire code can be compiled as a single translation
 ** unit.  This allows many compilers to do optimizations that would not be
 ** possible if the files were compiled separately.  Performance improvements
@@ -18604,8 +18607,11 @@ Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.30.1/download :: sqlite
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** 96c92aba00c8375bc32fafcdf12429c58bd8.
+** 555e07ef33f69a0957d24d8e555b702464a1 with changes in files:
+**
+**    
 */
+#ifndef SQLITE_AMALGAMATION
 #define SQLITE_CORE 1
 #define SQLITE_AMALGAMATION 1
 #ifndef SQLITE_PRIVATE
@@ -18626,9 +18632,6 @@ Source: https://crates.io/api/v1/crates/libsqlite3-sys/0.30.1/download :: sqlite
 ** Internal interface definitions for SQLite.
 **
 */
-#ifndef SQLITEINT_H
-#define SQLITEINT_H
-
 
 
 ==============================================================================

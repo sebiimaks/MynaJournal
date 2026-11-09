@@ -241,11 +241,10 @@ pub fn exec_export_entry_content<D: DataProvider>(
 }
 
 pub fn export_entry_content<D: DataProvider>(ui_components: &mut UIComponents, app: &App<D>) {
-    if app.current_is_protected() {
+    if app.current_is_protected() || app.journal_is_protected() {
         ui_components.show_msg_box(
             MsgBoxType::Question(
-                "Export this protected note as plaintext? The exported file will not be encrypted."
-                    .into(),
+                "Export this entry as plaintext? The exported file will not be encrypted.".into(),
             ),
             MsgBoxActions::YesNo,
             Some(UICommand::ExportPrivateContent),
@@ -313,8 +312,8 @@ pub async fn edit_in_external_editor<D: DataProvider>(
     app: &mut App<D>,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !app.current_is_protected(),
-        "External editing is unavailable for protected notes because editors can leave plaintext temporary files. Use the internal editor or explicitly export plaintext."
+        !app.current_is_protected() && !app.journal_is_protected(),
+        "External editing is unavailable for protected entries or journals because editors can leave plaintext temporary files. Use the internal editor or explicitly export plaintext."
     );
     // The event loop cannot enforce idle locking while waiting for another editor.
     app.lock_all_saved_notes();

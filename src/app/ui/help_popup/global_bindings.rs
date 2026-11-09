@@ -18,17 +18,25 @@ pub struct GlobalBindings {
 }
 
 impl GlobalBindings {
-    pub fn new() -> Self {
+    pub fn new(journal_protected: bool) -> Self {
         let state = TableState::default();
 
         let mut bindings_map: BTreeMap<UICommand, Vec<Input>> = BTreeMap::new();
 
-        get_all_keymaps().for_each(|keymap| {
-            bindings_map
-                .entry(keymap.command)
-                .and_modify(|keys| keys.push(keymap.key))
-                .or_insert(vec![keymap.key]);
-        });
+        get_all_keymaps()
+            .filter(|keymap| match keymap.command {
+                UICommand::ShowSecurity | UICommand::LockNote | UICommand::LockAllNotes => {
+                    !journal_protected
+                }
+                UICommand::ToggleDetailsHidden => journal_protected,
+                _ => true,
+            })
+            .for_each(|keymap| {
+                bindings_map
+                    .entry(keymap.command)
+                    .and_modify(|keys| keys.push(keymap.key))
+                    .or_insert(vec![keymap.key]);
+            });
 
         Self {
             state,
@@ -66,11 +74,28 @@ mod tests {
 
     #[test]
     fn help_includes_lock_all_shortcut() {
-        let bindings = GlobalBindings::new();
+        let bindings = GlobalBindings::new(false);
         assert_eq!(
             bindings.get_bindings_map().get(&UICommand::LockAllNotes),
             Some(&vec![Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL)])
         );
         assert_eq!(UICommand::LockAllNotes.get_info().name, "Lock all notes");
+    }
+
+    #[test]
+    fn protected_journal_help_replaces_note_security_with_hide_details() {
+        let bindings = GlobalBindings::new(true);
+        let map = bindings.get_bindings_map();
+        assert_eq!(
+            map.get(&UICommand::ToggleDetailsHidden),
+            Some(&vec![Input::new(KeyCode::Char('o'), KeyModifiers::CONTROL)])
+        );
+        assert!(!map.contains_key(&UICommand::ShowSecurity));
+        assert!(!map.contains_key(&UICommand::LockAllNotes));
+        assert!(
+            !GlobalBindings::new(false)
+                .get_bindings_map()
+                .contains_key(&UICommand::ToggleDetailsHidden)
+        );
     }
 }

@@ -93,6 +93,10 @@ impl Keymap {
 pub(crate) fn get_global_keymaps() -> Vec<Keymap> {
     vec![
         Keymap::new(
+            Input::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            UICommand::ToggleDetailsHidden,
+        ),
+        Keymap::new(
             Input::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
             UICommand::ToggleJournalPrompt,
         ),
@@ -130,10 +134,6 @@ pub(crate) fn get_global_keymaps() -> Vec<Keymap> {
         Keymap::new(
             Input::new(KeyCode::Char('h'), KeyModifiers::NONE),
             UICommand::ShowHelp,
-        ),
-        Keymap::new(
-            Input::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
-            UICommand::CycleFocusedControlForward,
         ),
         Keymap::new(
             Input::new(KeyCode::Tab, KeyModifiers::NONE),

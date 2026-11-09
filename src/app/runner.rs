@@ -4,18 +4,10 @@ use ratatui::{Terminal, backend::Backend};
 
 use crate::app::{App, UIComponents};
 use crate::cli::PendingCliCommand;
-use crate::settings::{BackendType, ConfigContext, Settings};
+use crate::settings::{ConfigContext, Settings};
 use futures_util::StreamExt;
 
-use backend::DataProvider;
-#[cfg(feature = "file")]
-use backend::FileDataProvider;
-#[cfg(feature = "json")]
-use backend::JsonDataProvide;
-#[cfg(feature = "sqlite")]
-use backend::SqliteDataProvide;
-#[cfg(feature = "vjournal")]
-use backend::VjournalDataProvide;
+use backend::{DataProvider, journal::JournalProvider};
 
 use super::keymap::Input;
 use super::ui::Styles;
@@ -45,103 +37,70 @@ pub async fn run<B: Backend>(
 where
     B::Error: Send + Sync + 'static,
 {
-    match settings.backend_type.unwrap_or_default() {
-        #[cfg(feature = "json")]
-        BackendType::Json => {
-            let path = if let Some(path) = &settings.json_backend.file_path {
-                path.clone()
-            } else {
-                crate::settings::json_backend::get_default_json_path()?
-            };
-            let data_provider = JsonDataProvide::new(path);
-            run_intern(
-                terminal,
-                data_provider,
-                settings,
-                styles,
-                pending_cmd,
-                config_context,
-            )
-            .await
+    let backend = crate::journal_storage::backend(&settings)?;
+    let mut data_provider = JournalProvider::open(backend).await?;
+    if data_provider.is_journal_protected() {
+        match unlock_journal(terminal, &mut data_provider, &styles).await? {
+            UnlockOutcome::Unlocked => {}
+            UnlockOutcome::Cancelled => return Ok(RunOutcome::JournalClosed),
+            UnlockOutcome::InputEnded => return Ok(RunOutcome::InputEnded),
         }
-        #[cfg(not(feature = "json"))]
-        BackendType::Json => {
-            anyhow::bail!(
-                "Feature 'json' is not installed. Please check your configs and set your backend to an installed feature, or reinstall the program with 'json' feature"
-            )
+    }
+    run_intern(
+        terminal,
+        data_provider,
+        settings,
+        styles,
+        pending_cmd,
+        config_context,
+    )
+    .await
+}
+
+enum UnlockOutcome {
+    Unlocked,
+    Cancelled,
+    InputEnded,
+}
+
+async fn unlock_journal<B: Backend>(
+    terminal: &mut Terminal<B>,
+    provider: &mut JournalProvider,
+    styles: &Styles,
+) -> Result<UnlockOutcome>
+where
+    B::Error: Send + Sync + 'static,
+{
+    use super::ui::journal_security_popup::{
+        JournalPasswordAction, JournalSecurityAction, JournalSecurityPopup,
+    };
+    crate::terminal_session::clear_fullscreen(terminal)?;
+    let mut popup = JournalSecurityPopup::new(JournalPasswordAction::Unlock);
+    // Complete the first terminal redraw before starting the shared input reader,
+    // just as the main journal runner does.
+    terminal.draw(|frame| popup.render_widget(frame, frame.area(), styles))?;
+    let mut events = EventStream::new();
+    loop {
+        let Some(event) = events.next().await else {
+            return Ok(UnlockOutcome::InputEnded);
+        };
+        if let Event::Key(key) = event.context("Reading journal password input")?
+            && key.kind == KeyEventKind::Press
+        {
+            match popup.handle_input(&Input::from(&key)) {
+                JournalSecurityAction::Close => return Ok(UnlockOutcome::Cancelled),
+                JournalSecurityAction::Unlock(password) => {
+                    terminal
+                        .draw(|frame| render_message_centered(frame, "Unlocking journal..."))?;
+                    match provider.unlock(password).await {
+                        Ok(()) => return Ok(UnlockOutcome::Unlocked),
+                        Err(error) => popup.show_error(error.to_string()),
+                    }
+                }
+                _ => {}
+            }
         }
-        #[cfg(feature = "sqlite")]
-        BackendType::Sqlite => {
-            let path = if let Some(path) = &settings.sqlite_backend.file_path {
-                path.clone()
-            } else {
-                crate::settings::sqlite_backend::get_default_sqlite_path()?
-            };
-            let data_provider = SqliteDataProvide::from_file(path).await?;
-            run_intern(
-                terminal,
-                data_provider,
-                settings,
-                styles,
-                pending_cmd,
-                config_context,
-            )
-            .await
-        }
-        #[cfg(not(feature = "sqlite"))]
-        BackendType::Sqlite => {
-            anyhow::bail!(
-                "Feature 'sqlite' is not installed. Please check your configs and set your backend to an installed feature, or reinstall the program with 'sqlite' feature"
-            )
-        }
-        #[cfg(feature = "vjournal")]
-        BackendType::Vjournal => {
-            let directory = if let Some(dir) = &settings.vjournal_backend.directory {
-                dir.clone()
-            } else {
-                crate::settings::vjournal_backend::get_default_vjournal_path()?
-            };
-            let data_provider = VjournalDataProvide::new(directory);
-            run_intern(
-                terminal,
-                data_provider,
-                settings,
-                styles,
-                pending_cmd,
-                config_context,
-            )
-            .await
-        }
-        #[cfg(not(feature = "vjournal"))]
-        BackendType::Vjournal => {
-            anyhow::bail!(
-                "Feature 'vjournal' is not installed. Please check your configs and set your backend to an installed feature, or reinstall the program with 'vjournal' feature"
-            )
-        }
-        #[cfg(feature = "file")]
-        BackendType::File => {
-            let directory = settings
-                .file_backend
-                .directory
-                .clone()
-                .map_or_else(crate::settings::file_backend::get_default_file_path, Ok)?;
-            let data_provider = FileDataProvider::new(directory, settings.file_backend.format);
-            run_intern(
-                terminal,
-                data_provider,
-                settings,
-                styles,
-                pending_cmd,
-                config_context,
-            )
-            .await
-        }
-        #[cfg(not(feature = "file"))]
-        BackendType::File => {
-            anyhow::bail!(
-                "Feature 'file' is not installed. Please check your configs and set your backend to an installed feature, or reinstall the program with 'file' feature"
-            )
-        }
+        terminal.draw(|frame| popup.render_widget(frame, frame.area(), styles))?;
     }
 }
 
@@ -194,7 +153,7 @@ where
         let event = tokio::select! {
             biased;
             _ = security_tick.tick() => {
-                if app.security_expired() && !ui_components.is_privacy_shielded() {
+                if app.security_expired() && !ui_components.is_privacy_shielded() && !ui_components.journal_conversion_pending() {
                     auto_lock(terminal, &mut app, &mut ui_components).await?;
                 }
                 continue;
@@ -205,7 +164,10 @@ where
             break;
         };
         let event = event.context("Error getting input stream")?;
-        if app.security_expired() && !ui_components.is_privacy_shielded() {
+        if app.security_expired()
+            && !ui_components.is_privacy_shielded()
+            && !ui_components.journal_conversion_pending()
+        {
             auto_lock(terminal, &mut app, &mut ui_components).await?;
             continue;
         }
@@ -316,7 +278,8 @@ async fn handle_input<D: DataProvider>(
     app: &mut App<D>,
     ui_components: &mut UIComponents<'_>,
 ) -> Result<HandleInputReturnType> {
-    if ui_components.is_privacy_shielded() && !matches!(event, Event::Key(_) | Event::Resize(_, _))
+    if (ui_components.is_privacy_shielded() || ui_components.is_details_hidden())
+        && !matches!(event, Event::Key(_) | Event::Resize(_, _))
     {
         return Ok(HandleInputReturnType::Ignore);
     }
@@ -499,8 +462,8 @@ mod tests {
         pending_cmd: Option<PendingCliCommand>,
     ) -> (Terminal<StartupBackend>, anyhow::Error) {
         let dir = tempfile::tempdir().unwrap();
-        let app = crate::app::test::create_default_app();
-        let mut settings = app.settings;
+        let mut app = crate::app::test::create_default_app();
+        let mut settings = app.settings.clone();
         settings.app_state_dir = Some(dir.path().join("state"));
         settings.sync_os_clipboard = false;
         let context = ConfigContext {
@@ -515,7 +478,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let error = run_intern(
             &mut terminal,
-            app.data_provide,
+            std::mem::take(&mut app.data_provide),
             settings,
             Styles::default(),
             pending_cmd,
@@ -537,6 +500,54 @@ mod tests {
             text.contains(expected),
             "Missing first frame text: {expected}"
         );
+    }
+
+    #[cfg(feature = "json")]
+    #[tokio::test]
+    async fn protected_startup_draws_only_password_prompt_before_reading_entries() {
+        let temporary = tempfile::tempdir().unwrap();
+        let storage = backend::journal::JournalBackend::Json(temporary.path().join("entries.json"));
+        let mut provider = JournalProvider::open(storage).await.unwrap();
+        provider
+            .add_entry(
+                backend::EntryDraft::new(
+                    chrono::Utc::now(),
+                    "PRIVATE_STARTUP_TITLE".into(),
+                    vec![],
+                    None,
+                )
+                .with_content("PRIVATE_STARTUP_BODY".into()),
+            )
+            .await
+            .unwrap();
+        provider
+            .enable_journal_protection("startup password".to_owned().into(), None)
+            .await
+            .unwrap();
+        drop(provider);
+        let mut settings = Settings::default();
+        settings.backend_type = Some(crate::settings::BackendType::Json);
+        settings.json_backend.file_path = Some(temporary.path().join("entries.json"));
+        settings.app_state_dir = Some(temporary.path().join("state"));
+        let context = ConfigContext {
+            journal_name: Some("Personal".into()),
+            return_to_journals: true,
+            settings_path: temporary.path().join("config.toml"),
+            themes_path: temporary.path().join("themes"),
+            active_theme_id: None,
+            theme_warning: None,
+            launch_details: vec![],
+        };
+        let mut terminal = Terminal::new(StartupBackend::dirty(100, 30)).unwrap();
+        assert!(
+            run(&mut terminal, settings, Styles::default(), None, context)
+                .await
+                .is_err()
+        );
+        assert_clean_first_frame(&terminal, "Unlock Journal");
+        let frame = &terminal.backend().frames[0];
+        let text: String = frame.content.iter().map(Cell::symbol).collect();
+        assert!(!text.contains("PRIVATE_STARTUP"));
     }
 
     #[tokio::test]

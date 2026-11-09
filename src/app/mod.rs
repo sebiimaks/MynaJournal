@@ -66,6 +66,19 @@ where
     security: security::SecurityState,
 }
 
+impl<D: DataProvider> Drop for App<D> {
+    fn drop(&mut self) {
+        for entry in &mut self.entries {
+            entry.title.zeroize();
+            entry.content.zeroize();
+            entry.tags.zeroize();
+            entry.priority.zeroize();
+            entry.mood.zeroize();
+            entry.journal_prompt.zeroize();
+        }
+    }
+}
+
 impl<D> App<D>
 where
     D: DataProvider,
@@ -465,7 +478,20 @@ where
         self.validate_export_target(&target)?;
         let selected_ids: Vec<u32> = self.selected_entries.iter().cloned().collect();
 
-        let entries_dto = self.data_provide.get_export_object(&selected_ids).await?;
+        let entries_dto = if self.journal_is_protected() {
+            // This route follows the UI's mandatory plaintext-export confirmation.
+            // Native encrypted backups use the CLI and retain the wrapped journal key.
+            EntriesDTO::new(
+                self.entries
+                    .iter()
+                    .filter(|entry| selected_ids.contains(&entry.id))
+                    .cloned()
+                    .map(EntryDraft::from_entry)
+                    .collect(),
+            )
+        } else {
+            self.data_provide.get_export_object(&selected_ids).await?
+        };
 
         target.write(|file| {
             serde_json::to_writer_pretty(file, &entries_dto)?;

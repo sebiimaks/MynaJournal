@@ -10,6 +10,7 @@ use settings::Settings;
 mod app;
 mod cli;
 mod console_backend;
+mod journal_storage;
 #[cfg(test)]
 mod journal_tests;
 mod journals;

@@ -45,6 +45,12 @@ which continues the work of [tui-rs](https://github.com/fdehau/tui-rs), and
 [SQLx](https://github.com/launchbadge/sqlx). These are examples, not the complete
 dependency inventory.
 
+`vendor/sqlx-sqlite` retains the SQLx 0.8.6 driver under its original MIT/Apache-2.0
+licences. MynaJournal changes only its dependency declaration to use a patched
+SQLite runtime while retaining Rust 1.92 support. The original archive checksum,
+source revision and exact changes are recorded in
+[the patch note](vendor/sqlx-sqlite/MYNA-PATCH.md); the driver Rust source is unchanged.
+
 The Linux-console drawing adapter in `src/console_backend.rs` adapts the
 Ratatui Crossterm backend. Ratatui's copyright and MIT license are included in
 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), together with notices for the

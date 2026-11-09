@@ -31,7 +31,7 @@ pub async fn continue_quit<D: DataProvider>(
     }
 }
 
-pub fn exec_show_help(ui_components: &mut UIComponents) -> CmdResult {
+pub fn exec_show_help(ui_components: &mut UIComponents, journal_protected: bool) -> CmdResult {
     let start_tab = match (
         ui_components.active_control,
         ui_components.entries_list.multi_select_mode,
@@ -43,7 +43,10 @@ pub fn exec_show_help(ui_components: &mut UIComponents) -> CmdResult {
 
     ui_components
         .popup_stack
-        .push(Popup::Help(Box::new(HelpPopup::new(start_tab))));
+        .push(Popup::Help(Box::new(HelpPopup::new(
+            start_tab,
+            journal_protected,
+        ))));
 
     Ok(HandleInputReturnType::Handled)
 }

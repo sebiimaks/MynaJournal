@@ -51,6 +51,8 @@ pub(super) enum Kind {
     Modifiers,
     TagPalette,
     Divider,
+    JournalProtection,
+    JournalPassword,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +96,8 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
     };
     let path = || Text { allow_empty: false };
     let mut fields = vec![
+        Field::new(Security, &[], "Journal protection", JournalProtection, "Enter enables protection, or removes it after confirmation. Existing protected entries are unlocked during setup; the journal password replaces their passwords. Locks on close. Applies immediately."),
+        Field::new(Security, &[], "Change journal password", JournalPassword, "Enter verifies the current password and sets a new password for this journal."),
         Field::new(Security, &["security", "auto_lock_seconds"], "Lock after idle seconds", Number { min: 0, max: 86400 }, "Lock protected notes after inactivity. Default 300 seconds; zero disables the timer. Unsaved text is sealed in memory until you unlock again."),
         Field::new(Security, &["security", "lock_on_leave"], "Lock when leaving note", Bool, "Forget a protected note's password when selecting another note. Titles and dates remain visible."),
         Field::new(General, &["colored_tags"], "Colored tags", Bool, "Use a distinct color for each tag."),

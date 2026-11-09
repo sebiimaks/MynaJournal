@@ -8,6 +8,8 @@ pub struct MockDataProvider {
     return_error: bool,
     pub restore_metadata: HashSet<u32>,
     pub restored_with_metadata: bool,
+    pub journal_protected: bool,
+    pub commit_journal_conversion_then_fail_reload: bool,
 }
 
 impl MockDataProvider {
@@ -32,6 +34,26 @@ impl MockDataProvider {
 }
 
 impl DataProvider for MockDataProvider {
+    fn is_journal_protected(&self) -> bool {
+        self.journal_protected
+    }
+
+    async fn enable_journal_protection(
+        &mut self,
+        _password: backend::protection::SecretString,
+        records: Option<Vec<backend::journal::JournalRecord>>,
+    ) -> anyhow::Result<()> {
+        if !self.commit_journal_conversion_then_fail_reload {
+            bail!("This provider does not support journal protection");
+        }
+        self.journal_protected = true;
+        if let Some(records) = records {
+            self.entries = records.into_iter().map(|record| record.entry).collect();
+        }
+        self.return_error = true;
+        Ok(())
+    }
+
     async fn load_all_entries(&mut self) -> anyhow::Result<Vec<Entry>> {
         self.early_return()?;
 

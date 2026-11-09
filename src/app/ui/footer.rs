@@ -55,6 +55,19 @@ fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static
         }
         _ => (standard_text(ui, app), Some(&ui.global_keymaps)),
     };
+    if app.journal_is_protected()
+        && (ui.editor.is_insert_mode() || ui.entries_list.multi_select_mode)
+    {
+        text.push_span(Span::raw(SEPARATOR));
+        text.spans.extend(
+            command_text(
+                "Hide details",
+                &ui.global_keymaps,
+                UICommand::ToggleDetailsHidden,
+            )
+            .spans,
+        );
+    }
     if ui.current_prompt(app).is_some() {
         text.push_span(Span::raw(SEPARATOR));
         text.spans.extend(
@@ -86,11 +99,19 @@ fn standard_text<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Line<'stat
             &ui.global_keymaps,
             UICommand::StartEditEntryContent,
         ),
-        command_text(
-            "Entry security",
-            &ui.global_keymaps,
-            UICommand::ShowSecurity,
-        ),
+        if app.journal_is_protected() {
+            command_text(
+                "Hide details",
+                &ui.global_keymaps,
+                UICommand::ToggleDetailsHidden,
+            )
+        } else {
+            command_text(
+                "Entry security",
+                &ui.global_keymaps,
+                UICommand::ShowSecurity,
+            )
+        },
     ];
     if ui.active_control == ControlType::EntriesList {
         let mut filter = command_text(

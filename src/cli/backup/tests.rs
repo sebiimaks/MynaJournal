@@ -124,6 +124,93 @@ fn file_backends() -> Vec<BackendType> {
     ]
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn protected_backup_rejects_final_symlinks_but_keeps_parent_aliases_with_the_key() {
+    use backend::{DataProvider, EntryDraft, journal::JournalProvider};
+    use std::os::unix::fs::symlink;
+
+    fn use_path(settings: &mut Settings, path: PathBuf) {
+        match settings.backend_type.unwrap_or_default() {
+            #[cfg(feature = "json")]
+            BackendType::Json => settings.json_backend.file_path = Some(path),
+            #[cfg(feature = "sqlite")]
+            BackendType::Sqlite => settings.sqlite_backend.file_path = Some(path),
+            #[cfg(feature = "file")]
+            BackendType::File => settings.file_backend.directory = Some(path),
+            #[cfg(feature = "vjournal")]
+            BackendType::Vjournal => settings.vjournal_backend.directory = Some(path),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
+
+    for backend in [
+        #[cfg(feature = "json")]
+        BackendType::Json,
+        #[cfg(feature = "sqlite")]
+        BackendType::Sqlite,
+        #[cfg(feature = "file")]
+        BackendType::File,
+        #[cfg(feature = "vjournal")]
+        BackendType::Vjournal,
+    ] {
+        let fixture = Fixture::new(backend);
+        let storage = crate::journal_storage::backend(&fixture.settings).unwrap();
+        let mut provider = JournalProvider::open(storage.clone()).await.unwrap();
+        provider
+            .add_entry(
+                EntryDraft::new(chrono::Utc::now(), "Private title".into(), vec![], None)
+                    .with_content("Private body".into()),
+            )
+            .await
+            .unwrap();
+        provider
+            .enable_journal_protection("backup alias password".to_owned().into(), None)
+            .await
+            .unwrap();
+        let expected = provider.load_all_entries().await.unwrap();
+        drop(provider);
+        let source = fixture.source();
+        let before = inventory_source(&source).unwrap();
+        let header = fs::read(storage.header_path()).unwrap();
+
+        let final_alias = fixture.root.path().join("backend-alias");
+        symlink(&source.path, &final_alias).unwrap();
+        let mut aliased_settings = fixture.settings.clone();
+        use_path(&mut aliased_settings, final_alias);
+        let error = create(&aliased_settings, Some(&fixture.config), &fixture.backup())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("symbolic link"));
+        assert!(!fixture.backup().exists());
+        assert!(inventory_source(&source).unwrap().same_contents(&before));
+        assert_eq!(fs::read(storage.header_path()).unwrap(), header);
+
+        let parent_alias = fixture.root.path().join("parent-alias");
+        symlink(source.path.parent().unwrap(), &parent_alias).unwrap();
+        use_path(
+            &mut aliased_settings,
+            parent_alias.join(source.path.file_name().unwrap()),
+        );
+        create(&aliased_settings, Some(&fixture.config), &fixture.backup())
+            .await
+            .unwrap();
+        restore(&fixture.backup(), &fixture.restored()).unwrap();
+        let restored_settings = Settings::new(Some(fixture.restored().join("config")))
+            .await
+            .unwrap();
+        let restored_storage = crate::journal_storage::backend(&restored_settings).unwrap();
+        assert_eq!(fs::read(restored_storage.header_path()).unwrap(), header);
+        let mut restored = JournalProvider::open(restored_storage).await.unwrap();
+        restored
+            .unlock("backup alias password".to_owned().into())
+            .await
+            .unwrap();
+        assert_eq!(restored.load_all_entries().await.unwrap(), expected);
+    }
+}
+
 #[tokio::test]
 async fn native_backups_restore_ciphertext_metadata_themes_and_independent_paths() {
     for backend in file_backends() {

@@ -51,6 +51,15 @@ struct ProtectionMetadata {
 impl JournalDocument {
     pub fn new(draft: &EntryDraft, created: DateTime<FixedOffset>) -> Result<Self> {
         Entry::from_draft(0, draft.clone()).validate_protection()?;
+        let created = if draft
+            .protection
+            .as_ref()
+            .is_some_and(|p| p.version == crate::journal::RECORD_VERSION)
+        {
+            DateTime::UNIX_EPOCH.fixed_offset()
+        } else {
+            created
+        };
         let uid = Uuid::new_v4();
         let mut metadata = json!({
             "title": draft.title,

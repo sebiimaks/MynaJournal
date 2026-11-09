@@ -39,7 +39,10 @@ impl fmt::Debug for EncryptedNote {
 
 impl EncryptedNote {
     pub fn validate(&self) -> Result<(), ProtectionError> {
-        if self.version != PROTECTION_VERSION {
+        if !matches!(
+            self.version,
+            PROTECTION_VERSION | crate::journal::RECORD_VERSION
+        ) {
             return Err(ProtectionError::UnsupportedVersion);
         }
         if self.ciphertext.len() > MAX_CIPHERTEXT_BYTES {
@@ -202,6 +205,9 @@ pub fn reseal(
         .protection
         .as_ref()
         .ok_or(ProtectionError::NotProtected)?;
+    if protection.version != PROTECTION_VERSION {
+        return Err(ProtectionError::UnsupportedVersion);
+    }
     protection.validate()?;
     encrypt_note(
         entry,
@@ -254,6 +260,9 @@ pub fn unlock(entry: &Entry, password: &SecretString) -> Result<UnlockedNote, Pr
         .protection
         .as_ref()
         .ok_or(ProtectionError::NotProtected)?;
+    if protection.version != PROTECTION_VERSION {
+        return Err(ProtectionError::UnsupportedVersion);
+    }
     let armored = age::armor::ArmoredReader::new(protection.ciphertext.as_bytes());
     let decryptor = age::Decryptor::new(armored).map_err(|_| ProtectionError::UnlockFailed)?;
     if !decryptor.is_scrypt() {

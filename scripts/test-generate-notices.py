@@ -20,8 +20,10 @@ class NoticeIntegrityTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        shutil.copyfile(ROOT / "Cargo.toml", self.root / "Cargo.toml")
         shutil.copyfile(ROOT / "Cargo.lock", self.root / "Cargo.lock")
         shutil.copytree(ROOT / "licenses", self.root / "licenses")
+        shutil.copytree(ROOT / "vendor", self.root / "vendor")
 
     def test_current_snapshot_reproduces_distributed_notice(self):
         self.assertEqual(NOTICES.generate(self.root), (ROOT / "THIRD_PARTY_NOTICES.txt").read_bytes())
@@ -75,6 +77,33 @@ class NoticeIntegrityTests(unittest.TestCase):
         path = runtime / manifest["components"][0]["files"][0]["path"]
         path.write_text("A native runtime notice was accidentally lost.")
         with self.assertRaisesRegex(ValueError, "Runtime notice hash mismatch"):
+            NOTICES.generate(self.root)
+
+    def test_unreviewed_local_dependency_is_rejected(self):
+        with (self.root / "Cargo.lock").open("a") as handle:
+            handle.write('\n[[package]]\nname = "unreviewed-local"\nversion = "1.0.0"\n')
+        with self.assertRaisesRegex(ValueError, "reviewed vendored packages"):
+            NOTICES.generate(self.root)
+
+    def test_missing_or_altered_vendored_notice_is_rejected(self):
+        path = self.root / "vendor/sqlx-sqlite/LICENSE-MIT"
+        path.write_text("A vendored notice was accidentally lost.")
+        with self.assertRaisesRegex(ValueError, "Vendored notice hash mismatch"):
+            NOTICES.generate(self.root)
+        path.unlink()
+        with self.assertRaises(OSError):
+            NOTICES.generate(self.root)
+
+    def test_vendored_source_change_requires_review(self):
+        path = self.root / "vendor/sqlx-sqlite/src/lib.rs"
+        path.write_text(path.read_text() + "\n// Modified source\n")
+        with self.assertRaisesRegex(ValueError, "Vendored source checksum mismatch"):
+            NOTICES.generate(self.root)
+
+    def test_changing_vendored_patch_path_requires_review(self):
+        path = self.root / "Cargo.toml"
+        path.write_text(path.read_text().replace("vendor/sqlx-sqlite", "vendor/unreviewed"))
+        with self.assertRaisesRegex(ValueError, "Vendored package patch path"):
             NOTICES.generate(self.root)
 
 

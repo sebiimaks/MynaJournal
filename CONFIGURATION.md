@@ -1,5 +1,10 @@
 # Configuration
 
+Whole-journal protection is available under **Security → Journal protection** for
+the open journal. Its state comes from the encrypted storage, rather than a
+plain configuration flag. See [Journal locking](JOURNAL-LOCKING.md) for passwords,
+automatic locking on close, and **Hide details: Ctrl-O**.
+
 [Back to MynaJournal](README.md)
 
 MynaJournal reads `config.toml` from its configuration directory. See the
@@ -20,6 +25,11 @@ Security and Storage share `config.toml`; Appearance lists named themes and open
 theme editor; Layout saves the divider to the existing app-state file. `Esc`
 cancels a field edit or closes the popup, with a discard prompt when configuration
 edits remain unsaved.
+
+The **Journal protection** and **Change journal password** actions in Security
+apply immediately after their password and confirmation steps. They do not need
+`Ctrl-S`, and `d` does not remove protection. Turning journal protection off uses
+the same **Journal protection** row and requires confirmation plus the current password.
 
 In Appearance, `Enter` or `a` activates the selected theme, `e` edits it, and `n`
 prompts for the name of a new copy. Submit an empty name to use `tui_custom`, then

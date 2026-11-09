@@ -7,7 +7,7 @@
       "version": "0.5.5",
       "category": "vulnerability",
       "expires": "2026-12-31",
-      "reason": "age 0.12.1 is the current release. This crate is used by age's P256/HPKE recipients; MynaJournal only encrypts with scrypt recipients and rejects non-scrypt envelopes before decryption. Review again when age or the protection implementation changes."
+      "reason": "The locked age 0.12.1 dependency uses crypto-bigint through P256/HPKE recipient code. Individual notes and wrapped journal keys require scrypt envelopes; whole-journal records use explicit X25519 recipients and identities. The reviewed X25519 implementation uses x25519-dalek, HKDF and ChaCha20-Poly1305 and ignores other recipient stanzas before key operations. MynaJournal supplies only these concrete scrypt/X25519 identities, not generic identity dispatch or P256/HPKE recipients. Reassessed for journal protection on 2026-11-09; review again if age, identity dispatch or recipient types change."
     },
     {
       "id": "RUSTSEC-2023-0071",

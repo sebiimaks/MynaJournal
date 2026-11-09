@@ -16,6 +16,7 @@ use crate::app::{App, keymap::Input, runner::HandleInputReturnType};
 
 use backend::DataProvider;
 use tui_textarea::{CursorMove, Scrolling, TextArea};
+use zeroize::Zeroize;
 
 use super::Styles;
 use super::commands::ClipboardOperation;
@@ -42,6 +43,12 @@ pub struct Editor<'a> {
     word_wrap: bool,
     wrapped: WrappedView,
     locked: bool,
+}
+
+impl Drop for Editor<'_> {
+    fn drop(&mut self) {
+        std::mem::take(&mut self.text_area).into_lines().zeroize();
+    }
 }
 
 /// Direction of a single-line vertical cursor movement.
@@ -112,7 +119,9 @@ impl<'a> Editor<'a> {
             None => TextArea::default(),
         };
 
-        self.text_area = text_area;
+        std::mem::replace(&mut self.text_area, text_area)
+            .into_lines()
+            .zeroize();
         self.wrapped = WrappedView::default();
 
         self.refresh_has_unsaved(app);
@@ -132,7 +141,10 @@ impl<'a> Editor<'a> {
             }
             // We must handle clipboard operation separately if sync with system clipboard is
             // activated
-            if app.settings.sync_os_clipboard && !app.current_is_protected() {
+            if app.settings.sync_os_clipboard
+                && !app.current_is_protected()
+                && !app.journal_is_protected()
+            {
                 let has_ctrl = input.modifiers.contains(KeyModifiers::CONTROL);
                 // Keymaps are taken from `text_area` source code
                 let handled = match input.key_code {
@@ -191,7 +203,9 @@ impl<'a> Editor<'a> {
             return Ok(HandleInputReturnType::Handled);
         }
 
-        let sync_os_clipboard = app.settings.sync_os_clipboard && !app.current_is_protected();
+        let sync_os_clipboard = app.settings.sync_os_clipboard
+            && !app.current_is_protected()
+            && !app.journal_is_protected();
 
         if self.handle_wrapped_navigation(input) {
             return Ok(HandleInputReturnType::Handled);
@@ -658,7 +672,9 @@ impl<'a> Editor<'a> {
         text_area.move_cursor(tui_textarea::CursorMove::Bottom);
         text_area.move_cursor(tui_textarea::CursorMove::End);
 
-        self.text_area = text_area;
+        std::mem::replace(&mut self.text_area, text_area)
+            .into_lines()
+            .zeroize();
         self.wrapped = WrappedView::default();
 
         self.refresh_has_unsaved(app);
