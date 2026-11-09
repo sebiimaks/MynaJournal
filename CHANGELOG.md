@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.24.0 - 2026-11-09
+
+- Add opt-in whole-journal password protection under Config → Security, with password changes, protection removal and a right-aligned Locked indicator in the journal selector
+- Encrypt entry titles, dates, content, tags, priority, moods, prompts and supported native metadata across all four backends; close the unlocked session when leaving a journal
+- Replace Entry security with Hide details in protected journals: Ctrl-O conceals the screen across editing modes and dialogs, pauses interaction, and restores the same view and drafts when pressed again
+- Consolidate individually protected entries under the journal password only after confirmation and successful entry-password checks
+- Include the journal key header in native backups and restores; guard conversion staging, interrupted recovery, concurrent writes and paths used for backups, exports and logs
+- Preserve auto-title, word wrap and journal prompts while disabling external editors and automatic clipboard synchronization in protected journals; confirm explicit plaintext copying and exports
+- Update SQLite to 3.54.1 to address RUSTSEC-2026-0459, using a narrowly scoped SQLx driver dependency patch that retains Rust 1.92 compatibility
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.24.0-1_amd64.deb`.
+Existing journals and settings are preserved; journal protection is off until you
+enable it for a journal. Older app versions cannot open protected journals.
+
+Keep the essential `.myna-lock.json` key header with its journal data; native
+backups include it automatically. Changing a password does not revoke older key
+headers and backups. **Ctrl-O hides the screen; closing the journal requires a
+password to reopen it.** See the
+[journal-locking guide](https://github.com/sebiimaks/MynaJournal/blob/v0.24.0/JOURNAL-LOCKING.md)
+for storage, recovery and privacy details.
+
 ## 0.23.1 - 2026-11-09
 
 - Add a startup journal selector beside the MynaJournal artwork, with Personal as the existing default journal and controls to create and delete separate journals
