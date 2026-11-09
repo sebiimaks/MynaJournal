@@ -21,10 +21,11 @@ The upstream project and its contributors do not imply endorsement of this fork.
 `assets/demo.gif` and `assets/fuzzy_find.gif` are inherited, unchanged, from
 TUI-Journal and are covered by its retained MIT license.
 
-The maintainer supplied the Myna artwork used in `assets/myna_journal.txt` and
-the earlier Myna artwork variants, including `myna_notes.txt` and
-`myna_round_88.txt`. On 27 October 2026, the maintainer clarified that the artwork
-was AI-generated using ChatGPT/OpenAI and approved its distribution under the
+The maintainer supplied the Myna artwork used in `assets/myna_journal.txt`, its
+extracted wordmark in `assets/myna_wordmark.txt`, and the earlier Myna artwork
+variants, including `myna_notes.txt` and `myna_round_88.txt`. On 27 October 2026,
+the maintainer clarified that the artwork was AI-generated using ChatGPT/OpenAI
+and approved its distribution under the
 project's MIT license to the extent they hold rights in it. This records its
 provenance without claiming human authorship or exclusive copyright in generated
 output.

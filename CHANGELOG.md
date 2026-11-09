@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Centre the journal selector beneath the ASCII MynaJournal wordmark, without the large circular logo; keep the controls accessible on small terminals
+
 ## 0.24.0 - 2026-11-09
 
 - Add opt-in whole-journal password protection under Config → Security, with password changes, protection removal and a right-aligned Locked indicator in the journal selector

@@ -102,15 +102,16 @@ Protected entries encrypt mood and the saved prompt; both are hidden while locke
 
 ## Separate journals
 
-Normal startup opens **Select Journal** beside the artwork. **Personal** uses your
-existing configuration and notes without moving them. Use Up/Down and **Enter**
-to open a journal, **n** to create one, **d** to delete an added journal, and **q**
-or **Esc** to exit. Inside a journal, **q** in normal mode closes it and returns
-to the selector, with that journal highlighted. Unsaved changes still offer
+Normal startup opens **Select Journal** centred beneath the MynaJournal wordmark.
+**Personal** uses your existing configuration and notes without moving them.
+Use Up/Down and **Enter** to open a journal, **n** to create one, **d** to delete
+an added journal, and **q** or **Esc** to exit. Inside a journal, **q** in normal
+mode closes it and returns to the selector, with that journal highlighted.
+Unsaved changes still offer
 Save, Discard and Cancel; unresolved encrypted drafts must be saved or discarded
 before leaving. Protected notes require unlocking again when reopened. The
-entries pane shows the open journal's name. Smaller terminals show a compact
-wordmark when the full artwork does not fit.
+entries pane shows the open journal's name. Smaller terminals show plain title
+text, or just the selector when there is not enough room for a heading.
 
 New journals inherit Personal's current preferences, including `auto_title`,
 but receive separate backend files, exports and app state. Config edits apply to

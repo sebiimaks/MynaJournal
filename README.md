@@ -49,8 +49,8 @@ with a selected mood creates one matching prompt; **Ctrl-G** hides or shows it.
 Changing mood later keeps the original prompt. See [Configuration](CONFIGURATION.md)
 for details.
 
-A **Select Journal** dialog appears beside the logo at startup. **Personal**
-opens your existing notes. Use **n** to add a journal,
+A **Select Journal** dialog appears centred beneath the MynaJournal wordmark at
+startup. **Personal** opens your existing notes. Use **n** to add a journal,
 Up/Down and **Enter** to open one, or **d** to delete an added journal after
 confirmation. Deleted journals move to **Deleted Journals** for recovery;
 Personal is protected. Press **q** inside a journal to return to this selector;

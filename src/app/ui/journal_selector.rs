@@ -12,7 +12,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::{Styles, ui_functions::menu_key_style};
 
-const ART: &str = include_str!("../../../assets/myna_journal.txt");
+const WORDMARK: &str = include_str!("../../../assets/myna_wordmark.txt");
 const MAX_NAME_CHARS: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,20 +286,11 @@ impl JournalSelector {
             Screen::Delete { .. } => 6,
         };
         let height = (content_height + footer_height + message_height + 4).min(bounds.height);
-        let (dialog, art_area, full_art) = selector_layout(bounds, width, height);
-        if let Some(art_area) = art_area {
-            let art = if full_art {
-                Text::raw(ART)
-            } else {
-                Text::from(vec![
-                    Line::raw("M Y N A").alignment(Alignment::Center),
-                    Line::default(),
-                    Line::raw("MynaJournal").alignment(Alignment::Center),
-                ])
-            };
+        let (dialog, wordmark) = selector_layout(bounds, width, height);
+        if let Some((wordmark_area, text)) = wordmark {
             frame.render_widget(
-                Paragraph::new(art).style(Style::from(styles.editor.block_normal_inactive)),
-                art_area,
+                Paragraph::new(text).style(Style::from(styles.editor.block_normal_inactive)),
+                wordmark_area,
             );
         }
 
@@ -495,61 +486,34 @@ fn centered(bounds: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
-fn selector_layout(bounds: Rect, width: u16, height: u16) -> (Rect, Option<Rect>, bool) {
-    let art = Text::raw(ART);
-    let art_width = art.width() as u16;
-    let art_height = art.height() as u16;
-    let full_art = bounds.width >= width + 6 + art_width && bounds.height >= art_height;
-    let (art_width, art_height, gap) = if full_art {
-        (art_width, art_height, 6)
-    } else {
-        (13, 3, 4)
-    };
-    if bounds.width >= width + gap + art_width && bounds.height >= art_height.max(height) {
-        let group = centered(bounds, width + gap + art_width, art_height.max(height));
-        let art_area = Rect::new(
-            group.x + width + gap,
-            group.y + (group.height - art_height) / 2,
-            art_width,
-            art_height,
-        );
-        let dialog_y = if full_art {
-            // The blank line separates the circle from the wordmark below it.
-            let circle_height = ART
-                .lines()
-                .take_while(|line| !line.trim().is_empty())
-                .count() as u16;
-            (art_area.y + circle_height / 2)
-                .saturating_sub(height / 2)
-                .clamp(bounds.y, bounds.bottom() - height)
-        } else {
-            group.y + (group.height - height) / 2
-        };
-        return (
-            Rect::new(group.x, dialog_y, width, height),
-            Some(art_area),
-            full_art,
-        );
+fn selector_layout(bounds: Rect, width: u16, height: u16) -> (Rect, Option<(Rect, &'static str)>) {
+    for wordmark in [WORDMARK, "MynaJournal"] {
+        let text = Text::raw(wordmark);
+        let text_width = text.width() as u16;
+        let text_height = text.height() as u16;
+        let group_height = height + text_height + 2;
+        if bounds.width >= text_width && bounds.height >= group_height {
+            let group = centered(bounds, bounds.width, group_height);
+            return (
+                Rect::new(
+                    bounds.x + (bounds.width - width) / 2,
+                    group.y + text_height + 2,
+                    width,
+                    height,
+                ),
+                Some((
+                    Rect::new(
+                        bounds.x + (bounds.width - text_width) / 2,
+                        group.y,
+                        text_width,
+                        text_height,
+                    ),
+                    wordmark,
+                )),
+            );
+        }
     }
-    if bounds.width >= art_width && bounds.height >= height + art_height + 2 {
-        let group = centered(bounds, width.max(art_width), height + art_height + 2);
-        return (
-            Rect::new(
-                group.x + (group.width - width) / 2,
-                group.y + art_height + 2,
-                width,
-                height,
-            ),
-            Some(Rect::new(
-                group.x + (group.width - art_width) / 2,
-                group.y,
-                art_width,
-                art_height,
-            )),
-            false,
-        );
-    }
-    (centered(bounds, width, height), None, false)
+    (centered(bounds, width, height), None)
 }
 
 #[cfg(test)]
@@ -786,51 +750,61 @@ mod tests {
     }
 
     #[test]
-    fn large_screen_places_full_art_to_the_right_of_centred_selector() {
-        let mut selector = JournalSelector::new(journals());
-        let terminal = draw(&mut selector, 200, 60);
-        let rows: Vec<String> = terminal
-            .backend()
-            .buffer()
-            .content()
-            .chunks(200)
-            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
-            .collect();
-        let (title_y, title_x) = rows
-            .iter()
-            .enumerate()
-            .find_map(|(y, row)| row.find("Select Journal").map(|x| (y, x)))
-            .unwrap();
-        let (art_y, art_x) = rows
-            .iter()
-            .enumerate()
-            .find_map(|(y, row)| row.find(ART.lines().next().unwrap().trim()).map(|x| (y, x)))
-            .unwrap();
-        let controls = "Open: Enter | Add: n | Delete: d | Exit: q";
-        assert!(title_x + controls.width() + 4 < art_x);
-        assert!(art_y < title_y);
-        let left = rows[title_y].chars().position(|cell| cell == '┌').unwrap();
-        let right = rows[title_y].chars().position(|cell| cell == '┐').unwrap();
-        assert_eq!(right - left + 1, controls.width() + 4);
-        let controls_row = rows.iter().find(|row| row.contains(controls)).unwrap();
-        assert_eq!(
-            controls_row
-                .chars()
-                .skip(left + 1)
-                .take(right - left - 1)
-                .collect::<String>(),
-            format!(" {controls} ")
-        );
-        let bottom = rows
-            .iter()
-            .position(|row| row.chars().nth(left) == Some('└'))
-            .unwrap();
-        let circle_height = ART
-            .lines()
-            .take_while(|line| !line.trim().is_empty())
-            .count();
-        assert!((title_y + bottom).abs_diff(2 * art_y + circle_height - 1) <= 1);
-        assert!(rows.iter().any(|row| row.contains("Personal")));
+    fn wordmark_and_selector_are_centred_in_a_vertical_group() {
+        for (width, height) in [(200, 60), (100, 30), (80, 24), (65, 24)] {
+            let mut selector = JournalSelector::new(journals());
+            let terminal = draw(&mut selector, width, height);
+            let rows: Vec<String> = terminal
+                .backend()
+                .buffer()
+                .content()
+                .chunks(usize::from(width))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                .collect();
+            let title_y = rows
+                .iter()
+                .position(|row| row.contains("Select Journal"))
+                .unwrap();
+            let first_line = WORDMARK.lines().next().unwrap();
+            let (wordmark_y, wordmark_x) = rows
+                .iter()
+                .enumerate()
+                .find_map(|(y, row)| {
+                    row.find(first_line.trim())
+                        .map(|x| (y, x - (first_line.len() - first_line.trim_start().len())))
+                })
+                .unwrap();
+            for (offset, line) in WORDMARK.lines().enumerate() {
+                assert_eq!(
+                    &rows[wordmark_y + offset][wordmark_x..wordmark_x + line.len()],
+                    line
+                );
+            }
+            let wordmark_width = Text::raw(WORDMARK).width();
+            assert!((2 * wordmark_x + wordmark_width).abs_diff(usize::from(width)) <= 1);
+            assert_eq!(title_y, wordmark_y + WORDMARK.lines().count() + 2);
+            let controls = "Open: Enter | Add: n | Delete: d | Exit: q";
+            let left = rows[title_y].chars().position(|cell| cell == '┌').unwrap();
+            let right = rows[title_y].chars().position(|cell| cell == '┐').unwrap();
+            assert_eq!(right - left + 1, controls.width() + 4);
+            assert!((left + right + 1).abs_diff(usize::from(width)) <= 1);
+            let controls_row = rows.iter().find(|row| row.contains(controls)).unwrap();
+            assert_eq!(
+                controls_row
+                    .chars()
+                    .skip(left + 1)
+                    .take(right - left - 1)
+                    .collect::<String>(),
+                format!(" {controls} ")
+            );
+            let bottom = rows
+                .iter()
+                .position(|row| row.chars().nth(left) == Some('└'))
+                .unwrap();
+            assert!((wordmark_y + bottom + 1).abs_diff(usize::from(height)) <= 1);
+            assert!(rows.iter().any(|row| row.contains("Personal")));
+            assert!(!screen(&terminal).contains("rrc%JkkZZ"));
+        }
     }
 
     #[test]
