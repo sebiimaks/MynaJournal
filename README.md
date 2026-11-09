@@ -62,7 +62,7 @@ Each added journal has separate data, settings and state. See
 
 Download binaries and `SHA256SUMS` from the
 [latest release](https://github.com/sebiimaks/MynaJournal/releases/latest).
-Release **0.22.1** provides a macOS Apple Silicon archive and Debian amd64/arm64
+Release **0.23.0** provides a macOS Apple Silicon archive and Debian amd64/arm64
 packages, alongside GitHub's source archives. Every binary includes all four
 backends. The examples below use that version; use matching filenames from the
 release you download.
@@ -91,22 +91,22 @@ executable to a backup location outside your PATH. Keep your data directories.
 
 Alternatively, install the release archive manually:
 
-Download `myna-journal_0.22.1_macos-arm64.tar.gz` and `SHA256SUMS` into the same
+Download `myna-journal_0.23.0_macos-arm64.tar.gz` and `SHA256SUMS` into the same
 directory. In Terminal, change to that directory and verify the archive:
 
 ```sh
-grep -F 'myna-journal_0.22.1_macos-arm64.tar.gz' SHA256SUMS | shasum -a 256 -c -
+grep -F 'myna-journal_0.23.0_macos-arm64.tar.gz' SHA256SUMS | shasum -a 256 -c -
 ```
 
 Close any running MynaJournal instance, then extract and install it for your user:
 
 ```sh
-mkdir -p myna-journal-0.22.1
-tar -xzf myna-journal_0.22.1_macos-arm64.tar.gz -C myna-journal-0.22.1
+mkdir -p myna-journal-0.23.0
+tar -xzf myna-journal_0.23.0_macos-arm64.tar.gz -C myna-journal-0.23.0
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/doc/myna-journal"
-install -m 755 myna-journal-0.22.1/mjournal "$HOME/.local/bin/mjournal"
-cp myna-journal-0.22.1/*.md myna-journal-0.22.1/LICENSE \
-  myna-journal-0.22.1/THIRD_PARTY_NOTICES.txt "$HOME/.local/share/doc/myna-journal/"
+install -m 755 myna-journal-0.23.0/mjournal "$HOME/.local/bin/mjournal"
+cp myna-journal-0.23.0/*.md myna-journal-0.23.0/LICENSE \
+  myna-journal-0.23.0/THIRD_PARTY_NOTICES.txt "$HOME/.local/share/doc/myna-journal/"
 export PATH="$HOME/.local/bin:$PATH"
 mjournal --version
 ```
@@ -129,12 +129,12 @@ dpkg --print-architecture
 ```
 
 Download the matching `.deb` and `SHA256SUMS`: for example,
-`myna-journal_0.22.1-1_amd64.deb` for amd64 or
-`myna-journal_0.22.1-1_arm64.deb` for arm64. From the download directory:
+`myna-journal_0.23.0-1_amd64.deb` for amd64 or
+`myna-journal_0.23.0-1_arm64.deb` for arm64. From the download directory:
 
 ```sh
 sha256sum --ignore-missing --check SHA256SUMS
-sudo apt install ./myna-journal_0.22.1-1_amd64.deb
+sudo apt install ./myna-journal_0.23.0-1_amd64.deb
 mjournal --version
 ```
 
@@ -355,7 +355,7 @@ matches the reviewed native-runtime notices:
 
 ```sh
 rustup toolchain install 1.99.1
-git clone --branch v0.22.1 --depth 1 https://github.com/sebiimaks/MynaJournal.git
+git clone --branch v0.23.0 --depth 1 https://github.com/sebiimaks/MynaJournal.git
 cd MynaJournal
 cargo +1.99.1 install --path . --locked
 mjournal --version
