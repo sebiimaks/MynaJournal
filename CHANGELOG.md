@@ -4,9 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.24.2 - 2026-11-10
+
 - Keep entry layout, dates and times visible when Hide details is enabled; replace word characters in titles, tags and content with random characters
 - Allow editing while details are hidden, showing only the word being typed until a space, punctuation, navigation or focus change conceals it; keep apostrophes and hyphens within the current word
 - Keep the typed word onscreen after combined Unicode characters in unwrapped mode, and preserve selection highlighting when tabs or wide characters are clipped at pane edges
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.24.2-1_amd64.deb`.
+Existing journals and settings are preserved; no migration is needed from 0.24.1.
+
+Hide details remains a display-only control. Dates, times, punctuation and the
+word being typed remain visible; close a protected journal when you need a
+password to reopen it.
 
 ## 0.24.1 - 2026-11-09
 

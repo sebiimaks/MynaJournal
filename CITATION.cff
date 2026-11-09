@@ -3,8 +3,8 @@ cff-version: 1.2.0
 message: Please cite MynaJournal using this metadata and acknowledge its TUI-Journal origin.
 
 # Version information.
-date-released: 2026-11-09
-version: 0.24.1
+date-released: 2026-11-10
+version: 0.24.2
 
 # Project information.
 abstract: A terminal journal and note manager based on TUI-Journal by Ammar Abou Zor and contributors.
