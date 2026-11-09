@@ -4,7 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-- Centre the journal selector beneath the ASCII MynaJournal wordmark, without the large circular logo; keep the controls accessible on small terminals
+## 0.24.1 - 2026-11-09
+
+- Centre the journal selector beneath the ASCII MynaJournal wordmark, replacing the large circular logo on the selection screen
+- Keep the heading and dialog centred together as the terminal resizes; use plain title text or omit the heading when space is limited so journal controls stay accessible
+- Preserve the selector's control-based width, equal padding, highlighted commands and right-aligned Locked labels
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.24.1-1_amd64.deb`.
+Existing journals and settings are preserved; no migration is needed from 0.24.0.
 
 ## 0.24.0 - 2026-11-09
 
