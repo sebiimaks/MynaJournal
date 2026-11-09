@@ -264,6 +264,32 @@ fn names_are_validated_and_never_used_as_paths() {
 }
 
 #[test]
+fn catalog_guard_releases_the_lock_while_a_duplicate_descriptor_remains_open() {
+    let (_directory, store) = fixture();
+    let guard = store.catalog_guard().unwrap();
+    // A subprocess can briefly inherit this descriptor before exec closes it.
+    let inherited = guard.lock.try_clone().unwrap();
+    assert!(store.catalog_guard().is_err());
+    drop(guard);
+    let next = store.catalog_guard().unwrap();
+    assert!(store.catalog_guard().is_err());
+    drop((next, inherited));
+}
+
+#[test]
+fn journal_lease_releases_the_lock_while_a_duplicate_descriptor_remains_open() {
+    let (_directory, store) = fixture();
+    let journal = store.create("Work", &Settings::default()).unwrap();
+    let lease = store.acquire(&journal).unwrap();
+    let inherited = lease.lock.try_clone().unwrap();
+    assert!(store.acquire(&journal).is_err());
+    drop(lease);
+    let next = store.acquire(&journal).unwrap();
+    assert!(store.acquire(&journal).is_err());
+    drop((next, inherited));
+}
+
+#[test]
 fn leases_prevent_opening_or_archiving_busy_journals_and_are_released_on_drop() {
     let (_directory, store) = fixture();
     let journal = store.create("Work", &Settings::default()).unwrap();

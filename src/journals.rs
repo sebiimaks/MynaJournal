@@ -31,7 +31,13 @@ pub struct JournalStore {
 }
 
 pub struct JournalLease {
-    _lock: File,
+    lock: File,
+}
+
+impl Drop for JournalLease {
+    fn drop(&mut self) {
+        let _ = self.lock.unlock();
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -361,11 +367,12 @@ impl JournalStore {
                 journal.name
             )
         })?;
+        let lease = JournalLease { lock };
         ensure!(
             FileIdentity::of(&require_directory(&leases)?) == identity,
             "Journal lease directory changed"
         );
-        Ok(JournalLease { _lock: lock })
+        Ok(lease)
     }
 
     fn ensure_owned_paths(&self, journal: &Journal, profile: &Path) -> Result<()> {
@@ -669,6 +676,13 @@ impl CatalogGuard {
             "Journal collection lock changed"
         );
         Ok(())
+    }
+}
+
+impl Drop for CatalogGuard {
+    fn drop(&mut self) {
+        // Closing alone can retain the lock through a subprocess's inherited descriptor.
+        let _ = self.lock.unlock();
     }
 }
 
