@@ -18,6 +18,19 @@ use uuid::Uuid;
 use self::document::JournalDocument;
 use super::{DataProvider, EntriesDTO, Entry, EntryDraft, ModifyEntryError};
 
+pub(crate) fn validate_journal_conversion_file(path: &Path) -> Result<()> {
+    ensure!(
+        is_journal_path(path),
+        "Journal conversion cannot include unrelated files"
+    );
+    let text = fs::read_to_string(path)?;
+    ensure!(
+        JournalDocument::parse(&text)?.is_some(),
+        "Journal conversion cannot include unrecognized files"
+    );
+    Ok(())
+}
+
 /// The extension used for newly created journal files.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -94,6 +107,43 @@ struct DirectoryGuard {
 }
 
 impl FileDataProvider {
+    pub(crate) async fn restore_migration_metadata(
+        &mut self,
+        entry: Entry,
+        metadata: &str,
+    ) -> Result<()> {
+        let native: serde_json::Value = serde_json::from_str(metadata)?;
+        if native["format"] != "file-v1" {
+            return Ok(());
+        }
+        let original = JournalDocument::parse(
+            native["document"]
+                .as_str()
+                .context("Invalid native journal metadata")?,
+        )?
+        .context("Missing native journal metadata")?;
+        ensure!(
+            original.entry(entry.id)?.protection.is_none(),
+            "Expected plaintext native journal metadata"
+        );
+        let document = original.with_entry(&entry)?;
+        self.prepare_write()?;
+        let stored = self
+            .entries
+            .get(&entry.id)
+            .context("Entry disappeared during conversion")?;
+        let path = stored.path.clone();
+        let baseline = self.write_file(&path, &document, Some(&stored.baseline), None)?;
+        self.insert_stored(
+            entry.id,
+            StoredEntry {
+                document,
+                path,
+                baseline,
+            },
+        );
+        Ok(())
+    }
     /// Opens the directory lazily. The first operation obtains an exclusive app lock.
     pub fn new(directory: PathBuf, format: FileFormat) -> Self {
         Self {
@@ -240,7 +290,16 @@ impl FileDataProvider {
             .as_ref()
             .context("Journal directory is not open")?
             .canonical;
-        let stem = document.created.format("%Y%m%d_%H%M%S");
+        let stem = if document
+            .entry(0)?
+            .protection
+            .as_ref()
+            .is_some_and(|p| p.version == crate::journal::RECORD_VERSION)
+        {
+            document.uid.to_string()
+        } else {
+            document.created.format("%Y%m%d_%H%M%S").to_string()
+        };
         for suffix in 1_u32..=u32::MAX {
             let name = if suffix == 1 {
                 format!("{stem}{}", self.format.extension())

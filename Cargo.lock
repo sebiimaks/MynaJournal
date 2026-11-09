@@ -2063,6 +2063,7 @@ dependencies = [
  "futures-util",
  "fuzzy-matcher",
  "git2",
+ "hmac",
  "log",
  "path-absolutize",
  "rand",

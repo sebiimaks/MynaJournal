@@ -1,8 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use backend::DataProvider;
 
 use crate::settings::{Settings, document::ConfigDocument};
 
+use super::journal_security_popup::{JournalPasswordAction, JournalSecurityPopup};
 use super::themes::ThemeStore;
 use super::{App, ConfigAction, ConfigPopup, Popup, Styles, UIComponents};
 
@@ -23,6 +24,7 @@ impl UIComponents<'_> {
             app.state.entries_list_percentage(),
         )?;
         popup.set_launch_details(context.launch_details.clone());
+        popup.set_journal_protected(app.journal_is_protected());
         self.cancel_divider_drag();
         self.popup_stack.push(Popup::Config(Box::new(popup)));
         Ok(())
@@ -33,6 +35,31 @@ impl UIComponents<'_> {
         action: ConfigAction,
         app: &mut App<D>,
     ) -> Result<()> {
+        let security_action = match action {
+            ConfigAction::EnableJournalProtection => Some(JournalPasswordAction::Enable),
+            ConfigAction::ChangeJournalPassword => Some(JournalPasswordAction::Change),
+            ConfigAction::DisableJournalProtection => Some(JournalPasswordAction::Disable),
+            _ => None,
+        };
+        if let Some(action) = security_action {
+            ensure!(
+                !self.has_unsaved()
+                    && !self
+                        .popup_stack
+                        .iter()
+                        .any(|popup| matches!(popup, Popup::Entry(_))),
+                "Save or discard entry edits before changing journal protection"
+            );
+            ensure!(
+                action != JournalPasswordAction::Enable || !app.has_sealed_drafts(),
+                "Unlock and save or discard all encrypted entry drafts before protecting the journal"
+            );
+            self.popup_stack
+                .push(Popup::JournalSecurity(Box::new(JournalSecurityPopup::new(
+                    action,
+                ))));
+            return Ok(());
+        }
         let Some(Popup::Config(popup)) = self.popup_stack.last_mut() else {
             return Ok(());
         };
@@ -78,7 +105,11 @@ impl UIComponents<'_> {
                 }
                 popup.mark_layout_saved(app.state.entries_list_percentage());
             }
-            ConfigAction::Keep | ConfigAction::Close => {}
+            ConfigAction::Keep
+            | ConfigAction::Close
+            | ConfigAction::EnableJournalProtection
+            | ConfigAction::ChangeJournalPassword
+            | ConfigAction::DisableJournalProtection => {}
         }
         Ok(())
     }

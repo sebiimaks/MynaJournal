@@ -106,8 +106,8 @@ pub struct HelpPopup {
 }
 
 impl HelpPopup {
-    pub fn new(selected_tab: KeybindingsTabs) -> Self {
-        let global_bindings = GlobalBindings::new();
+    pub fn new(selected_tab: KeybindingsTabs, journal_protected: bool) -> Self {
+        let global_bindings = GlobalBindings::new(journal_protected);
         let multi_select_bindings = MultiSelectBindings::new();
         Self {
             selected_tab,

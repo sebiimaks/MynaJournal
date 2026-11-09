@@ -27,6 +27,7 @@ assets = [
     ["FILE-BACKEND.md", "usr/share/doc/myna-journal/FILE-BACKEND.md", "644"],
     ["THEMES.md", "usr/share/doc/myna-journal/THEMES.md", "644"],
     ["NOTE-LOCKING.md", "usr/share/doc/myna-journal/NOTE-LOCKING.md", "644"],
+    ["JOURNAL-LOCKING.md", "usr/share/doc/myna-journal/JOURNAL-LOCKING.md", "644"],
     ["BACKUPS.md", "usr/share/doc/myna-journal/BACKUPS.md", "644"],
     ["ATTRIBUTION.md", "usr/share/doc/myna-journal/ATTRIBUTION.md", "644"],
     ["THIRD_PARTY_NOTICES.txt", "usr/share/doc/myna-journal/THIRD_PARTY_NOTICES.txt", "644"],
@@ -58,6 +59,7 @@ aho-corasick = "1.1"
 scopeguard = "1.2"
 shlex = "2.0"
 sha2 = "0.10"
+hmac = "0.12"
 git2 = { version = "0.21", default-features = false }
 rayon = "1.12"
 rand = "0.8.8"

@@ -6,11 +6,15 @@ Create a backup in a new directory:
 mjournal backup create "$HOME/Backups/mynajournal-2026-10-28"
 ```
 
-The parent directory must already exist. Close MynaJournal before backing up
-JSON, File or VJOURNAL storage. Backups preserve the selected backend's native files,
-configuration, themes, and application state. Protected notes remain encrypted;
-unprotected notes remain plaintext. A backup is not itself password protected.
+The parent directory must already exist. Close the journal in MynaJournal before
+backing it up. Backups preserve the selected backend's native files,
+configuration, themes, and application state. Protected notes and protected journals
+remain encrypted; unprotected notes remain plaintext. A protected journal's
+wrapped-key header is included and restored beside its native data, and the
+journal password is still required to open it. Configuration and other backup
+metadata are readable; the backup as a whole is not password protected.
 Keep it in a private location, preferably on encrypted storage.
+See [Journal locking](JOURNAL-LOCKING.md) for protection and key-header details.
 
 Backend and `--config` overrides work as they do when opening the app:
 
@@ -39,6 +43,9 @@ The backup contains a versioned `manifest.json` with SHA-256 checksums. Its
 presence marks a completed backup. These checksums detect accidental damage;
 they do not authenticate a backup supplied by someone else. Restore only backups
 you trust. Symbolic links and nonregular files inside source trees are rejected.
+The backend file or directory itself must also be a real path rather than a
+symbolic link, so its key header and migration lock cannot be separated from its
+data. A symbolic link in a parent directory is supported.
 Files and directories created by these commands use private Unix permissions.
 The manifest has a 16 MiB limit, determined by the number and length of source
 paths rather than the size of journal content. Backup creation refuses an

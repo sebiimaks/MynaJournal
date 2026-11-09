@@ -132,6 +132,9 @@ impl UIComponents<'_> {
     }
 
     pub async fn auto_lock<D: DataProvider>(&mut self, app: &mut App<D>) -> Result<()> {
+        if self.journal_conversion_pending() {
+            return Ok(());
+        }
         let entry_popup = if app.current_is_protected() && !app.current_is_locked() {
             self.popup_stack
                 .iter()
@@ -171,6 +174,9 @@ impl UIComponents<'_> {
     }
 
     pub fn hide_for_auto_lock(&mut self) {
+        if self.journal_conversion_pending() {
+            return;
+        }
         self.privacy_shield = true;
         self.cancel_divider_drag();
     }
@@ -223,7 +229,7 @@ impl UIComponents<'_> {
         &mut self,
         command: UICommand,
     ) -> HandleInputReturnType {
-        self.show_msg_box(MsgBoxType::Question("Copy private text to the system clipboard? It can remain in clipboard history after this note is locked.".into()), MsgBoxActions::YesNo, Some(command));
+        self.show_msg_box(MsgBoxType::Question("Copy private text to the system clipboard? It can remain in clipboard history after locking.".into()), MsgBoxActions::YesNo, Some(command));
         HandleInputReturnType::Handled
     }
 }

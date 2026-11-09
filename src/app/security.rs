@@ -93,6 +93,115 @@ impl Default for SecurityState {
 }
 
 impl<D: DataProvider> App<D> {
+    pub fn journal_is_protected(&self) -> bool {
+        self.data_provide.is_journal_protected()
+    }
+
+    pub fn locked_note_ids(&self) -> Vec<u32> {
+        self.entries
+            .iter()
+            .filter(|entry| self.is_locked(entry.id))
+            .map(|entry| entry.id)
+            .collect()
+    }
+
+    pub async fn enable_journal_protection(&mut self, password: SecretString) -> Result<()> {
+        ensure!(
+            !self.journal_is_protected(),
+            "This journal is already protected"
+        );
+        ensure!(
+            !self.has_sealed_drafts(),
+            "Unlock and save or discard all encrypted drafts first"
+        );
+        ensure!(
+            self.entries.iter().all(|entry| entry.protection.is_none()
+                || self.security.sessions.contains_key(&entry.id)),
+            "Unlock every individually protected entry using Entry security before protecting the journal. Their separate passwords will be replaced by the journal password."
+        );
+
+        let result = async {
+            let mut records = self.data_provide.journal_records().await?;
+            for record in &mut records {
+                if record.entry.protection.is_some() {
+                    let session = self.security.sessions.get(&record.entry.id).context(
+                        "Unlock every individually protected entry before protecting the journal",
+                    )?;
+                    ensure!(
+                        session.entry.protection == record.entry.protection,
+                        "An entry changed outside this session; reopen it before protecting the journal"
+                    );
+                    record.entry = session.entry.clone();
+                    record.entry.protection = None;
+                    record.native_metadata = session.native_metadata.clone();
+                }
+            }
+            self.data_provide.enable_journal_protection(password, Some(records)).await
+        }.await;
+        if self.journal_is_protected() {
+            self.invalidate_converted_entries();
+        }
+        self.check_journal_conversion_result(result)?;
+        self.reload_after_journal_conversion().await
+    }
+
+    pub async fn change_journal_password(
+        &mut self,
+        current: SecretString,
+        new: SecretString,
+    ) -> Result<()> {
+        self.data_provide
+            .change_journal_password(current, new)
+            .await
+    }
+
+    pub async fn disable_journal_protection(&mut self, password: SecretString) -> Result<()> {
+        let result = self.data_provide.disable_journal_protection(password).await;
+        if !self.journal_is_protected() {
+            self.invalidate_converted_entries();
+        }
+        self.check_journal_conversion_result(result)?;
+        self.reload_after_journal_conversion().await
+    }
+
+    fn check_journal_conversion_result(&mut self, result: Result<()>) -> Result<()> {
+        if let Err(error) = result {
+            if self.data_provide.journal_reload_required() {
+                self.invalidate_converted_entries();
+                anyhow::bail!("{error}. Close and reopen this journal before editing.");
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn reload_after_journal_conversion(&mut self) -> Result<()> {
+        self.invalidate_converted_entries();
+        self.load_entries().await.context("Journal protection changed, but entries could not be reloaded; close and reopen this journal")?;
+        self.current_entry_id = self.entries.first().map(|entry| entry.id);
+        Ok(())
+    }
+
+    fn invalidate_converted_entries(&mut self) {
+        self.history = super::history::HistoryManager::new(self.settings.history_limit);
+        self.security.sessions.clear();
+        self.selected_entries.clear();
+        self.filter = None;
+        self.filtered_out_entries.clear();
+        self.current_entry_id = None;
+        for entry in &mut self.entries {
+            entry.title.zeroize();
+            entry.content.zeroize();
+            entry.tags.zeroize();
+            entry.priority.zeroize();
+            entry.mood.zeroize();
+            entry.journal_prompt.zeroize();
+        }
+        self.entries.clear();
+        self.update_colored_tags();
+        self.redraw_after_restore = true;
+    }
+
     pub fn entry_mood(&self, entry: &Entry) -> Option<backend::Mood> {
         if entry.protection.is_some() {
             self.security
@@ -167,6 +276,10 @@ impl<D: DataProvider> App<D> {
         password: SecretString,
         content: String,
     ) -> Result<()> {
+        ensure!(
+            !self.journal_is_protected(),
+            "This journal already protects every entry; use journal security in Config"
+        );
         ensure!(!self.is_protected(id), "This note is already protected");
         let mut candidate = private_entry(self.get_entry(id).context("No note selected")?.clone());
         candidate.content.zeroize();
@@ -388,6 +501,103 @@ impl<D: DataProvider> App<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "json")]
+    #[tokio::test]
+    async fn failed_conversion_discards_stale_app_view_before_any_further_save() {
+        use backend::{
+            EntryDraft,
+            journal::{JournalBackend, JournalProvider},
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("entries.json");
+        let provider = JournalProvider::open(JournalBackend::Json(path.clone()))
+            .await
+            .unwrap();
+        let mut app = App::new(provider, crate::settings::Settings::default());
+        let stale = app
+            .data_provide
+            .add_entry(EntryDraft::new(
+                chrono::Utc::now(),
+                "Old title".into(),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+        app.load_entries().await.unwrap();
+        app.current_entry_id = Some(stale.id);
+        let mut external: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let entries = if external.is_array() {
+            external.as_array_mut().unwrap()
+        } else {
+            external["entries"].as_array_mut().unwrap()
+        };
+        entries[0]["title"] = "Externally changed title".into();
+        entries[0]["custom_metadata"] = "Preserve this unsupported data".into();
+        let changed = serde_json::to_vec(&external).unwrap();
+        std::fs::write(&path, &changed).unwrap();
+        let error = app
+            .enable_journal_protection("test password".to_owned().into())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("reopen"));
+        assert!(!app.journal_is_protected());
+        assert!(app.entries.is_empty());
+        assert!(app.current_entry_id.is_none());
+        assert!(app.data_provide.update_entry(stale).await.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), changed);
+        app.load_entries().await.unwrap();
+        assert_eq!(app.entries[0].title, "Externally changed title");
+    }
+
+    #[cfg(feature = "json")]
+    #[tokio::test]
+    async fn confirmed_journal_export_does_not_refresh_write_baseline_behind_editor() {
+        use backend::{
+            EntryDraft,
+            journal::{JournalBackend, JournalProvider},
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let store = temporary.path().join("entries.json");
+        let provider = JournalProvider::open(JournalBackend::Json(store.clone()))
+            .await
+            .unwrap();
+        let mut settings = crate::settings::Settings::default();
+        settings.backend_type = Some(crate::settings::BackendType::Json);
+        settings.json_backend.file_path = Some(store.clone());
+        let mut app = App::new(provider, settings);
+        app.data_provide
+            .add_entry(
+                EntryDraft::new(chrono::Utc::now(), "Title".into(), vec![], None)
+                    .with_content("Earlier body".into()),
+            )
+            .await
+            .unwrap();
+        app.load_entries().await.unwrap();
+        app.enable_journal_protection("journal password".to_owned().into())
+            .await
+            .unwrap();
+        let older_ciphertext = std::fs::read(&store).unwrap();
+        app.update_current_entry_content("Displayed saved body".into())
+            .await
+            .unwrap();
+        std::fs::write(&store, older_ciphertext).unwrap();
+        app.selected_entries.insert(app.current_entry_id.unwrap());
+        let export = temporary.path().join("export.json");
+        app.export_entries(export.clone()).await.unwrap();
+        let dto: backend::EntriesDTO =
+            serde_json::from_slice(&std::fs::read(export).unwrap()).unwrap();
+        assert_eq!(dto.entries[0].content, "Displayed saved body");
+        assert!(
+            app.update_current_entry_content(
+                "Stale edit must not overwrite external change".into()
+            )
+            .await
+            .is_err()
+        );
+    }
 
     #[test]
     fn idle_lock_checks_monotonic_and_wall_time_and_can_be_disabled() {

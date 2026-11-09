@@ -164,6 +164,14 @@ fn source_data(settings: &Settings) -> Result<Source> {
         #[allow(unreachable_patterns)]
         _ => anyhow::bail!("This build does not include the selected backup backend"),
     };
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => ensure!(
+            !metadata.is_symlink(),
+            "Journal backend path must not be a symbolic link; use the actual storage path so its protection header stays with its data"
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
     Ok(Source {
         path: resolve_root(&path)?,
         destination: data_relative(backend).into(),
@@ -196,6 +204,16 @@ pub async fn create(
 ) -> Result<()> {
     let backend = settings.backend_type.unwrap_or_default();
     let data = source_data(settings)?;
+    let journal_backend = crate::journal_storage::backend(settings)?;
+    // Keep protection changes excluded for the complete snapshot. This also
+    // rejects unfinished conversions without opening or modifying native data.
+    let _journal_lease = if data.path.parent().is_some_and(Path::is_dir) {
+        Some(backend::journal::JournalLease::acquire(&journal_backend)?)
+    } else {
+        // There cannot be a store or protection sidecar without its parent.
+        // The snapshot's identity checks still reject concurrent creation.
+        None
+    };
     let config_path = Settings::file_path(custom_config.cloned())?;
     let theme_store = ThemeStore::new(custom_config)?;
     let state_dir = settings
@@ -203,6 +221,15 @@ pub async fn create(
         .clone()
         .map_or_else(AppState::default_persist_dir, Ok)?;
     let mut sources = vec![
+        Source {
+            path: resolve_root(&journal_backend.header_path())?,
+            destination: {
+                let mut path = data.destination.as_os_str().to_os_string();
+                path.push(".myna-lock.json");
+                PathBuf::from(path)
+            },
+            directory: false,
+        },
         Source {
             path: resolve_root(&config_path)?,
             destination: ORIGINAL_CONFIG.into(),

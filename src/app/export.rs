@@ -259,6 +259,10 @@ fn resolve_path(path: &Path) -> Result<PathBuf> {
 impl<D: DataProvider> App<D> {
     pub(super) fn validate_export_target(&self, target: &ExportTarget) -> Result<()> {
         let destination = resolve_path(target.path())?;
+        ensure!(
+            !crate::journal_storage::is_protection_file(&destination),
+            "Choose an export destination outside journal protection files"
+        );
         let mut protected = Vec::new();
         let backend = self.settings.backend_type.unwrap_or_default();
         match backend {
@@ -312,6 +316,13 @@ impl<D: DataProvider> App<D> {
             #[allow(unreachable_patterns)]
             _ => {}
         }
+        let storage = crate::journal_storage::backend(&self.settings)?;
+        protected.extend(
+            storage
+                .reserved_paths()
+                .into_iter()
+                .map(|path| (path, false)),
+        );
         if let Some(context) = &self.config_context {
             protected.push((context.settings_path.clone(), false));
             protected.push((context.themes_path.clone(), true));
@@ -333,10 +344,14 @@ impl<D: DataProvider> App<D> {
                         None,
                     ),
                 };
-            if destination.starts_with(resolve_path(store.root())?) {
+            if crate::journal_storage::is_within_directory(
+                &destination,
+                &resolve_path(store.root())?,
+            ) {
                 let allowed = exports
                     .map(|path| -> Result<bool> {
-                        Ok(resolve_path(&path)? == path && destination.starts_with(&path))
+                        Ok(resolve_path(&path)? == path
+                            && crate::journal_storage::is_within_directory(&destination, &path))
                     })
                     .transpose()?
                     .unwrap_or(false);
@@ -365,7 +380,8 @@ impl<D: DataProvider> App<D> {
             };
             ensure!(
                 destination != canonical
-                    && !(directory && destination.starts_with(&canonical))
+                    && !(directory
+                        && crate::journal_storage::is_within_directory(&destination, &canonical))
                     && !alias,
                 "Choose an export destination outside the app's active journal, configuration, themes, and state files"
             );

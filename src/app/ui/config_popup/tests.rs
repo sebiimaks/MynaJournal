@@ -27,6 +27,52 @@ fn key(popup: &mut ConfigPopup, code: KeyCode) -> ConfigAction {
     popup.handle_input(&Input::new(code, KeyModifiers::NONE))
 }
 
+#[test]
+fn journal_protection_actions_use_live_state_and_never_stage_a_configuration_flag() {
+    let (_directory, mut popup) = popup("colored_tags = true\n", "");
+    key(&mut popup, KeyCode::Enter);
+    let draft = popup.settings_document.text();
+    select(&mut popup, Tab::Security, &[]);
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(false))
+    );
+    assert_eq!(
+        key(&mut popup, KeyCode::Enter),
+        ConfigAction::EnableJournalProtection
+    );
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(false))
+    );
+    key(&mut popup, KeyCode::Char('d'));
+    assert_eq!(popup.settings_document.text(), draft);
+    popup.set_journal_protected(true);
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some(Value::Boolean(true))
+    );
+    assert_eq!(
+        key(&mut popup, KeyCode::Char(' ')),
+        ConfigAction::DisableJournalProtection
+    );
+    key(&mut popup, KeyCode::Down);
+    assert!(matches!(popup.current_field().kind, Kind::JournalPassword));
+    assert_eq!(
+        key(&mut popup, KeyCode::Enter),
+        ConfigAction::ChangeJournalPassword
+    );
+    assert_eq!(popup.settings_document.text(), draft);
+    assert!(popup.editor.is_none());
+    assert!(popup.is_dirty());
+    popup.set_journal_protected(false);
+    assert!(
+        !popup
+            .tab_fields()
+            .any(|field| matches!(field.kind, Kind::JournalPassword))
+    );
+}
+
 fn select(popup: &mut ConfigPopup, tab: Tab, path: &[&str]) {
     if tab == Tab::Appearance && popup.themes_document.is_none() {
         popup.edit_selected_theme();

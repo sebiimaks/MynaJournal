@@ -32,6 +32,9 @@ pub enum ConfigAction {
     SaveAppearance,
     ActivateTheme,
     SaveLayout(u16),
+    EnableJournalProtection,
+    ChangeJournalPassword,
+    DisableJournalProtection,
 }
 
 #[derive(Debug)]
@@ -65,6 +68,7 @@ pub struct ConfigPopup {
     launch_details: Vec<String>,
     page_size: usize,
     context_scroll: usize,
+    journal_protected: bool,
 }
 
 impl ConfigPopup {
@@ -134,6 +138,7 @@ impl ConfigPopup {
             launch_details: Vec::new(),
             page_size: 5,
             context_scroll: 0,
+            journal_protected: false,
         })
     }
 
@@ -143,6 +148,21 @@ impl ConfigPopup {
 
     pub fn set_launch_details(&mut self, details: Vec<String>) {
         self.launch_details = details;
+    }
+
+    pub fn set_journal_protected(&mut self, protected: bool) {
+        self.journal_protected = protected;
+        let tab = Tab::ALL
+            .iter()
+            .position(|tab| *tab == Tab::Security)
+            .unwrap();
+        let count = self
+            .fields
+            .iter()
+            .filter(|field| field.tab == Tab::Security)
+            .filter(|field| protected || !matches!(field.kind, Kind::JournalPassword))
+            .count();
+        self.selected[tab] = self.selected[tab].min(count.saturating_sub(1));
     }
 
     pub fn show_error(&mut self, message: String) {
@@ -196,6 +216,7 @@ impl ConfigPopup {
         self.fields
             .iter()
             .filter(|field| field.tab == self.current_tab())
+            .filter(|field| self.journal_protected || !matches!(field.kind, Kind::JournalPassword))
     }
 
     fn current_field(&self) -> &Field {
@@ -205,6 +226,11 @@ impl ConfigPopup {
     }
 
     fn value(&self, field: &Field) -> Option<Value> {
+        match field.kind {
+            Kind::JournalProtection => return Some(Value::Boolean(self.journal_protected)),
+            Kind::JournalPassword => return Some(Value::String("Enter to change".into())),
+            _ => {}
+        }
         if field.tab == Tab::Layout {
             Some(Value::Integer(i64::from(self.divider)))
         } else {
@@ -220,6 +246,9 @@ impl ConfigPopup {
     }
 
     fn active_value(&self, field: &Field) -> Option<Value> {
+        if matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword) {
+            return self.value(field);
+        }
         if field.keys() == ["journal_prompts"]
             && self
                 .active_settings
@@ -244,6 +273,12 @@ impl ConfigPopup {
     }
 
     fn default_value(&self, field: &Field) -> Option<Value> {
+        if matches!(field.kind, Kind::JournalProtection) {
+            return Some(Value::Boolean(false));
+        }
+        if matches!(field.kind, Kind::JournalPassword) {
+            return None;
+        }
         if field.tab == Tab::Layout {
             Some(Value::Integer(30))
         } else {
@@ -382,7 +417,14 @@ impl ConfigPopup {
             KeyCode::Enter | KeyCode::Char(' ' | 'd') if self.current_tab() == Tab::Context => {}
             KeyCode::Home => self.selected[self.tab] = 0,
             KeyCode::End => self.selected[self.tab] = self.tab_fields().count().saturating_sub(1),
-            KeyCode::Enter | KeyCode::Char(' ') => self.begin_edit(),
+            KeyCode::Enter | KeyCode::Char(' ') => match self.current_field().kind {
+                Kind::JournalProtection if self.journal_protected => {
+                    return ConfigAction::DisableJournalProtection;
+                }
+                Kind::JournalProtection => return ConfigAction::EnableJournalProtection,
+                Kind::JournalPassword => return ConfigAction::ChangeJournalPassword,
+                _ => self.begin_edit(),
+            },
             KeyCode::Char('d') => self.restore_default(),
             _ => {}
         }
@@ -592,6 +634,11 @@ impl ConfigPopup {
 
     fn restore_default(&mut self) {
         let field = self.current_field().clone();
+        if matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword) {
+            self.status = "Use Enter to change journal protection.".into();
+            self.error = false;
+            return;
+        }
         let result = if field.tab == Tab::Layout {
             self.divider = 30;
             Ok(())
@@ -609,6 +656,10 @@ impl ConfigPopup {
     }
 
     fn apply_value(&mut self, field: &Field, value: Option<Value>) -> Result<()> {
+        ensure!(
+            !matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword),
+            "Journal protection requires password verification."
+        );
         validate_path(field, value.as_ref())?;
         if field.tab == Tab::Layout {
             let divider = value
@@ -761,13 +812,16 @@ impl ConfigPopup {
             .tab_fields()
             .map(|field| {
                 let value = self.value(field);
-                let source = if field.tab == Tab::Layout {
-                    "state"
-                } else if self.raw_value(field).is_some() {
-                    "file"
-                } else {
-                    "default"
-                };
+                let source =
+                    if matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword) {
+                        "journal"
+                    } else if field.tab == Tab::Layout {
+                        "state"
+                    } else if self.raw_value(field).is_some() {
+                        "file"
+                    } else {
+                        "default"
+                    };
                 let differs = value != self.active_value(field);
                 let status = if field.keys() == ["journal_prompts"]
                     && self

@@ -6,6 +6,7 @@ use zeroize::Zeroize;
 mod mood;
 mod persistence;
 pub use mood::{JournalPrompt, Mood};
+pub mod journal;
 pub mod protection;
 pub use protection::EncryptedNote;
 
@@ -44,6 +45,47 @@ pub enum ModifyEntryError {
 // The warning can be suppressed since this will be used with the code base of this app only
 #[allow(async_fn_in_trait)]
 pub trait DataProvider {
+    fn is_journal_protected(&self) -> bool {
+        false
+    }
+    fn journal_reload_required(&self) -> bool {
+        false
+    }
+    async fn journal_records(&mut self) -> anyhow::Result<Vec<journal::JournalRecord>> {
+        let mut records = Vec::new();
+        for entry in self.load_all_entries().await? {
+            let native_metadata = if entry.protection.is_none() {
+                self.protection_metadata(entry.id).await?
+            } else {
+                None
+            };
+            records.push(journal::JournalRecord {
+                entry,
+                native_metadata,
+            });
+        }
+        Ok(records)
+    }
+    async fn enable_journal_protection(
+        &mut self,
+        _password: protection::SecretString,
+        _records: Option<Vec<journal::JournalRecord>>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("This provider does not support journal protection")
+    }
+    async fn change_journal_password(
+        &mut self,
+        _current: protection::SecretString,
+        _new: protection::SecretString,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("This provider does not support journal protection")
+    }
+    async fn disable_journal_protection(
+        &mut self,
+        _password: protection::SecretString,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("This provider does not support journal protection")
+    }
     /// Retain backend-specific deletion snapshots only while undo/redo can restore them.
     fn retain_restore_metadata(&mut self, _entry_ids: &[u32]) {}
 

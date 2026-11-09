@@ -169,6 +169,24 @@ pub fn exec_export_selected_entries<D: DataProvider>(
         return Ok(HandleInputReturnType::Handled);
     }
 
+    if app.journal_is_protected() {
+        ui_components.show_msg_box(
+            MsgBoxType::Question(
+                "Export selected entries as plaintext? The exported file will not be encrypted."
+                    .into(),
+            ),
+            MsgBoxActions::YesNo,
+            Some(UICommand::MulSelExportEntries),
+        );
+        return Ok(HandleInputReturnType::Handled);
+    }
+    export_selected_entries(ui_components, app)
+}
+
+pub(super) fn export_selected_entries<D: DataProvider>(
+    ui_components: &mut UIComponents,
+    app: &App<D>,
+) -> CmdResult {
     match ExportPopup::create_multi_select(app) {
         Ok(popup) => ui_components
             .popup_stack

@@ -33,6 +33,9 @@ use ratatui::{
 };
 
 mod commands;
+mod concealment;
+#[cfg(test)]
+mod concealment_tests;
 mod config_handlers;
 mod config_popup;
 #[cfg(test)]
@@ -49,6 +52,8 @@ mod fuzz_find;
 mod help_popup;
 #[cfg(test)]
 mod journal_exit_tests;
+mod journal_security_handlers;
+pub mod journal_security_popup;
 pub mod journal_selector;
 mod msg_box;
 mod prompt;
@@ -73,6 +78,7 @@ pub enum ControlType {
 
 pub enum Popup<'a> {
     Security(Box<security_popup::SecurityPopup>),
+    JournalSecurity(Box<journal_security_popup::JournalSecurityPopup>),
     Help(Box<HelpPopup>),
     Config(Box<ConfigPopup>),
     Entry(Box<EntryPopup<'a>>),
@@ -106,6 +112,8 @@ pub struct UIComponents<'a> {
     divider_drag: Option<divider::DividerDrag>,
     startup_artwork_visible: bool,
     privacy_shield: bool,
+    details_hidden: bool,
+    concealed_exit: Option<concealment::ConcealedExit>,
     shielded_popups: Vec<Popup<'a>>,
     lock_all_requested: bool,
     prompt_hidden: bool,
@@ -139,6 +147,8 @@ impl UIComponents<'_> {
             divider_drag: None,
             startup_artwork_visible: false,
             privacy_shield: false,
+            details_hidden: false,
+            concealed_exit: None,
             shielded_popups: Vec::new(),
             lock_all_requested: false,
             prompt_hidden: false,
@@ -147,6 +157,12 @@ impl UIComponents<'_> {
 
     pub fn has_popup(&self) -> bool {
         !self.popup_stack.is_empty()
+    }
+
+    pub fn journal_conversion_pending(&self) -> bool {
+        self.popup_stack.iter().any(
+            |popup| matches!(popup, Popup::JournalSecurity(popup) if popup.consolidating_entries()),
+        )
     }
 
     pub fn take_lock_all_request(&mut self) -> bool {
@@ -198,6 +214,10 @@ impl UIComponents<'_> {
             if matches!(self.popup_stack.last(), Some(Popup::Security(_))) {
                 self.render_popup(f);
             }
+            return;
+        }
+        if self.details_hidden {
+            self.render_concealed(f, app);
             return;
         }
         self.editor.set_word_wrap(app.settings.editor_word_wrap);
@@ -278,6 +298,7 @@ impl UIComponents<'_> {
         if let Some(popup) = self.popup_stack.last_mut() {
             match popup {
                 Popup::Security(popup) => popup.render_widget(f, f.area(), &self.styles),
+                Popup::JournalSecurity(popup) => popup.render_widget(f, f.area(), &self.styles),
                 Popup::Config(config) => config.render_widget(f, f.area(), &self.styles),
                 Popup::Help(help_popup) => help_popup.render_widget(f, f.area()),
                 Popup::Entry(entry_popup) => entry_popup.render_widget(f, f.area(), &self.styles),
@@ -299,10 +320,11 @@ impl UIComponents<'_> {
         input: &Input,
         app: &mut App<D>,
     ) -> Result<HandleInputReturnType> {
-        if self
-            .global_keymaps
-            .iter()
-            .any(|keymap| keymap.key == *input && keymap.command == UICommand::LockAllNotes)
+        if !app.journal_is_protected()
+            && self
+                .global_keymaps
+                .iter()
+                .any(|keymap| keymap.key == *input && keymap.command == UICommand::LockAllNotes)
         {
             return UICommand::LockAllNotes.execute(self, app).await;
         }
@@ -314,6 +336,17 @@ impl UIComponents<'_> {
                 self.show_security(app, true)?;
             }
             return Ok(HandleInputReturnType::Handled);
+        }
+        if app.journal_is_protected()
+            && self.global_keymaps.iter().any(|keymap| {
+                keymap.key == *input && keymap.command == UICommand::ToggleDetailsHidden
+            })
+        {
+            self.toggle_details_hidden(app);
+            return Ok(HandleInputReturnType::Handled);
+        }
+        if self.details_hidden {
+            return self.handle_concealed_input(input, app).await;
         }
         if self.has_popup() {
             return self.handle_popup_input(input, app).await;
@@ -387,6 +420,9 @@ impl UIComponents<'_> {
         if matches!(self.popup_stack.last(), Some(Popup::Security(_))) {
             return self.handle_security_input(input, app).await;
         }
+        if matches!(self.popup_stack.last(), Some(Popup::JournalSecurity(_))) {
+            return self.handle_journal_security_input(input, app).await;
+        }
         if let Some(Popup::Config(config)) = self.popup_stack.last_mut() {
             let action = config.handle_input(input);
             if action == ConfigAction::Close {
@@ -402,6 +438,7 @@ impl UIComponents<'_> {
             Some(popup) => {
                 match popup {
                     Popup::Security(_) => unreachable!("security handled above"),
+                    Popup::JournalSecurity(_) => unreachable!("journal security handled above"),
                     Popup::Config(_) => unreachable!("configuration handled above"),
                     Popup::Help(help_popup) => {
                         if help_popup.handle_input(input) == HelpInputInputReturn::Close {

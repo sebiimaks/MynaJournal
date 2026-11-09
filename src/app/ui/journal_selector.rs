@@ -20,6 +20,7 @@ pub struct JournalChoice {
     pub id: String,
     pub name: String,
     pub is_personal: bool,
+    pub locked: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -353,7 +354,16 @@ impl JournalSelector {
                     let items: Vec<_> = self
                         .journals
                         .iter()
-                        .map(|journal| ListItem::new(journal.name.as_str()))
+                        .map(|journal| {
+                            let width = usize::from(content.width.saturating_sub(2));
+                            let label = if journal.locked { "Locked" } else { "" };
+                            let label = clipped_name(label, width);
+                            let name_width =
+                                width.saturating_sub(label.width() + usize::from(journal.locked));
+                            let name = clipped_name(&journal.name, name_width);
+                            let padding = width.saturating_sub(name.width() + label.width());
+                            ListItem::new(format!("{name}{}{label}", " ".repeat(padding)))
+                        })
                         .collect();
                     let list = List::new(items)
                         .highlight_symbol("> ")
@@ -554,11 +564,13 @@ mod tests {
                 id: "personal".into(),
                 name: "Personal".into(),
                 is_personal: true,
+                locked: false,
             },
             JournalChoice {
                 id: "work-id".into(),
                 name: "Work".into(),
                 is_personal: false,
+                locked: false,
             },
         ]
     }
@@ -822,6 +834,38 @@ mod tests {
     }
 
     #[test]
+    fn locked_journal_label_is_right_aligned_and_shares_selection_highlight() {
+        for width in [31, 60, 100, 200] {
+            let mut choices = journals();
+            choices[0].locked = true;
+            choices[0].name = "私の日記e\u{301}".repeat(20);
+            let mut selector = JournalSelector::new(choices);
+            let terminal = draw(&mut selector, width, 60);
+            let buffer = terminal.backend().buffer();
+            let label = buffer
+                .content()
+                .windows(6)
+                .position(|cells| {
+                    cells.iter().map(|cell| cell.symbol()).collect::<String>() == "Locked"
+                })
+                .unwrap();
+            let x = label % usize::from(width);
+            let y = label / usize::from(width);
+            let cells = &buffer.content()[y * usize::from(width)..(y + 1) * usize::from(width)];
+            assert_eq!(cells[x + 6].symbol(), " ");
+            assert_eq!(cells[x + 7].symbol(), "│");
+            let marker = cells.iter().position(|cell| cell.symbol() == ">").unwrap();
+            assert_eq!(cells[marker].style(), cells[x].style());
+            assert!(cells[..x].iter().any(|cell| cell.symbol() == "…"));
+        }
+        for (width, height) in [(1, 1), (10, 4), (19, 3)] {
+            let mut choices = journals();
+            choices[0].locked = true;
+            draw(&mut JournalSelector::new(choices), width, height);
+        }
+    }
+
+    #[test]
     fn small_screens_keep_selected_journal_and_highlighted_controls_visible() {
         for (width, height) in [(100, 30), (80, 24), (60, 18), (31, 12)] {
             let mut choices = journals();
@@ -829,6 +873,7 @@ mod tests {
                 id: format!("journal-{index}"),
                 name: format!("Journal {index}"),
                 is_personal: false,
+                locked: false,
             }));
             let mut selector = JournalSelector::new(choices);
             selector.handle_event(key(KeyCode::End));

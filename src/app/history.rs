@@ -135,6 +135,31 @@ impl HistoryManager {
     }
 }
 
+impl Drop for HistoryManager {
+    fn drop(&mut self) {
+        for change in self.undo_stack.iter_mut().chain(&mut self.redo_stack) {
+            match change {
+                Change::AddEntry { .. } => {}
+                Change::RemoveEntry(entry) => {
+                    entry.title.zeroize();
+                    entry.content.zeroize();
+                    entry.tags.zeroize();
+                    entry.priority.zeroize();
+                    entry.mood.zeroize();
+                    entry.journal_prompt.zeroize();
+                }
+                Change::EntryAttribute(attributes) => {
+                    attributes.title.zeroize();
+                    attributes.tags.zeroize();
+                    attributes.priority.zeroize();
+                    attributes.mood.zeroize();
+                }
+                Change::EntryContent { content, .. } => content.zeroize(),
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 /// Represents the types of history targets within the [`HistoryManager`]
 pub enum HistoryStack {

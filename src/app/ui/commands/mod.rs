@@ -30,6 +30,7 @@ pub enum UICommand {
     Quit,
     ShowHelp,
     ToggleJournalPrompt,
+    ToggleDetailsHidden,
     ShowConfig,
     ShowSecurity,
     LockNote,
@@ -95,6 +96,10 @@ impl CommandInfo {
 impl UICommand {
     pub fn get_info(&self) -> CommandInfo {
         match self {
+            UICommand::ToggleDetailsHidden => CommandInfo::new(
+                "Hide details",
+                "Hide or show journal details in every app mode (Ctrl-O); hidden views pause editing",
+            ),
             UICommand::ToggleJournalPrompt => CommandInfo::new(
                 "Journal prompt",
                 "Show or hide this entry’s saved journal prompt (also while editing)",
@@ -265,6 +270,17 @@ impl UICommand {
         ui_components: &mut UIComponents<'_>,
         app: &mut App<D>,
     ) -> CmdResult {
+        if ui_components.is_details_hidden() && *self != UICommand::ToggleDetailsHidden {
+            return Ok(HandleInputReturnType::Handled);
+        }
+        if app.journal_is_protected()
+            && matches!(
+                self,
+                UICommand::ShowSecurity | UICommand::LockNote | UICommand::LockAllNotes
+            )
+        {
+            return Ok(HandleInputReturnType::Handled);
+        }
         if app.current_is_locked()
             && matches!(
                 self,
@@ -281,7 +297,7 @@ impl UICommand {
             ui_components.show_security(app, true)?;
             return Ok(HandleInputReturnType::Handled);
         }
-        if app.current_is_protected()
+        if (app.current_is_protected() || app.journal_is_protected())
             && matches!(self, UICommand::CopyOsClipboard | UICommand::CutOsClipboard)
         {
             return Ok(ui_components.confirm_private_clipboard(*self));
@@ -292,6 +308,10 @@ impl UICommand {
             );
         }
         match self {
+            UICommand::ToggleDetailsHidden => {
+                ui_components.toggle_details_hidden(app);
+                Ok(HandleInputReturnType::Handled)
+            }
             UICommand::LockAllNotes => {
                 // A failed seal keeps the draft shielded until authentication.
                 if !ui_components.privacy_shield {
@@ -310,7 +330,7 @@ impl UICommand {
             }
             UICommand::ExportPrivateContent => exec_export_private_content(ui_components, app),
             UICommand::Quit => exec_quit(ui_components),
-            UICommand::ShowHelp => exec_show_help(ui_components),
+            UICommand::ShowHelp => exec_show_help(ui_components, app.journal_is_protected()),
             UICommand::ShowConfig => {
                 ui_components.show_config(app)?;
                 Ok(HandleInputReturnType::Handled)
@@ -382,6 +402,7 @@ impl UICommand {
     ) -> CmdResult {
         let not_implemented = || unreachable!("continue exec isn't implemented for {:?}", self);
         match self {
+            UICommand::ToggleDetailsHidden => not_implemented(),
             UICommand::ShowSecurity => not_implemented(),
             UICommand::LockNote => ui_components.continue_lock_note(app, msg_box_result).await,
             UICommand::LockAllNotes => not_implemented(),
@@ -436,7 +457,13 @@ impl UICommand {
             UICommand::MulSelDeleteEntries => {
                 continue_delete_selected_entries(app, msg_box_result).await
             }
-            UICommand::MulSelExportEntries => not_implemented(),
+            UICommand::MulSelExportEntries => {
+                if msg_box_result == MsgBoxResult::Yes {
+                    export_selected_entries(ui_components, app)
+                } else {
+                    Ok(HandleInputReturnType::Handled)
+                }
+            }
             UICommand::ShowFilter => continue_show_filter(ui_components, app, msg_box_result).await,
             UICommand::ResetFilter => not_implemented(),
             UICommand::CycleTagFilter => {

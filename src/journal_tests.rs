@@ -11,6 +11,144 @@ use crate::{
     settings::{BackendType, Settings, document::ConfigDocument},
 };
 
+#[tokio::test]
+async fn journal_locking_survives_native_backup_restore_and_archiving_without_inheritance() {
+    use backend::journal::{JournalProvider, JournalStatus};
+    let backends = [
+        #[cfg(feature = "json")]
+        BackendType::Json,
+        #[cfg(feature = "sqlite")]
+        BackendType::Sqlite,
+        #[cfg(feature = "file")]
+        BackendType::File,
+        #[cfg(feature = "vjournal")]
+        BackendType::Vjournal,
+    ];
+    for backend in backends {
+        let temporary = tempfile::tempdir().unwrap();
+        let config = temporary.path().join("config.toml");
+        let mut personal = personal_settings(temporary.path(), backend);
+        personal.auto_title = toml::from_str::<Settings>("auto_title = 'Keep this default'")
+            .unwrap()
+            .auto_title;
+        fs::write(&config, toml::to_string(&personal).unwrap()).unwrap();
+        let store = JournalStore::new(config.clone()).unwrap();
+        let profile = store.create("Protected", &personal).unwrap();
+        let settings = store.load_settings(&profile).unwrap();
+        let storage = crate::journal_storage::backend(&settings).unwrap();
+        let mut provider = JournalProvider::open(storage.clone()).await.unwrap();
+        provider
+            .add_entry(draft("PRIVATE_JOURNAL_CANARY"))
+            .await
+            .unwrap();
+        provider
+            .enable_journal_protection("journal password".to_owned().into(), None)
+            .await
+            .unwrap();
+        let expected = provider.load_all_entries().await.unwrap();
+        assert!(provider.is_journal_protected());
+        drop(provider);
+        assert_eq!(
+            JournalProvider::status(&storage).unwrap(),
+            JournalStatus::Protected
+        );
+
+        let fresh = store.create("Fresh", &settings).unwrap();
+        let fresh_settings = store.load_settings(&fresh).unwrap();
+        assert_eq!(fresh_settings.auto_title, personal.auto_title);
+        assert_eq!(
+            JournalProvider::status(&crate::journal_storage::backend(&fresh_settings).unwrap())
+                .unwrap(),
+            JournalStatus::Plain
+        );
+
+        let backup_path = temporary.path().join("encrypted-backup");
+        backup::create(&settings, Some(&profile.settings_path), &backup_path)
+            .await
+            .unwrap();
+        let restored = temporary.path().join("restored");
+        backup::restore(&backup_path, &restored).unwrap();
+        let restored_settings = Settings::new(Some(restored.join("config"))).await.unwrap();
+        assert_eq!(restored_settings.auto_title, personal.auto_title);
+        let restored_storage = crate::journal_storage::backend(&restored_settings).unwrap();
+        assert_eq!(
+            JournalProvider::status(&restored_storage).unwrap(),
+            JournalStatus::Protected
+        );
+        let mut reopened = JournalProvider::open(restored_storage).await.unwrap();
+        assert!(reopened.load_all_entries().await.is_err());
+        assert!(
+            reopened
+                .unlock("wrong password".to_owned().into())
+                .await
+                .is_err()
+        );
+        reopened
+            .unlock("journal password".to_owned().into())
+            .await
+            .unwrap();
+        assert_eq!(reopened.load_all_entries().await.unwrap(), expected);
+        drop(reopened);
+
+        let original_header = fs::read(storage.header_path()).unwrap();
+        let archived = store.archive(&profile).unwrap();
+        let header_relative = storage
+            .header_path()
+            .strip_prefix(profile.settings_path.parent().unwrap())
+            .unwrap()
+            .to_path_buf();
+        assert_eq!(
+            fs::read(archived.join(header_relative)).unwrap(),
+            original_header
+        );
+        assert_no_plaintext_canary(temporary.path(), b"PRIVATE_JOURNAL_CANARY");
+    }
+}
+
+fn assert_no_plaintext_canary(path: &Path, canary: &[u8]) {
+    for item in fs::read_dir(path).unwrap() {
+        let path = item.unwrap().path();
+        if path.is_dir() {
+            assert_no_plaintext_canary(&path, canary);
+        } else if path.is_file() {
+            let bytes = fs::read(&path).unwrap();
+            assert!(
+                !bytes.windows(canary.len()).any(|part| part == canary),
+                "Plaintext in {}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn logging_cannot_target_another_journal_in_the_collection() {
+    let temporary = tempfile::tempdir().unwrap();
+    let personal = personal_settings(temporary.path(), BackendType::Json);
+    let config = temporary.path().join("config.toml");
+    fs::write(&config, toml::to_string(&personal).unwrap()).unwrap();
+    let store = JournalStore::new(config.clone()).unwrap();
+    let other = store.create("Other", &personal).unwrap();
+    let path = store
+        .load_settings(&other)
+        .unwrap()
+        .json_backend
+        .file_path
+        .unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let original = vec![b'x'; 2048];
+    fs::write(&path, &original).unwrap();
+    assert!(crate::logging::validate_destination(&path, &personal, Some(config.clone())).is_err());
+    #[cfg(unix)]
+    {
+        let alias = temporary.path().join("apparently-safe.log");
+        fs::hard_link(&path, &alias).unwrap();
+        assert!(crate::logging::validate_destination(&alias, &personal, Some(config)).is_err());
+    }
+    assert_eq!(fs::read(path).unwrap(), original);
+}
+
 fn personal_settings(root: &Path, backend: BackendType) -> Settings {
     let mut settings = Settings {
         backend_type: Some(backend),

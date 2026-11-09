@@ -2,6 +2,57 @@ use super::*;
 use crate::app::test::create_default_app;
 
 #[test]
+fn exports_cannot_overwrite_another_backend_or_journals_key_header() {
+    let directory = tempfile::tempdir().unwrap();
+    let app = create_default_app();
+    let names = [
+        "inactive.json.myna-lock.json",
+        "other-journal.myna-lock.pending.json",
+        "other-journal.myna-lock.lease",
+        "inactive.json.MYNA-LOCK.JSON",
+        "other-journal.MyNa-Lock.Pending.Json",
+        "other-journal.MYNA-LOCK.LEASE",
+    ];
+    for name in names {
+        let path = directory.path().join(name);
+        fs::write(&path, b"original journal protection").unwrap();
+        let confirmed = ExportTarget::inspect(path.clone()).unwrap();
+        assert!(app.validate_export_target(&confirmed).is_err());
+        assert_eq!(fs::read(path).unwrap(), b"original journal protection");
+    }
+}
+
+#[cfg(all(unix, feature = "file"))]
+#[test]
+fn exports_cannot_bypass_native_directory_guards_with_case_aliases() {
+    use std::os::unix::fs::MetadataExt;
+    let directory = tempfile::tempdir().unwrap();
+    let native = directory.path().join("entries");
+    fs::create_dir(&native).unwrap();
+    let alias = directory.path().join("ENTRIES");
+    let original = fs::metadata(&native).unwrap();
+    if !fs::metadata(&alias)
+        .is_ok_and(|other| original.dev() == other.dev() && original.ino() == other.ino())
+    {
+        return;
+    }
+    fs::write(native.join("entry"), "original journal data").unwrap();
+    let mut app = create_default_app();
+    app.settings.backend_type = Some(BackendType::File);
+    app.settings.file_backend.directory = Some(native.clone());
+    for path in [alias.join("entry"), alias.join("new/subdirectory/entry")] {
+        assert!(
+            app.validate_export_target(&ExportTarget::from(path))
+                .is_err()
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(native.join("entry")).unwrap(),
+        "original journal data"
+    );
+}
+
+#[test]
 fn journal_collection_exports_cannot_replace_metadata_archives_or_other_journals() {
     let directory = tempfile::tempdir().unwrap();
     let store = crate::journals::JournalStore::new(directory.path().join("config.toml")).unwrap();
@@ -48,6 +99,30 @@ fn journal_collection_exports_cannot_replace_metadata_archives_or_other_journals
     }
     #[cfg(unix)]
     {
+        use std::os::unix::fs::MetadataExt;
+        let alias = store.root().with_file_name("JOURNALS");
+        let original = fs::metadata(store.root()).unwrap();
+        if fs::metadata(&alias)
+            .is_ok_and(|other| original.dev() == other.dev() && original.ino() == other.ino())
+        {
+            let profile_alias = alias.join(profile.strip_prefix(store.root()).unwrap());
+            for path in [
+                profile_alias.join("data/inactive-backend"),
+                alias.join("other-journal/data/entry"),
+                alias.join(".leases/personal.lock"),
+            ] {
+                assert!(
+                    app.validate_export_target(&ExportTarget::from(path))
+                        .is_err()
+                );
+            }
+            assert!(
+                app.validate_export_target(&ExportTarget::from(
+                    profile_alias.join("exports/note.txt")
+                ))
+                .is_ok()
+            );
+        }
         fs::remove_dir(profile.join("exports")).unwrap();
         std::os::unix::fs::symlink(store.root().join(".leases"), profile.join("exports")).unwrap();
         assert!(

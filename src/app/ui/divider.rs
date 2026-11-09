@@ -549,9 +549,12 @@ mod tests {
             .await
             .unwrap();
             let popups = [
-                Popup::Help(Box::new(HelpPopup::new(KeybindingsTabs::Global))),
-                Popup::Help(Box::new(HelpPopup::new(KeybindingsTabs::Editor))),
-                Popup::Help(Box::new(HelpPopup::new(KeybindingsTabs::MultiSelect))),
+                Popup::Help(Box::new(HelpPopup::new(KeybindingsTabs::Global, false))),
+                Popup::Help(Box::new(HelpPopup::new(KeybindingsTabs::Editor, false))),
+                Popup::Help(Box::new(HelpPopup::new(
+                    KeybindingsTabs::MultiSelect,
+                    false,
+                ))),
                 Popup::Entry(Box::new(EntryPopup::new_entry(&app.settings))),
                 Popup::Entry(Box::new(tags)),
                 Popup::MsgBox(Box::new(MsgBox::new(

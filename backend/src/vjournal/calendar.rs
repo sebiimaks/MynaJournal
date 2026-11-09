@@ -186,7 +186,12 @@ pub fn apply_entry_to_component(
         component.set(text_property("UID", uid));
         component.set(text_property("SUMMARY", &entry.title));
         component.set(Property::new("X-TUI-JOURNAL-DATE", entry.date.to_rfc3339()));
-        component.set(Property::new("DTSTAMP", format_ical_datetime(&Utc::now())));
+        let stamp = if protection.version == crate::journal::RECORD_VERSION {
+            DateTime::UNIX_EPOCH
+        } else {
+            Utc::now()
+        };
+        component.set(Property::new("DTSTAMP", format_ical_datetime(&stamp)));
         let mut dtstart = Property::new("DTSTART", entry.date.format(ICAL_DATE_FMT).to_string());
         dtstart.params.insert("VALUE".into(), "DATE".into());
         component.set(dtstart);

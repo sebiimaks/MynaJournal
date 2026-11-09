@@ -31,7 +31,7 @@ base, rather than a claim about every future upstream version:
 | Configuration | An in-app `!` panel for settings, storage paths, editor preferences, security, themes and layout. |
 | Themes | A named theme list with activation, editing and creation. Only Tui (default) is bundled. |
 | Storage | A fourth backend: one plain-text or Markdown file per entry, with YAML metadata and date/time filenames. JSON, SQLite and VJOURNAL remain available. |
-| Privacy | Password protection for individual entries across all four backends. Titles and dates stay visible; private contents are encrypted. |
+| Privacy | Password protection for individual entries or whole journals across all four backends. Whole-journal protection encrypts titles and dates too, locks on close, and provides Ctrl-O to hide details while open. |
 | Entry dialogs | Priority is hidden by default and can be enabled without changing existing values. New titles are blank unless `auto_title` is configured. |
 | Reflection | Optional Low, Average and High mood markers, with a saved random journal prompt shown at the top inside the content pane. |
 | Interface | Clearer footer commands, an Entries heading, and period-separated list dates. |
@@ -186,10 +186,13 @@ Alternatively, keep the original data location and select it explicitly with
 the configuration or backend path options described below. `--config` selects
 settings only: it does not redirect unset backend paths to old journal data.
 
-Stored formats and encryption remain compatible with the previous fork build.
+Existing plain stores and individually protected entries remain compatible with
+the previous fork build.
 Internal identifiers such as `tui_journal` and `X-TUI-JOURNAL-LOCKED` are retained
-for compatibility; do not rename them inside journal files. Protected stores
-require a note-locking-capable version of this fork.
+for compatibility; do not rename them inside journal files. Individually protected
+entries require a note-locking-capable version of this fork. Whole-journal
+protection uses a newer encrypted format that older versions cannot open; keep
+its native data and `.myna-lock.json` key header together.
 
 ## Getting started
 
@@ -273,6 +276,8 @@ mjournal --file-dir-path /path/to/destination import-journals --path exported.js
 ```
 
 Transfer JSON preserves common entry fields and protected-note ciphertext.
+Exporting entries from a protected whole journal requires explicit confirmation
+and produces plaintext; use native backups to retain whole-journal encryption.
 Single-entry body exports contain only the body; they are not a complete backup.
 Existing export files require confirmation before replacement. Export cannot
 overwrite the active journal store, configuration, themes, or saved state.
@@ -292,8 +297,9 @@ mjournal --config /path/to/new-profile/config
 ```
 
 Both destinations must be new directories with existing parents. Restore verifies
-checksums and creates a separate profile. Protected notes stay encrypted, but the
-backup itself is not encrypted. See [Backups and recovery](BACKUPS.md).
+checksums and creates a separate profile. Protected notes and journals stay
+encrypted, including a protected journal's wrapped-key header. The backup's
+configuration and other metadata remain readable. See [Backups and recovery](BACKUPS.md).
 
 ## Configuration, themes and entry protection
 
@@ -334,6 +340,12 @@ clipboard restrictions and export behavior are described in
 [Note locking](NOTE-LOCKING.md).
 `Ctrl-L` locks all open protected notes and retains unsaved protected changes as
 encrypted in-memory drafts; unlock them again to save before quitting.
+
+To protect an entire journal, use **! → Security → Journal protection**. Opening
+it then requires its password, and closing it returns to a **Locked** row in the
+journal selector. All saved entry fields remain encrypted while it is open.
+**Hide details: Ctrl-O** replaces Entry security in protected journals and
+conceals the screen without changing your drafts. See [Journal locking](JOURNAL-LOCKING.md).
 
 Useful terminal commands:
 
