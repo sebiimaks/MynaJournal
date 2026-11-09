@@ -34,13 +34,24 @@ unsaved edits and encrypted drafts before starting this conversion.
 Inside a protected journal, **Hide details: Ctrl-O** replaces Entry security.
 Press `Ctrl-O` again to reveal the same editor, selection and dialog state.
 The shortcut works in normal, insert and visual modes, multi-selection and popups.
-Hidden views use generated scrambled text, not transformed copies of real text.
-Entry titles, dates, tags, content, mood, prompts and open dialogs are concealed.
-Editing, navigation, mouse actions and clipboard/export commands pause while
-hidden. Quitting still offers generic Save, Discard and Cancel choices.
+Hidden views replace word characters in entry titles, tags and content with random
+characters of the same display width. Spaces, punctuation and layout stay intact;
+dates, times, mood markers and journal prompts remain visible. Replacements stay
+steady while you work and change when you turn Hide details on again.
+
+You can continue editing while details are hidden. Only the word you are typing
+is readable. Spaces, Enter and punctuation conceal it; apostrophes and hyphens
+remain part of the word. Moving the cursor, changing panes or leaving edit mode
+also conceals the word. Moving onto an existing word alone does not reveal it.
+The original text is used for saving, selection and undo.
+
+Open dialogs are covered and paused until you press `Ctrl-O` to show details.
+This includes plaintext clipboard and export confirmations. Quitting still offers
+generic Save, Discard and Cancel choices.
 
 This is a reversible screen-concealment control; it does not require the password
-to reveal details. Close the journal when you need password protection. `Ctrl-H`
+to reveal details. Word lengths, punctuation and the word being typed remain
+observable. Close the journal when you need password protection. `Ctrl-H`
 and Backspace keep their existing navigation and deletion behavior.
 
 ## Storage and privacy

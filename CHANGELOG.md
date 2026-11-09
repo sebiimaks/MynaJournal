@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Keep entry layout, dates and times visible when Hide details is enabled; replace word characters in titles, tags and content with random characters
+- Allow editing while details are hidden, showing only the word being typed until a space, punctuation, navigation or focus change conceals it; keep apostrophes and hyphens within the current word
+- Keep the typed word onscreen after combined Unicode characters in unwrapped mode, and preserve selection highlighting when tabs or wide characters are clipped at pane edges
+
 ## 0.24.1 - 2026-11-09
 
 - Centre the journal selector beneath the ASCII MynaJournal wordmark, replacing the large circular logo on the selection screen

@@ -61,7 +61,11 @@ fn footer<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Paragraph<'static
         text.push_span(Span::raw(SEPARATOR));
         text.spans.extend(
             command_text(
-                "Hide details",
+                if ui.is_details_hidden() {
+                    "Show details"
+                } else {
+                    "Hide details"
+                },
                 &ui.global_keymaps,
                 UICommand::ToggleDetailsHidden,
             )
@@ -101,7 +105,11 @@ fn standard_text<D: DataProvider>(ui: &UIComponents, app: &App<D>) -> Line<'stat
         ),
         if app.journal_is_protected() {
             command_text(
-                "Hide details",
+                if ui.is_details_hidden() {
+                    "Show details"
+                } else {
+                    "Hide details"
+                },
                 &ui.global_keymaps,
                 UICommand::ToggleDetailsHidden,
             )

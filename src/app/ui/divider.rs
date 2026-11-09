@@ -79,7 +79,7 @@ impl UIComponents<'_> {
         app: &mut App<D>,
         delta: i16,
     ) -> HandleInputReturnType {
-        if app.state.full_screen || self.has_popup() {
+        if app.state.full_screen || self.has_popup() || self.concealed_exit.is_some() {
             return HandleInputReturnType::Ignore;
         }
         let cancelled_drag = self.divider_drag.take().is_some();
@@ -112,7 +112,7 @@ impl UIComponents<'_> {
         mouse: MouseEvent,
         app: &mut App<D>,
     ) -> HandleInputReturnType {
-        if app.state.full_screen || self.has_popup() {
+        if app.state.full_screen || self.has_popup() || self.concealed_exit.is_some() {
             self.cancel_divider_drag();
             return HandleInputReturnType::Ignore;
         }

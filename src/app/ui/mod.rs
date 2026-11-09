@@ -64,6 +64,7 @@ mod security_tests;
 #[cfg(test)]
 mod selection_tests;
 mod sort_popup;
+mod text_mask;
 pub mod themes;
 pub mod ui_functions;
 
@@ -113,6 +114,7 @@ pub struct UIComponents<'a> {
     startup_artwork_visible: bool,
     privacy_shield: bool,
     details_hidden: bool,
+    text_mask: Option<text_mask::TextMask>,
     concealed_exit: Option<concealment::ConcealedExit>,
     shielded_popups: Vec<Popup<'a>>,
     lock_all_requested: bool,
@@ -148,6 +150,7 @@ impl UIComponents<'_> {
             startup_artwork_visible: false,
             privacy_shield: false,
             details_hidden: false,
+            text_mask: None,
             concealed_exit: None,
             shielded_popups: Vec::new(),
             lock_all_requested: false,
@@ -216,9 +219,10 @@ impl UIComponents<'_> {
             }
             return;
         }
-        if self.details_hidden {
-            self.render_concealed(f, app);
-            return;
+        self.editor.set_text_mask(self.text_mask);
+        self.entries_list.set_text_mask(self.text_mask);
+        if self.has_popup() || self.concealed_exit.is_some() {
+            self.editor.clear_visible_word();
         }
         self.editor.set_word_wrap(app.settings.editor_word_wrap);
         self.pane_split = None;
@@ -254,7 +258,7 @@ impl UIComponents<'_> {
         } else {
             let split = divider::PaneSplit::new(chunks[0], app.state.entries_list_percentage())
                 .expect("render area has room for both panes");
-            if !self.has_popup() {
+            if !self.has_popup() && self.concealed_exit.is_none() {
                 self.pane_split = Some(split);
             } else {
                 self.cancel_divider_drag();
@@ -295,6 +299,10 @@ impl UIComponents<'_> {
     }
 
     pub fn render_popup(&mut self, f: &mut Frame) {
+        if self.details_hidden && !self.privacy_shield {
+            self.render_concealed_popup(f);
+            return;
+        }
         if let Some(popup) = self.popup_stack.last_mut() {
             match popup {
                 Popup::Security(popup) => popup.render_widget(f, f.area(), &self.styles),
@@ -345,7 +353,16 @@ impl UIComponents<'_> {
             self.toggle_details_hidden(app);
             return Ok(HandleInputReturnType::Handled);
         }
-        if self.details_hidden {
+        if self.details_hidden
+            && (self.has_popup()
+                || self.concealed_exit.is_some()
+                || (!self.editor.is_insert_mode()
+                    && *input
+                        == Input::new(
+                            crossterm::event::KeyCode::Char('q'),
+                            crossterm::event::KeyModifiers::NONE,
+                        )))
+        {
             return self.handle_concealed_input(input, app).await;
         }
         if self.has_popup() {
@@ -597,6 +614,7 @@ impl UIComponents<'_> {
         msg_actions: MsgBoxActions,
         pending_cmd: Option<UICommand>,
     ) {
+        self.editor.clear_visible_word();
         self.pending_command = pending_cmd;
         let msg_box = MsgBox::new(msg, msg_actions);
 

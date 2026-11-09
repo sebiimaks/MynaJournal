@@ -278,11 +278,15 @@ async fn handle_input<D: DataProvider>(
     app: &mut App<D>,
     ui_components: &mut UIComponents<'_>,
 ) -> Result<HandleInputReturnType> {
-    if (ui_components.is_privacy_shielded() || ui_components.is_details_hidden())
-        && !matches!(event, Event::Key(_) | Event::Resize(_, _))
+    if ui_components.is_privacy_shielded() && !matches!(event, Event::Key(_) | Event::Resize(_, _))
     {
         return Ok(HandleInputReturnType::Ignore);
     }
+    let concealed_word = (matches!(event, Event::FocusLost | Event::Paste(_))
+        || matches!(&event, Event::Mouse(mouse) if !matches!(mouse.kind, crossterm::event::MouseEventKind::Moved)))
+        && ui_components.conceal_active_word();
+    let hidden_keypress = ui_components.is_details_hidden()
+        && matches!(&event, Event::Key(key) if key.kind == KeyEventKind::Press);
     let user_action = matches!(&event, Event::Key(key) if key.kind == KeyEventKind::Press)
         || matches!(&event, Event::Mouse(mouse) if !matches!(mouse.kind, crossterm::event::MouseEventKind::Moved))
         || matches!(&event, Event::Paste(_));
@@ -302,7 +306,9 @@ async fn handle_input<D: DataProvider>(
         }
         _ => Ok(HandleInputReturnType::NotFound),
     };
-    if dismissed_artwork && matches!(result, Ok(HandleInputReturnType::Ignore)) {
+    if (dismissed_artwork || concealed_word || hidden_keypress)
+        && matches!(result, Ok(HandleInputReturnType::Ignore))
+    {
         Ok(HandleInputReturnType::NotFound)
     } else {
         result
@@ -320,6 +326,80 @@ mod tests {
     };
 
     use super::*;
+
+    #[tokio::test]
+    async fn hidden_active_word_is_repainted_after_focus_loss_paste_and_ignored_mouse_actions() {
+        use crate::app::ui::{ControlType, UICommand};
+        use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        let mut app = crate::app::test::create_default_app();
+        app.data_provide.journal_protected = true;
+        app.load_entries().await.unwrap();
+        let mut ui = UIComponents::new(Styles::default());
+        ui.set_current_entry(Some(0), &mut app);
+        ui.change_active_control(ControlType::EntryContentTxt);
+        ui.handle_input(
+            &Input::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            &mut app,
+        )
+        .await
+        .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        for event in [
+            Event::FocusLost,
+            Event::Paste("pastedprivateword".into()),
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 80,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            }),
+        ] {
+            app.entries
+                .iter_mut()
+                .find(|e| e.id == 0)
+                .unwrap()
+                .content
+                .clear();
+            ui.set_current_entry(Some(0), &mut app);
+            UICommand::StartEditEntryContent
+                .execute(&mut ui, &mut app)
+                .await
+                .unwrap();
+            for c in "visibleword".chars() {
+                ui.handle_input(&Input::new(KeyCode::Char(c), KeyModifiers::NONE), &mut app)
+                    .await
+                    .unwrap();
+            }
+            terminal.draw(|frame| ui.render_ui(frame, &app)).unwrap();
+            let before: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(Cell::symbol)
+                .collect();
+            assert!(before.contains("visibleword"));
+            assert_ne!(
+                handle_input(event, &mut app, &mut ui).await.unwrap(),
+                HandleInputReturnType::Ignore
+            );
+            terminal.draw(|frame| ui.render_ui(frame, &app)).unwrap();
+            let after: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(Cell::symbol)
+                .collect();
+            assert!(!after.contains("visibleword"));
+            assert!(!after.contains("pastedprivateword"));
+            UICommand::SaveEntryContent
+                .execute(&mut ui, &mut app)
+                .await
+                .unwrap();
+            assert_eq!(app.get_current_entry().unwrap().content, "visibleword");
+        }
+    }
 
     struct StartupBackend {
         screen: TestBackend,

@@ -345,7 +345,9 @@ To protect an entire journal, use **! → Security → Journal protection**. Ope
 it then requires its password, and closing it returns to a **Locked** row in the
 journal selector. All saved entry fields remain encrypted while it is open.
 **Hide details: Ctrl-O** replaces Entry security in protected journals and
-conceals the screen without changing your drafts. See [Journal locking](JOURNAL-LOCKING.md).
+scrambles entry titles, tags and content while keeping dates and times visible.
+You can keep typing with only the current word readable; spaces and punctuation
+hide it again. See [Journal locking](JOURNAL-LOCKING.md).
 
 Useful terminal commands:
 

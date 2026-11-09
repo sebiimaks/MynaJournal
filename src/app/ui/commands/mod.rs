@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use multi_select_cmd::*;
 
-use super::{App, HandleInputReturnType, MsgBoxResult, UIComponents};
+use super::{App, HandleInputReturnType, Input, MsgBoxResult, UIComponents};
 
 use editor_cmd::*;
 use entries_list_cmd::*;
@@ -98,7 +98,7 @@ impl UICommand {
         match self {
             UICommand::ToggleDetailsHidden => CommandInfo::new(
                 "Hide details",
-                "Hide or show journal details in every app mode (Ctrl-O); hidden views pause editing",
+                "Scramble entry titles, tags and content (Ctrl-O); keep the word being typed visible",
             ),
             UICommand::ToggleJournalPrompt => CommandInfo::new(
                 "Journal prompt",
@@ -270,8 +270,24 @@ impl UICommand {
         ui_components: &mut UIComponents<'_>,
         app: &mut App<D>,
     ) -> CmdResult {
-        if ui_components.is_details_hidden() && *self != UICommand::ToggleDetailsHidden {
-            return Ok(HandleInputReturnType::Handled);
+        ui_components.editor.clear_visible_word();
+        if ui_components.is_details_hidden() {
+            if *self == UICommand::Quit {
+                return ui_components
+                    .handle_concealed_input(
+                        &Input::new(
+                            crossterm::event::KeyCode::Char('q'),
+                            crossterm::event::KeyModifiers::NONE,
+                        ),
+                        app,
+                    )
+                    .await;
+            }
+            if (ui_components.has_popup() || ui_components.concealed_exit.is_some())
+                && *self != UICommand::ToggleDetailsHidden
+            {
+                return Ok(HandleInputReturnType::Handled);
+            }
         }
         if app.journal_is_protected()
             && matches!(

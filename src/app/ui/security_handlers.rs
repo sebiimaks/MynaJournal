@@ -178,6 +178,7 @@ impl UIComponents<'_> {
             return;
         }
         self.privacy_shield = true;
+        self.editor.clear_visible_word();
         self.cancel_divider_drag();
     }
 

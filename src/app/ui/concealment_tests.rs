@@ -55,24 +55,7 @@ async fn concealment_preserves_drafts_modes_focus_selection_and_rendered_cursor(
         assert!(ui.is_details_hidden());
         assert!(app.redraw_after_restore);
         app.redraw_after_restore = false;
-        for input in [
-            key(KeyCode::Char('x')),
-            key(KeyCode::Down),
-            key(KeyCode::Tab),
-            control('v'),
-            control('l'),
-            control('g'),
-        ] {
-            ui.handle_input(&input, &mut app).await.unwrap();
-        }
-        for command in [
-            UICommand::CopyOsClipboard,
-            UICommand::CutOsClipboard,
-            UICommand::ExportEntryContent,
-            UICommand::Undo,
-        ] {
-            command.execute(&mut ui, &mut app).await.unwrap();
-        }
+        render(&mut ui, &app, 100, 30);
         assert_eq!(ui.editor.get_content(), content);
         assert!(ui.has_unsaved());
         assert!(!ui.take_lock_all_request());
@@ -86,23 +69,90 @@ async fn concealment_preserves_drafts_modes_focus_selection_and_rendered_cursor(
 }
 
 #[tokio::test]
-async fn hidden_screen_is_independent_of_entries_filters_prompts_and_popup_text() {
+async fn hidden_screen_masks_entry_text_preserving_metadata_layout_and_popup_privacy() {
+    use crate::settings::EntryTimeFormat;
     let (mut app, mut ui) = protected_app().await;
+    for entry in &mut app.entries {
+        entry.title = "PRIVATE_TITLE_CANARY".into();
+        entry.tags = vec!["PRIVATE_TAG_CANARY".into()];
+    }
+    ui.editor
+        .set_entry_content("PRIVATE_CONTENT_CANARY. Next-word!", &app);
+    for format in [EntryTimeFormat::TwentyFourHour, EntryTimeFormat::TwelveHour] {
+        app.settings.entry_time_format = format;
+        let visible = render(&mut ui, &app, 160, 30);
+        ui.toggle_details_hidden(&mut app);
+        let hidden = render(&mut ui, &app, 160, 30);
+        let screen = text(&hidden);
+        assert!(!screen.contains("PRIVATE"));
+        for entry in &app.entries {
+            let expected = entry
+                .date
+                .with_timezone(&chrono::Local)
+                .format(match format {
+                    EntryTimeFormat::TwentyFourHour => "%d.%m.%Y %H:%M",
+                    EntryTimeFormat::TwelveHour => "%d.%m.%Y %I:%M %P",
+                })
+                .to_string();
+            assert!(screen.contains(&expected));
+        }
+        assert_eq!(hidden, render(&mut ui, &app, 160, 30));
+        for y in 1..28 {
+            for x in 0..160 {
+                let a = &hidden[(x, y)];
+                let b = &visible[(x, y)];
+                assert_eq!(a.style(), b.style());
+                if !b.symbol().chars().any(text_mask::is_word_character) {
+                    assert_eq!(a.symbol(), b.symbol());
+                }
+            }
+        }
+        ui.toggle_details_hidden(&mut app);
+    }
     ui.toggle_details_hidden(&mut app);
-    let before = render(&mut ui, &app, 100, 30);
-    app.entries[0].title = "PRIVATE_TITLE_CANARY".into();
-    app.entries[0].tags = vec!["PRIVATE_TAG_CANARY".into()];
-    ui.editor.set_entry_content("PRIVATE_CONTENT_CANARY", &app);
     ui.show_err_msg("PRIVATE_ERROR_CANARY with /private/path".into());
-    assert_eq!(render(&mut ui, &app, 100, 30), before);
-    app.entries.clear();
-    app.current_entry_id = None;
-    assert_eq!(render(&mut ui, &app, 100, 30), before);
     for (width, height) in [(1, 1), (5, 3), (12, 4), (80, 24), (160, 50)] {
         let screen = text(&render(&mut ui, &app, width, height));
         assert!(!screen.contains("PRIVATE"));
         assert!(!screen.contains("/private/path"));
     }
+}
+
+#[tokio::test]
+async fn hidden_editor_types_q_saves_original_content_and_keeps_auto_title_setting() {
+    let (mut app, mut ui) = protected_app().await;
+    app.settings = toml::from_str("auto_title = 'Daily journal'").unwrap();
+    let original_title_setting = app.settings.auto_title.clone();
+    let original_title = app.get_current_entry().unwrap().title.clone();
+    ui.change_active_control(ControlType::EntryContentTxt);
+    ui.editor.set_entry_content("", &app);
+    ui.editor.set_editor_mode(EditorMode::Insert);
+    ui.toggle_details_hidden(&mut app);
+    for c in "quietly writing".chars() {
+        assert_eq!(
+            ui.handle_input(&key(KeyCode::Char(c)), &mut app)
+                .await
+                .unwrap(),
+            HandleInputReturnType::Handled
+        );
+    }
+    let screen = text(&render(&mut ui, &app, 120, 30));
+    assert!(!screen.contains("quietly"));
+    assert!(screen.contains("writing"));
+    UICommand::SaveEntryContent
+        .execute(&mut ui, &mut app)
+        .await
+        .unwrap();
+    assert!(!text(&render(&mut ui, &app, 120, 30)).contains("writing"));
+    assert_eq!(app.settings.auto_title, original_title_setting);
+    assert_eq!(app.get_current_entry().unwrap().title, original_title);
+    assert_eq!(app.get_current_entry().unwrap().content, "quietly writing");
+    let saved = app.data_provide.load_all_entries().await.unwrap();
+    assert_eq!(
+        saved.iter().find(|e| e.id == 0).unwrap().content,
+        "quietly writing"
+    );
+    assert!(!ui.has_unsaved());
 }
 
 #[tokio::test]
@@ -203,9 +253,7 @@ async fn multiselect_concealment_preserves_selection_and_disables_note_security(
         .unwrap();
     app.selected_entries.insert(0);
     ui.handle_input(&control('o'), &mut app).await.unwrap();
-    ui.handle_input(&key(KeyCode::Char('x')), &mut app)
-        .await
-        .unwrap();
+    render(&mut ui, &app, 120, 30);
     ui.handle_input(&control('o'), &mut app).await.unwrap();
     assert!(ui.entries_list.multi_select_mode);
     assert!(app.selected_entries.contains(&0));

@@ -20,11 +20,16 @@ use zeroize::Zeroize;
 
 use super::Styles;
 use super::commands::ClipboardOperation;
+use super::text_mask::TextMask;
 
+mod concealment;
+#[cfg(test)]
+mod concealment_tests;
 mod layout;
 mod wrapped;
 #[cfg(test)]
 mod wrapped_tests;
+use concealment::VisibleWord;
 use wrapped::WrappedView;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +48,8 @@ pub struct Editor<'a> {
     word_wrap: bool,
     wrapped: WrappedView,
     locked: bool,
+    text_mask: Option<TextMask>,
+    visible_word: Option<VisibleWord>,
 }
 
 impl Drop for Editor<'_> {
@@ -82,6 +89,8 @@ impl<'a> Editor<'a> {
             word_wrap: true,
             wrapped: WrappedView::default(),
             locked: false,
+            text_mask: None,
+            visible_word: None,
         }
     }
 
@@ -100,7 +109,19 @@ impl<'a> Editor<'a> {
         matches!(self.mode, EditorMode::Insert | EditorMode::Visual)
     }
 
+    pub(super) fn set_text_mask(&mut self, mask: Option<TextMask>) {
+        if self.text_mask != mask {
+            self.clear_visible_word();
+            self.text_mask = mask;
+        }
+    }
+
+    pub(super) fn clear_visible_word(&mut self) -> bool {
+        self.visible_word.take().is_some()
+    }
+
     pub fn set_current_entry<D: DataProvider>(&mut self, entry_id: Option<u32>, app: &App<D>) {
+        self.clear_visible_word();
         self.locked = entry_id.is_some_and(|id| app.is_locked(id));
         self.mode = EditorMode::Normal;
         let text_area = match entry_id {
@@ -133,10 +154,12 @@ impl<'a> Editor<'a> {
         app: &App<D>,
     ) -> anyhow::Result<HandleInputReturnType> {
         if self.locked {
+            self.clear_visible_word();
             return Ok(HandleInputReturnType::Handled);
         }
         if self.is_insert_mode() {
             if self.handle_wrapped_navigation(input) {
+                self.clear_visible_word();
                 return Ok(HandleInputReturnType::Handled);
             }
             // We must handle clipboard operation separately if sync with system clipboard is
@@ -175,7 +198,10 @@ impl<'a> Editor<'a> {
 
             // give the input to the editor
             let key_event = KeyEvent::from(input);
-            if self.text_area.input(key_event) {
+            let previous_cursor = self.text_area.cursor();
+            let changed = self.text_area.input(key_event);
+            self.track_visible_word(input, changed, previous_cursor);
+            if changed {
                 self.is_dirty = true;
                 self.wrapped.invalidate();
                 self.refresh_has_unsaved(app);
@@ -194,6 +220,7 @@ impl<'a> Editor<'a> {
         app: &App<D>,
     ) -> anyhow::Result<HandleInputReturnType> {
         debug_assert!(!self.is_insert_mode());
+        self.clear_visible_word();
 
         if self.locked {
             return Ok(HandleInputReturnType::Handled);
@@ -405,6 +432,7 @@ impl<'a> Editor<'a> {
     /// selection state, the snap-to-edge decision, and the move itself so callers
     /// never fall back to the underlying text area's default navigation.
     fn move_cursor_vertical(&mut self, dir: VerticalDir, select: bool) {
+        self.clear_visible_word();
         if self.word_wrap && self.wrapped.width > 0 {
             self.move_wrapped_vertical(dir, 1, select);
             return;
@@ -467,6 +495,7 @@ impl<'a> Editor<'a> {
             mode
         };
         if self.mode != mode {
+            self.clear_visible_word();
             self.wrapped.clear_goal();
         }
         match (self.mode, mode) {
@@ -568,7 +597,7 @@ impl<'a> Editor<'a> {
             area.width,
             area.height - top_inset,
         );
-        self.render_unwrapped_controls(frame, text_area, styles, cursor_style);
+        self.render_unwrapped_content(frame, text_area, styles, cursor_style);
 
         self.render_vertical_scrollbar(frame, text_area);
         self.render_horizontal_scrollbar(frame, text_area);
@@ -635,6 +664,9 @@ impl<'a> Editor<'a> {
     }
 
     pub fn set_active(&mut self, active: bool) {
+        if self.is_active != active {
+            self.clear_visible_word();
+        }
         if !active && self.is_visual_mode() {
             self.set_editor_mode(EditorMode::Normal);
         }
@@ -666,6 +698,7 @@ impl<'a> Editor<'a> {
     }
 
     pub fn set_entry_content<D: DataProvider>(&mut self, entry_content: &str, app: &App<D>) {
+        self.clear_visible_word();
         self.is_dirty = true;
         let lines = entry_content.split('\n').map(str::to_owned).collect();
         let mut text_area = TextArea::new(lines);
@@ -684,6 +717,7 @@ impl<'a> Editor<'a> {
         &mut self,
         operation: ClipboardOperation,
     ) -> anyhow::Result<HandleInputReturnType> {
+        self.clear_visible_word();
         let mut clipboard = Clipboard::new().map_err(map_clipboard_error)?;
         self.wrapped.invalidate();
         self.wrapped.clear_goal();

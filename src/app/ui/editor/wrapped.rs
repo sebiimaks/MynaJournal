@@ -15,6 +15,7 @@ pub(super) struct WrappedView {
     pub width: usize,
     height: usize,
     top: usize,
+    unwrapped_left: usize,
     goal_column: Option<usize>,
     layout: Option<WrappedLayout>,
     dirty: bool,
@@ -42,10 +43,10 @@ impl WrappedView {
 }
 
 impl Editor<'_> {
-    // The textarea widget drops controls before producing cells. Redraw affected
-    // viewports with our source-preserving glyph mapping, including the CRLF cursor.
-    pub(super) fn render_unwrapped_controls(
-        &self,
+    // Keep TextArea's vertical viewport, but track horizontal scrolling in grapheme
+    // cells so combined characters cannot push the current word offscreen.
+    pub(super) fn render_unwrapped_content(
+        &mut self,
         frame: &mut Frame,
         area: Rect,
         styles: &Styles,
@@ -55,20 +56,14 @@ impl Editor<'_> {
             horizontal: 1,
             vertical: 1,
         });
-        let (top, left) = self.text_area.scroll_offset();
+        let (top, _) = self.text_area.scroll_offset();
         let top = usize::from(top);
-        let mut left = usize::from(left);
+        let mut left = self.wrapped.unwrapped_left;
         let lines = self.text_area.lines();
         let bottom = (top + usize::from(inner.height)).min(lines.len());
         let Some(visible) = lines.get(top..bottom) else {
             return;
         };
-        if !visible
-            .iter()
-            .any(|line| line.chars().any(|c| c.is_control() && c != '\t'))
-        {
-            return;
-        }
         let layout = WrappedLayout::unwrapped_window(
             visible,
             bottom < lines.len(),
@@ -83,6 +78,7 @@ impl Editor<'_> {
         } else if cursor_col >= left + width {
             left = cursor_col + 1 - width;
         }
+        self.wrapped.unwrapped_left = left;
         let selected = self.text_area.selection_range();
         let selection_style = Style::from(styles.editor.selection_style);
         let buffer = frame.buffer_mut();
@@ -97,21 +93,36 @@ impl Editor<'_> {
                 if glyph.column >= left + width {
                     break;
                 }
-                if glyph.column < left {
-                    continue;
-                }
-                let style = if selected.is_some_and(|(start, end)| {
+                let is_selected = selected.is_some_and(|(start, end)| {
                     (top + row.source_row, glyph.source_start) < end
                         && (top + row.source_row, glyph.source_end) > start
-                }) {
+                });
+                let style = if is_selected {
                     selection_style
                 } else {
                     Style::reset()
                 };
+                if is_selected {
+                    // A clipped tab or wide glyph still occupies selected cells.
+                    // Paint those cells even when its complete symbol cannot fit.
+                    for column in
+                        glyph.column.max(left)..(glyph.column + glyph.width).min(left + width)
+                    {
+                        buffer[(inner.x + (column - left) as u16, y)].set_style(selection_style);
+                    }
+                }
+                if glyph.column < left {
+                    continue;
+                }
                 buffer.set_stringn(
                     inner.x + (glyph.column - left) as u16,
                     y,
-                    layout.glyph_text(row, glyph),
+                    self.displayed_glyph(
+                        top + row.source_row,
+                        glyph.source_start,
+                        glyph.source_end,
+                        layout.glyph_text(row, glyph),
+                    ),
                     glyph.width.min(left + width - glyph.column),
                     style,
                 );
@@ -384,7 +395,12 @@ impl Editor<'_> {
                 buf.set_stringn(
                     inner.x + glyph.column as u16,
                     y,
-                    layout.glyph_text(row, glyph),
+                    self.displayed_glyph(
+                        row.source_row,
+                        glyph.source_start,
+                        glyph.source_end,
+                        layout.glyph_text(row, glyph),
+                    ),
                     glyph.width,
                     style,
                 );

@@ -2,16 +2,15 @@ use backend::DataProvider;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Clear, Paragraph, Wrap},
 };
 
 use super::{
-    App, ControlType, HandleInputReturnType, Input, MsgBox, MsgBoxActions, MsgBoxResult,
-    MsgBoxType, UICommand, UIComponents, divider::PaneSplit, msg_box::MsgBoxInputResult,
-    ui_functions::menu_key_style,
+    App, HandleInputReturnType, Input, MsgBox, MsgBoxActions, MsgBoxResult, MsgBoxType, UICommand,
+    UIComponents, msg_box::MsgBoxInputResult, text_mask::TextMask, ui_functions::menu_key_style,
 };
 
 enum ExitStep {
@@ -58,44 +57,56 @@ impl UIComponents<'_> {
             return;
         }
         self.details_hidden = !self.details_hidden;
+        self.text_mask = self.details_hidden.then(TextMask::new);
+        self.editor.set_text_mask(self.text_mask);
+        self.entries_list.set_text_mask(self.text_mask);
         self.concealed_exit = None;
         self.pane_split = None;
         self.cancel_divider_drag();
         app.redraw_after_restore = true;
     }
 
-    pub(super) fn render_concealed<D: DataProvider>(&mut self, frame: &mut Frame, app: &App<D>) {
-        self.pane_split = None;
-        frame.render_widget(Clear, frame.area());
-        let footer = Paragraph::new(Line::from(vec![
-            Span::raw("Show details: "),
-            Span::styled("<Ctrl-o>", menu_key_style()),
-            Span::raw(" | Leave journal: "),
-            Span::styled("q", menu_key_style()),
-        ]))
-        .wrap(Wrap { trim: false });
-        let footer_height = footer
-            .line_count(frame.area().width.max(1))
-            .min(u16::MAX as usize) as u16;
-        let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(footer_height)])
-            .split(frame.area());
-        let entries_style = self.styles.journals_list.block_inactive.into();
-        let content_style = self.styles.editor.block_normal_inactive.into();
-        if app.state.full_screen {
-            let (title, style) = match self.active_control {
-                ControlType::EntriesList => ("Entries — hidden", entries_style),
-                ControlType::EntryContentTxt => ("Content — hidden", content_style),
-            };
-            render_scrambled(frame, chunks[0], title, style);
-        } else if let Some(split) = PaneSplit::new(chunks[0], app.state.entries_list_percentage()) {
-            render_scrambled(frame, split.list, "Entries — hidden", entries_style);
-            render_scrambled(frame, split.editor, "Content — hidden", content_style);
-        } else {
-            frame.render_widget(Paragraph::new("Details hidden"), chunks[0]);
-        }
-        frame.render_widget(footer, chunks[1]);
+    pub(crate) fn conceal_active_word(&mut self) -> bool {
+        self.editor.clear_visible_word()
+    }
+
+    pub(super) fn render_concealed_popup(&mut self, frame: &mut Frame) {
         if let Some(exit) = &mut self.concealed_exit {
             exit.popup.render_widget(frame, frame.area(), &self.styles);
+        } else if self.has_popup() {
+            let bounds = frame.area();
+            let width = bounds.width.min(58);
+            let paragraph = Paragraph::new(vec![
+                Line::raw("Show details to resume the open dialog."),
+                Line::default(),
+                Line::from(vec![
+                    Span::raw("Show details: "),
+                    Span::styled("<Ctrl-o>", menu_key_style()),
+                    Span::raw(" | Leave journal: "),
+                    Span::styled("q", menu_key_style()),
+                ]),
+            ])
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false });
+            let height = paragraph
+                .line_count(width.saturating_sub(2))
+                .saturating_add(2)
+                .min(usize::from(bounds.height)) as u16;
+            let area = Rect::new(
+                bounds.x + (bounds.width - width) / 2,
+                bounds.y + (bounds.height - height) / 2,
+                width,
+                height,
+            );
+            frame.render_widget(Clear, area);
+            frame.render_widget(
+                paragraph.block(
+                    Block::bordered()
+                        .title("Dialog hidden")
+                        .border_style(Style::from(self.styles.general.input_block_active)),
+                ),
+                area,
+            );
         }
     }
 
@@ -113,6 +124,7 @@ impl UIComponents<'_> {
         input: &Input,
         app: &mut App<D>,
     ) -> anyhow::Result<HandleInputReturnType> {
+        self.editor.clear_visible_word();
         if !input.modifiers.is_empty() {
             return Ok(HandleInputReturnType::Handled);
         }
@@ -144,31 +156,5 @@ impl UIComponents<'_> {
             }
         }
         Ok(HandleInputReturnType::Handled)
-    }
-}
-
-fn render_scrambled(frame: &mut Frame, area: Rect, title: &'static str, style: Style) {
-    let block = Block::bordered().title(title).style(style);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    if inner.width < 3 {
-        return;
-    }
-    // These placeholders depend only on the viewport, never on journal text or entry count.
-    const SCRAMBLE: &[u8] = b"x7q%R2#nK9@p4W&z8sT3*m6";
-    for row in 0..inner.height {
-        if row % 4 == 3 {
-            continue;
-        }
-        let width = inner.width.saturating_sub(2).min(48);
-        let text: String = (0..width)
-            .map(|column| {
-                char::from(SCRAMBLE[(usize::from(row) * 7 + usize::from(column)) % SCRAMBLE.len()])
-            })
-            .collect();
-        frame.render_widget(
-            Paragraph::new(text).style(style),
-            Rect::new(inner.x.saturating_add(1), inner.y + row, width, 1),
-        );
     }
 }

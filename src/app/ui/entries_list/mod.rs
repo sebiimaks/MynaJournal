@@ -23,7 +23,7 @@ use crate::{
     settings::{DatumVisibility, EntryTimeFormat, Settings},
 };
 
-use super::{Styles, UICommand, ui_functions::menu_key_style};
+use super::{Styles, UICommand, text_mask::TextMask, ui_functions::menu_key_style};
 
 const LIST_INNER_MARGIN: usize = 5;
 const MAX_TITLE_LINES: usize = 4;
@@ -35,6 +35,7 @@ pub struct EntriesList {
     journal_name: Option<String>,
     is_active: bool,
     pub multi_select_mode: bool,
+    text_mask: Option<TextMask>,
 }
 
 impl EntriesList {
@@ -44,7 +45,12 @@ impl EntriesList {
             journal_name: None,
             is_active: false,
             multi_select_mode: false,
+            text_mask: None,
         }
+    }
+
+    pub(super) fn set_text_mask(&mut self, mask: Option<TextMask>) {
+        self.text_mask = mask;
     }
 
     fn render_list<D: DataProvider>(
@@ -112,7 +118,14 @@ impl EntriesList {
 
                 let mut spans: Vec<Line> = title_lines
                     .iter()
-                    .map(|line| Line::from(Span::styled(line.to_string(), title_style)))
+                    .enumerate()
+                    .map(|(index, line)| {
+                        let text = self.text_mask.map_or_else(
+                            || line.to_string(),
+                            |mask| mask.scramble(line, (u64::from(entry.id) << 32) | index as u64),
+                        );
+                        Line::from(Span::styled(text, title_style))
+                    })
                     .collect();
 
                 // *** Date & Priority ***
@@ -132,7 +145,7 @@ impl EntriesList {
                     let tags_default_style: Style = jstyles.tags_default.into();
 
                     let mut tag_lines = vec![Line::default()];
-                    for tag in &entry.tags {
+                    for (tag_index, tag) in entry.tags.iter().enumerate() {
                         let (preview, truncated) = bounded_preview(tag, width);
                         let preview = if truncated || preview.width() > width {
                             ellipsize(&preview, width)
@@ -171,6 +184,13 @@ impl EntriesList {
                         if !last_line.spans.is_empty() {
                             last_line.push_span(Span::styled(TAGS_SEPARATOR, tags_default_style));
                         }
+                        let preview = match self.text_mask {
+                            Some(mask) => mask.scramble(
+                                &preview,
+                                (u64::from(entry.id) << 32) | (1 << 31) | tag_index as u64,
+                            ),
+                            None => preview,
+                        };
                         last_line.push_span(Span::styled(preview, style));
                     }
                     lines_count += tag_lines.len();
