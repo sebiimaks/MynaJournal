@@ -4,11 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.24.3 - 2026-11-10
+
 - Add Config → Storage → Move journal with verified native copies, encryption-header relocation, conflict checks, and recoverable originals across all four backends
 - Clarify that direct storage-path edits select a location without migrating entries or journal protection
 - Show journal conversion failures in a persistent, scrollable error dialog instead of returning to password setup; identify files blocking conversion while preserving unrelated data
 - Rename the Literal title mode to Custom text and clarify that a blank default still requires a title when creating an entry
 - Remember custom title text across mode changes, saves and restarts while preserving existing `auto_title` configurations
+
+Close MynaJournal before upgrading. With Homebrew, run `brew update` followed by
+`brew upgrade sebiimaks/tap/myna-journal`. On Debian, install the package matching
+your architecture, for example `sudo apt install ./myna-journal_0.24.3-1_amd64.deb`.
+Existing journals and settings are preserved; no migration is needed from 0.24.2.
+
+Use **Config → Storage → Move journal** to relocate a journal, including its
+encryption header. Choose a new destination folder, review the resulting storage
+path, and confirm. Reopen the journal after moving; protected journals use the
+same password. The original data is retained in a recovery folder whose path is
+shown after the move. Editing a storage path directly still does not move data.
 
 ## 0.24.2 - 2026-11-10
 
