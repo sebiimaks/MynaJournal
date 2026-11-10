@@ -563,6 +563,18 @@ impl Drop for JournalProvider {
 }
 
 impl DataProvider for JournalProvider {
+    async fn close_for_move(&mut self) -> Result<()> {
+        self.check()?;
+        ensure!(!self.reload_required, "Reopen the journal before moving it");
+        if let Some(native) = self.native.take() {
+            native.close().await;
+        }
+        self.key = None;
+        // Keep cached records for Drop to zeroize when the caller releases this provider.
+        self.loaded = false;
+        self.reload_required = true;
+        Ok(())
+    }
     fn is_journal_protected(&self) -> bool {
         self.header.is_some()
     }
@@ -1539,14 +1551,18 @@ fn preflight(backend: &JournalBackend) -> Result<()> {
         let metadata = fs::symlink_metadata(&path)?;
         ensure!(
             metadata.is_file() && !metadata.file_type().is_symlink(),
-            "Journal conversion requires a directory containing only journal files"
+            "Journal conversion requires a directory containing only journal files; unsupported item: {}",
+            path.display()
         );
         match backend {
             #[cfg(feature = "file")]
-            JournalBackend::File(..) => crate::file::validate_journal_conversion_file(&path)?,
+            JournalBackend::File(..) => crate::file::validate_journal_conversion_file(&path)
+                .with_context(|| format!("Conversion blocked by {}", path.display()))?,
             #[cfg(feature = "vjournal")]
             JournalBackend::Vjournal(..) => {
-                for uid in crate::vjournal::validate_journal_conversion_file(&path)? {
+                for uid in crate::vjournal::validate_journal_conversion_file(&path)
+                    .with_context(|| format!("Conversion blocked by {}", path.display()))?
+                {
                     ensure!(
                         calendar_ids.insert(uid),
                         "Journal has duplicate recurrence masters across files"
@@ -1599,6 +1615,33 @@ mod tests {
             out.extend(fs::read(path).unwrap());
         }
         out
+    }
+    #[tokio::test]
+    async fn move_shutdown_blocks_further_access_and_keeps_lease_until_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        for backend in backends(dir.path()) {
+            let mut provider = JournalProvider::open(backend.clone()).await.unwrap();
+            provider.add_entry(draft()).await.unwrap();
+            provider
+                .enable_journal_protection(password(), None)
+                .await
+                .unwrap();
+            provider.load_all_entries().await.unwrap();
+            provider.close_for_move().await.unwrap();
+            assert!(provider.journal_reload_required());
+            assert!(provider.is_locked());
+            assert!(provider.load_all_entries().await.is_err());
+            assert!(provider.add_entry(draft()).await.is_err());
+            assert!(JournalLease::acquire(&backend).is_err());
+            drop(provider);
+
+            let mut reopened = JournalProvider::open(backend).await.unwrap();
+            reopened.unlock(password()).await.unwrap();
+            let entries = reopened.load_all_entries().await.unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].content, "secret body canary");
+            reopened.close_for_move().await.unwrap();
+        }
     }
     #[tokio::test]
     async fn all_native_backends_encrypt_every_field_and_support_changes_undo_and_unprotection() {
@@ -1851,6 +1894,95 @@ mod tests {
         fs::write(dir.path().join("one.ics"), &calendar).unwrap();
         fs::write(dir.path().join("two.ics"), calendar).unwrap();
         assert!(preflight(&backend).is_err());
+    }
+
+    #[cfg(feature = "file")]
+    #[tokio::test]
+    async fn file_conversion_reports_unrelated_filenames_and_preserves_all_files() {
+        for name in [".sync.ffs_db", ".tui_journal.lock", "scratch.md"] {
+            let dir = tempfile::tempdir().unwrap();
+            let backend =
+                JournalBackend::File(dir.path().join("entries"), crate::FileFormat::Plain);
+            let mut provider = JournalProvider::open(backend.clone()).await.unwrap();
+            provider.add_entry(draft()).await.unwrap();
+            let unrelated = backend.path().join(name);
+            fs::write(
+                &unrelated,
+                "Unrelated data must survive conversion attempts",
+            )
+            .unwrap();
+            let before = store_hash(backend.path()).unwrap();
+            let error = provider
+                .enable_journal_protection(password(), None)
+                .await
+                .unwrap_err();
+            let details = format!("{error:#}");
+            assert!(
+                details.contains(&unrelated.display().to_string()),
+                "{details}"
+            );
+            assert!(
+                details.contains("Move non-entry files outside the journal folder"),
+                "{details}"
+            );
+            assert_eq!(store_hash(backend.path()).unwrap(), before);
+            assert!(!backend.pending_path().exists());
+            assert!(!backend.header_path().exists());
+            assert!(provider.journal_reload_required());
+        }
+    }
+
+    #[cfg(feature = "file")]
+    #[tokio::test]
+    async fn legacy_file_journal_can_be_protected_after_moving_unrelated_files_aside() {
+        for format in [crate::FileFormat::Plain, crate::FileFormat::Markdown] {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = JournalBackend::File(dir.path().join("entries"), format);
+            fs::create_dir(backend.path()).unwrap();
+            let name = match format {
+                crate::FileFormat::Plain => "20261001_120000",
+                crate::FileFormat::Markdown => "20261001_120000.md",
+            };
+            fs::write(backend.path().join(name), "---\ntitle: Legacy journal entry\ndate: 2026-10-01T02:00:00Z\ncreated: 2026-10-01T12:00:00+10:00\ntags: [legacy]\ntui_journal:\n  version: 1\n  id: 11e02e5c-7cbf-4828-8a46-8c8712461e00\n  priority: 2\nextra_property: retain this value\n---\nOriginal legacy content\n").unwrap();
+            let unrelated = backend.path().join(".sync.ffs_db");
+            fs::write(&unrelated, "Keep this non-entry file").unwrap();
+            let mut provider = JournalProvider::open(backend.clone()).await.unwrap();
+            let original = provider.load_all_entries().await.unwrap().remove(0);
+            assert!(
+                provider
+                    .enable_journal_protection(password(), None)
+                    .await
+                    .is_err()
+            );
+            drop(provider);
+            let moved = dir.path().join("saved-sync-metadata");
+            fs::rename(&unrelated, &moved).unwrap();
+
+            let mut provider = JournalProvider::open(backend.clone()).await.unwrap();
+            provider
+                .enable_journal_protection(password(), None)
+                .await
+                .unwrap();
+            drop(provider);
+            let mut provider = JournalProvider::open(backend.clone()).await.unwrap();
+            assert!(provider.is_locked());
+            provider.unlock(password()).await.unwrap();
+            let mut restored = provider.load_all_entries().await.unwrap().remove(0);
+            assert!(
+                provider
+                    .protection_metadata(restored.id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .contains("retain this value")
+            );
+            restored.id = original.id;
+            assert_eq!(restored, original);
+            assert_eq!(
+                fs::read_to_string(&moved).unwrap(),
+                "Keep this non-entry file"
+            );
+        }
     }
     #[tokio::test]
     async fn conversion_refuses_edits_after_records_were_captured() {

@@ -111,6 +111,7 @@ where
         let context = ConfigContext {
             journal_name: Some(journal.name.clone()),
             return_to_journals: true,
+            storage_overridden: false,
             settings_path: journal.settings_path.clone(),
             themes_path: themes.directory().to_path_buf(),
             active_theme_id: theme.id,

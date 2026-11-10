@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Add Config → Storage → Move journal with verified native copies, encryption-header relocation, conflict checks, and recoverable originals across all four backends
+- Clarify that direct storage-path edits select a location without migrating entries or journal protection
+- Show journal conversion failures in a persistent, scrollable error dialog instead of returning to password setup; identify files blocking conversion while preserving unrelated data
+- Rename the Literal title mode to Custom text and clarify that a blank default still requires a title when creating an entry
+- Remember custom title text across mode changes, saves and restarts while preserving existing `auto_title` configurations
+
 ## 0.24.2 - 2026-11-10
 
 - Keep entry layout, dates and times visible when Hide details is enabled; replace word characters in titles, tags and content with random characters

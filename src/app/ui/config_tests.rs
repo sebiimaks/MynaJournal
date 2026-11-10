@@ -65,6 +65,7 @@ fn setup(
     app.config_context = Some(ConfigContext {
         journal_name: None,
         return_to_journals: false,
+        storage_overridden: false,
         settings_path,
         themes_path: dir.path().join("themes"),
         active_theme_id: Some("tui".into()),
@@ -127,6 +128,22 @@ async fn security_preferences_save_and_apply_without_touching_journals_or_auto_t
     assert!(text.contains("auto_title = 'Daily'"));
     let saved: Settings = toml::from_str(&text).unwrap();
     assert_eq!(saved.security, app.settings.security);
+}
+
+#[tokio::test]
+async fn custom_title_saves_and_applies_live_without_changing_existing_entries() {
+    let (dir, mut app, mut ui) = setup("auto_title = { kind = 'date' }\n");
+    let original_entry = app.get_current_entry().unwrap().clone();
+    let original_mode = app.settings.auto_title.clone();
+    ui.show_config(&app).unwrap();
+    set_setting(&mut ui, &["custom_title"], "Remember me".into());
+    control(&mut ui, &mut app, 's').await;
+    assert_eq!(app.settings.custom_title.as_deref(), Some("Remember me"));
+    assert_eq!(app.settings.auto_title, original_mode);
+    assert_eq!(app.get_current_entry(), Some(&original_entry));
+    let reloaded = Settings::new(Some(dir.path().to_path_buf())).await.unwrap();
+    assert_eq!(reloaded.custom_title, app.settings.custom_title);
+    assert_eq!(reloaded.auto_title, original_mode);
 }
 
 #[tokio::test]

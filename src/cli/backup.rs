@@ -60,22 +60,22 @@ impl Manifest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FileRecord {
+pub(crate) struct FileRecord {
     bytes: u64,
     sha256: String,
 }
 
 #[derive(Clone, Debug)]
-struct Source {
-    path: PathBuf,
-    destination: PathBuf,
-    directory: bool,
+pub(crate) struct Source {
+    pub(crate) path: PathBuf,
+    pub(crate) destination: PathBuf,
+    pub(crate) directory: bool,
 }
 
-#[derive(Debug)]
-struct Inventory {
-    files: BTreeMap<PathBuf, FileRecord>,
-    directories: BTreeSet<PathBuf>,
+#[derive(Clone, Debug)]
+pub(crate) struct Inventory {
+    pub(crate) files: BTreeMap<PathBuf, FileRecord>,
+    pub(crate) directories: BTreeSet<PathBuf>,
 }
 
 struct OwnedDirectory {
@@ -179,7 +179,7 @@ fn source_data(settings: &Settings) -> Result<Source> {
     })
 }
 
-fn resolve_root(path: &Path) -> Result<PathBuf> {
+pub(crate) fn resolve_root(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)?;
     match fs::canonicalize(&absolute) {
         Ok(path) => Ok(path),
@@ -497,12 +497,12 @@ fn path_value(path: &Path) -> Result<toml_edit::Item> {
 }
 
 impl Inventory {
-    fn same_contents(&self, other: &Self) -> bool {
+    pub(crate) fn same_contents(&self, other: &Self) -> bool {
         self.files == other.files && self.directories == other.directories
     }
 }
 
-fn inventory_source(source: &Source) -> Result<Inventory> {
+pub(crate) fn inventory_source(source: &Source) -> Result<Inventory> {
     if !source.path.try_exists()? {
         return Ok(Inventory {
             files: BTreeMap::new(),
@@ -524,7 +524,7 @@ fn inventory_source(source: &Source) -> Result<Inventory> {
     }
 }
 
-fn inventory_tree(root: &Path, skip_locks: bool) -> Result<Inventory> {
+pub(crate) fn inventory_tree(root: &Path, skip_locks: bool) -> Result<Inventory> {
     fn walk(root: &Path, relative: &Path, output: &mut Inventory, skip_locks: bool) -> Result<()> {
         for entry in fs::read_dir(root.join(relative))? {
             let entry = entry?;
@@ -560,7 +560,11 @@ fn inventory_tree(root: &Path, skip_locks: bool) -> Result<Inventory> {
     Ok(output)
 }
 
-fn copy_inventory(source: &Source, inventory: &Inventory, destination: &Path) -> Result<()> {
+pub(crate) fn copy_inventory(
+    source: &Source,
+    inventory: &Inventory,
+    destination: &Path,
+) -> Result<()> {
     let output = destination.join(&source.destination);
     if source.directory && source.path.exists() {
         private_dirs(&output)?;
@@ -671,7 +675,7 @@ fn write_private_new(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn same_identity(left: &Metadata, right: &Metadata) -> bool {
+pub(crate) fn same_identity(left: &Metadata, right: &Metadata) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -683,7 +687,7 @@ fn same_identity(left: &Metadata, right: &Metadata) -> bool {
     }
 }
 
-fn sync_directory(path: &Path) -> Result<()> {
+pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     #[cfg(unix)]
     File::open(path)?.sync_all()?;
     #[cfg(not(unix))]
@@ -716,7 +720,7 @@ fn validate_relative(text: &str) -> Result<()> {
     Ok(())
 }
 
-fn acquire_source_locks(data: &Source, backend: BackendType) -> Result<Vec<File>> {
+pub(crate) fn acquire_source_locks(data: &Source, backend: BackendType) -> Result<Vec<File>> {
     let mut paths = Vec::new();
     if backend == BackendType::Json {
         let mut path = data.path.as_os_str().to_os_string();
@@ -747,7 +751,7 @@ fn acquire_source_locks(data: &Source, backend: BackendType) -> Result<Vec<File>
 }
 
 #[cfg(feature = "sqlite")]
-async fn snapshot_sqlite(source: &Path, destination: &Path) -> Result<()> {
+pub(crate) async fn snapshot_sqlite(source: &Path, destination: &Path) -> Result<()> {
     use sqlx::{Connection, SqliteConnection, sqlite::SqliteConnectOptions};
     if !source.try_exists()? {
         return Ok(());
@@ -778,7 +782,7 @@ async fn snapshot_sqlite(source: &Path, destination: &Path) -> Result<()> {
 }
 
 #[cfg(not(feature = "sqlite"))]
-async fn snapshot_sqlite(_source: &Path, _destination: &Path) -> Result<()> {
+pub(crate) async fn snapshot_sqlite(_source: &Path, _destination: &Path) -> Result<()> {
     anyhow::bail!("This build cannot back up SQLite databases")
 }
 

@@ -64,6 +64,7 @@ fn journal_collection_exports_cannot_replace_metadata_archives_or_other_journals
     app.settings = store.load_settings(&work).unwrap();
     app.config_context = Some(crate::settings::ConfigContext {
         return_to_journals: false,
+        storage_overridden: false,
         journal_name: Some(work.name.clone()),
         settings_path: work.settings_path.clone(),
         themes_path: directory.path().join("themes"),
@@ -280,6 +281,7 @@ fn active_database_sidecars_state_and_configuration_are_not_export_targets() {
     app.config_context = Some(crate::settings::ConfigContext {
         journal_name: None,
         return_to_journals: false,
+        storage_overridden: false,
         settings_path: dir.path().join("config.toml"),
         themes_path: dir.path().join("themes"),
         active_theme_id: None,

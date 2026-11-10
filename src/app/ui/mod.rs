@@ -52,6 +52,8 @@ mod fuzz_find;
 mod help_popup;
 #[cfg(test)]
 mod journal_exit_tests;
+mod journal_move_handlers;
+pub(crate) mod journal_move_popup;
 mod journal_security_handlers;
 pub mod journal_security_popup;
 pub mod journal_selector;
@@ -80,6 +82,7 @@ pub enum ControlType {
 pub enum Popup<'a> {
     Security(Box<security_popup::SecurityPopup>),
     JournalSecurity(Box<journal_security_popup::JournalSecurityPopup>),
+    MoveJournal(Box<journal_move_popup::MoveJournalPopup>),
     Help(Box<HelpPopup>),
     Config(Box<ConfigPopup>),
     Entry(Box<EntryPopup<'a>>),
@@ -119,6 +122,7 @@ pub struct UIComponents<'a> {
     shielded_popups: Vec<Popup<'a>>,
     lock_all_requested: bool,
     prompt_hidden: bool,
+    requested_journal_move: Option<crate::journal_move::MoveRequest>,
 }
 
 impl UIComponents<'_> {
@@ -155,6 +159,7 @@ impl UIComponents<'_> {
             shielded_popups: Vec::new(),
             lock_all_requested: false,
             prompt_hidden: false,
+            requested_journal_move: None,
         }
     }
 
@@ -307,6 +312,7 @@ impl UIComponents<'_> {
             match popup {
                 Popup::Security(popup) => popup.render_widget(f, f.area(), &self.styles),
                 Popup::JournalSecurity(popup) => popup.render_widget(f, f.area(), &self.styles),
+                Popup::MoveJournal(popup) => popup.render_widget(f, f.area(), &self.styles),
                 Popup::Config(config) => config.render_widget(f, f.area(), &self.styles),
                 Popup::Help(help_popup) => help_popup.render_widget(f, f.area()),
                 Popup::Entry(entry_popup) => entry_popup.render_widget(f, f.area(), &self.styles),
@@ -440,6 +446,9 @@ impl UIComponents<'_> {
         if matches!(self.popup_stack.last(), Some(Popup::JournalSecurity(_))) {
             return self.handle_journal_security_input(input, app).await;
         }
+        if matches!(self.popup_stack.last(), Some(Popup::MoveJournal(_))) {
+            return self.handle_journal_move_input(input, app);
+        }
         if let Some(Popup::Config(config)) = self.popup_stack.last_mut() {
             let action = config.handle_input(input);
             if action == ConfigAction::Close {
@@ -456,6 +465,7 @@ impl UIComponents<'_> {
                 match popup {
                     Popup::Security(_) => unreachable!("security handled above"),
                     Popup::JournalSecurity(_) => unreachable!("journal security handled above"),
+                    Popup::MoveJournal(_) => unreachable!("journal move handled above"),
                     Popup::Config(_) => unreachable!("configuration handled above"),
                     Popup::Help(help_popup) => {
                         if help_popup.handle_input(input) == HelpInputInputReturn::Close {

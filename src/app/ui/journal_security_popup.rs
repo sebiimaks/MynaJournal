@@ -47,6 +47,7 @@ enum Stage {
     Current,
     New,
     Confirm,
+    Failure,
 }
 
 pub struct JournalSecurityPopup {
@@ -58,6 +59,9 @@ pub struct JournalSecurityPopup {
     error: Option<String>,
     pending_enable: Option<PendingEnable>,
     entry_title: String,
+    error_scroll: u16,
+    error_scroll_max: u16,
+    error_page_size: u16,
 }
 
 struct PendingEnable {
@@ -77,6 +81,9 @@ impl JournalSecurityPopup {
             error: None,
             pending_enable: None,
             entry_title: String::new(),
+            error_scroll: 0,
+            error_scroll_max: 0,
+            error_page_size: 1,
         }
     }
 
@@ -148,6 +155,13 @@ impl JournalSecurityPopup {
         self.error = Some(error);
     }
 
+    pub(super) fn show_failure(&mut self, error: String) {
+        self.show_error(error);
+        self.stage = Stage::Failure;
+        self.error_scroll = 0;
+        self.error_scroll_max = 0;
+    }
+
     pub fn handle_input(&mut self, input: &Input) -> JournalSecurityAction {
         let ctrl = input.modifiers.contains(KeyModifiers::CONTROL);
         if input.key_code == KeyCode::Esc || (ctrl && input.key_code == KeyCode::Char('c')) {
@@ -160,6 +174,22 @@ impl JournalSecurityPopup {
             .intersects(KeyModifiers::ALT | KeyModifiers::SUPER)
             || (ctrl && !confirm)
         {
+            return JournalSecurityAction::Keep;
+        }
+        if self.stage == Stage::Failure {
+            if confirm {
+                return JournalSecurityAction::Close;
+            }
+            self.error_scroll = match input.key_code {
+                KeyCode::Up => self.error_scroll.saturating_sub(1),
+                KeyCode::Down => self.error_scroll.saturating_add(1),
+                KeyCode::PageUp => self.error_scroll.saturating_sub(self.error_page_size),
+                KeyCode::PageDown => self.error_scroll.saturating_add(self.error_page_size),
+                KeyCode::Home => 0,
+                KeyCode::End => self.error_scroll_max,
+                _ => self.error_scroll,
+            }
+            .min(self.error_scroll_max);
             return JournalSecurityAction::Keep;
         }
         if matches!(self.stage, Stage::ConfirmDisable | Stage::ConfirmEnable) {
@@ -257,21 +287,25 @@ impl JournalSecurityPopup {
                     }
                 };
             }
-            Stage::ConfirmDisable | Stage::ConfirmEnable => {}
+            Stage::ConfirmDisable | Stage::ConfirmEnable | Stage::Failure => {}
         }
         self.error = None;
         JournalSecurityAction::Keep
     }
 
-    pub fn render_widget(&self, frame: &mut Frame, bounds: Rect, styles: &Styles) {
+    pub fn render_widget(&mut self, frame: &mut Frame, bounds: Rect, styles: &Styles) {
         let area = centered_rect_exact_dimensions(56, 12, bounds);
         let style = Style::from(styles.general.input_block_active);
-        let title = match self.action {
-            JournalPasswordAction::Unlock => " Unlock Journal ",
-            JournalPasswordAction::UnlockEntry(_) => " Unlock Entry ",
-            JournalPasswordAction::Enable => " Protect Journal ",
-            JournalPasswordAction::Change => " Change Journal Password ",
-            JournalPasswordAction::Disable => " Remove Journal Protection ",
+        let title = if self.stage == Stage::Failure {
+            " Journal Protection Error "
+        } else {
+            match self.action {
+                JournalPasswordAction::Unlock => " Unlock Journal ",
+                JournalPasswordAction::UnlockEntry(_) => " Unlock Entry ",
+                JournalPasswordAction::Enable => " Protect Journal ",
+                JournalPasswordAction::Change => " Change Journal Password ",
+                JournalPasswordAction::Disable => " Remove Journal Protection ",
+            }
         };
         frame.render_widget(Clear, area);
         frame.render_widget(
@@ -289,7 +323,14 @@ impl JournalSecurityPopup {
             return;
         }
         let confirmation = matches!(self.stage, Stage::ConfirmDisable | Stage::ConfirmEnable);
-        let footer = if confirmation {
+        let footer = if self.stage == Stage::Failure {
+            Line::from(vec![
+                Span::styled("↑/↓", menu_key_style()),
+                Span::raw(": scroll | "),
+                Span::styled("Enter/Esc", menu_key_style()),
+                Span::raw(": close"),
+            ])
+        } else if confirmation {
             Line::from(vec![
                 Span::styled("Y", menu_key_style()),
                 Span::raw(": continue | "),
@@ -304,8 +345,9 @@ impl JournalSecurityPopup {
                 Span::raw(": cancel"),
             ])
         };
+        let reserved_body = if self.stage == Stage::Failure { 1 } else { 3 };
         let footer_height = (footer.width().div_ceil(usize::from(content.width)) as u16)
-            .min(content.height.saturating_sub(3));
+            .min(content.height.saturating_sub(reserved_body));
         let body = Rect::new(
             content.x,
             content.y,
@@ -317,6 +359,28 @@ impl JournalSecurityPopup {
             Paragraph::new(footer).wrap(Wrap { trim: false }),
             footer_area,
         );
+        if self.stage == Stage::Failure {
+            let error: String = self
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .chars()
+                .filter(|ch| !ch.is_control() || *ch == '\n')
+                .collect();
+            let paragraph = Paragraph::new(error)
+                .style(Style::default().fg(styles.msgbox.error))
+                .wrap(Wrap { trim: false });
+            self.error_page_size = body.height.max(1);
+            self.error_scroll_max = u16::try_from(
+                paragraph
+                    .line_count(body.width)
+                    .saturating_sub(usize::from(body.height)),
+            )
+            .unwrap_or(u16::MAX);
+            self.error_scroll = self.error_scroll.min(self.error_scroll_max);
+            frame.render_widget(paragraph.scroll((self.error_scroll, 0)), body);
+            return;
+        }
         if confirmation {
             let mut lines = if self.stage == Stage::ConfirmEnable {
                 vec![
@@ -473,6 +537,96 @@ mod tests {
     }
 
     #[test]
+    fn conversion_failure_clears_passwords_and_cannot_restart_setup() {
+        let mut popup = JournalSecurityPopup::new(JournalPasswordAction::Enable);
+        popup.current.push_str("old-secret");
+        popup.password.push_str("new-secret");
+        popup.confirmation.push_str("new-secret");
+        popup.show_failure("Conversion blocked by an unrelated file.".into());
+        assert!(
+            popup.current.is_empty() && popup.password.is_empty() && popup.confirmation.is_empty()
+        );
+        for code in [KeyCode::Char('y'), KeyCode::Char('p'), KeyCode::Backspace] {
+            assert!(matches!(key(&mut popup, code), JournalSecurityAction::Keep));
+            assert!(popup.stage == Stage::Failure);
+            assert!(popup.password.is_empty());
+        }
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("Journal Protection Error"));
+        assert!(!text.contains("secret") && !text.contains("New Password"));
+        assert!(!text.contains("Protect this journal with one password?"));
+        assert!(matches!(
+            key(&mut popup, KeyCode::Enter),
+            JournalSecurityAction::Close
+        ));
+    }
+
+    #[test]
+    fn long_conversion_errors_scroll_to_the_cause_and_keep_close_controls_visible() {
+        let mut popup = JournalSecurityPopup::new(JournalPasswordAction::Enable);
+        popup.show_failure(format!(
+            "Conversion blocked.\n{}\nFINAL CAUSE: unrelated-file\u{1b}\u{7}",
+            "Long directory path and context. ".repeat(60)
+        ));
+        let mut terminal = Terminal::new(TestBackend::new(30, 8)).unwrap();
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        assert!(popup.error_scroll_max > 0);
+        key(&mut popup, KeyCode::PageDown);
+        assert_eq!(popup.error_scroll, popup.error_page_size);
+        key(&mut popup, KeyCode::End);
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("unrelated-file"), "{text}");
+        assert!(
+            text.contains("Enter/Esc") && text.contains("close"),
+            "{text}"
+        );
+        assert!(!text.contains(['\u{1b}', '\u{7}']));
+        let last_line = popup.error_scroll;
+        key(&mut popup, KeyCode::Down);
+        assert_eq!(popup.error_scroll, last_line);
+        key(&mut popup, KeyCode::Up);
+        assert_eq!(popup.error_scroll, last_line - 1);
+        key(&mut popup, KeyCode::PageUp);
+        assert_eq!(
+            popup.error_scroll,
+            (last_line - 1).saturating_sub(popup.error_page_size)
+        );
+        key(&mut popup, KeyCode::Home);
+        assert_eq!(popup.error_scroll, 0);
+        key(&mut popup, KeyCode::End);
+        terminal.resize(Rect::new(0, 0, 80, 24)).unwrap();
+        terminal
+            .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+            .unwrap();
+        assert!(popup.error_scroll <= popup.error_scroll_max);
+        assert!(matches!(
+            key(&mut popup, KeyCode::Esc),
+            JournalSecurityAction::Close
+        ));
+    }
+
+    #[test]
     fn password_input_rejects_control_shortcuts_and_limits_utf8_bytes() {
         let mut popup = JournalSecurityPopup::new(JournalPasswordAction::Unlock);
         for _ in 0..1365 {
@@ -563,7 +717,7 @@ mod tests {
                 "Your current password is required.",
             ),
         ] {
-            let popup = JournalSecurityPopup::new(action);
+            let mut popup = JournalSecurityPopup::new(action);
             let mut terminal = Terminal::new(TestBackend::new(30, 8)).unwrap();
             terminal
                 .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))

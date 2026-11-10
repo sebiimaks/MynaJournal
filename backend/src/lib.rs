@@ -45,6 +45,10 @@ pub enum ModifyEntryError {
 // The warning can be suppressed since this will be used with the code base of this app only
 #[allow(async_fn_in_trait)]
 pub trait DataProvider {
+    /// Close native handles before a deferred filesystem relocation.
+    async fn close_for_move(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("This provider does not support moving journals")
+    }
     fn is_journal_protected(&self) -> bool {
         false
     }

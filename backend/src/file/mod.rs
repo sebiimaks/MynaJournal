@@ -21,12 +21,12 @@ use super::{DataProvider, EntriesDTO, Entry, EntryDraft, ModifyEntryError};
 pub(crate) fn validate_journal_conversion_file(path: &Path) -> Result<()> {
     ensure!(
         is_journal_path(path),
-        "Journal conversion cannot include unrelated files"
+        "Journal conversion cannot include unrelated files. Move non-entry files outside the journal folder before retrying"
     );
     let text = fs::read_to_string(path)?;
     ensure!(
         JournalDocument::parse(&text)?.is_some(),
-        "Journal conversion cannot include unrecognized files"
+        "Journal conversion cannot include unrecognized files. Move non-entry files outside the journal folder before retrying"
     );
     Ok(())
 }

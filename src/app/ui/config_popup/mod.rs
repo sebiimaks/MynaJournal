@@ -35,6 +35,7 @@ pub enum ConfigAction {
     EnableJournalProtection,
     ChangeJournalPassword,
     DisableJournalProtection,
+    MoveJournal,
 }
 
 #[derive(Debug)]
@@ -229,6 +230,7 @@ impl ConfigPopup {
         match field.kind {
             Kind::JournalProtection => return Some(Value::Boolean(self.journal_protected)),
             Kind::JournalPassword => return Some(Value::String("Enter to change".into())),
+            Kind::MoveJournal => return Some(Value::String("Enter to move".into())),
             _ => {}
         }
         if field.tab == Tab::Layout {
@@ -246,7 +248,10 @@ impl ConfigPopup {
     }
 
     fn active_value(&self, field: &Field) -> Option<Value> {
-        if matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword) {
+        if matches!(
+            field.kind,
+            Kind::JournalProtection | Kind::JournalPassword | Kind::MoveJournal
+        ) {
             return self.value(field);
         }
         if field.keys() == ["journal_prompts"]
@@ -276,7 +281,7 @@ impl ConfigPopup {
         if matches!(field.kind, Kind::JournalProtection) {
             return Some(Value::Boolean(false));
         }
-        if matches!(field.kind, Kind::JournalPassword) {
+        if matches!(field.kind, Kind::JournalPassword | Kind::MoveJournal) {
             return None;
         }
         if field.tab == Tab::Layout {
@@ -299,6 +304,9 @@ impl ConfigPopup {
         } else {
             &self.raw_settings
         };
+        if matches!(field.kind, Kind::TitleCustomText) {
+            return field_value(field, values);
+        }
         let keys = field.keys();
         nested(values, &keys).cloned().or_else(|| {
             if keys.first() == Some(&"external_editor") && keys.get(1) == Some(&"command") {
@@ -318,7 +326,7 @@ impl ConfigPopup {
         })
     }
 
-    fn is_dirty(&self) -> bool {
+    pub(super) fn is_dirty(&self) -> bool {
         self.settings_document.is_dirty()
             || self.theme_dirty()
             || self.divider != self.saved_divider
@@ -423,6 +431,7 @@ impl ConfigPopup {
                 }
                 Kind::JournalProtection => return ConfigAction::EnableJournalProtection,
                 Kind::JournalPassword => return ConfigAction::ChangeJournalPassword,
+                Kind::MoveJournal => return ConfigAction::MoveJournal,
                 _ => self.begin_edit(),
             },
             KeyCode::Char('d') => self.restore_default(),
@@ -547,7 +556,7 @@ impl ConfigPopup {
             Kind::TitleMode => {
                 let next = match value.as_ref().and_then(Value::as_str) {
                     Some("None") => "Date",
-                    Some("Date") => "Literal",
+                    Some("Date") => "Custom text",
                     _ => "None",
                 };
                 Some(Value::String(next.into()))
@@ -634,7 +643,15 @@ impl ConfigPopup {
 
     fn restore_default(&mut self) {
         let field = self.current_field().clone();
-        if matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword) {
+        if matches!(field.kind, Kind::MoveJournal) {
+            self.status = "Use Enter to move this journal.".into();
+            self.error = false;
+            return;
+        }
+        if matches!(
+            field.kind,
+            Kind::JournalProtection | Kind::JournalPassword | Kind::MoveJournal
+        ) {
             self.status = "Use Enter to change journal protection.".into();
             self.error = false;
             return;
@@ -657,7 +674,10 @@ impl ConfigPopup {
 
     fn apply_value(&mut self, field: &Field, value: Option<Value>) -> Result<()> {
         ensure!(
-            !matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword),
+            !matches!(
+                field.kind,
+                Kind::JournalProtection | Kind::JournalPassword | Kind::MoveJournal
+            ),
             "Journal protection requires password verification."
         );
         validate_path(field, value.as_ref())?;
@@ -703,24 +723,39 @@ impl ConfigPopup {
             self.themes = themes;
         } else {
             let mut document = self.settings_document.clone();
-            let value = match (&field.kind, value) {
-                (Kind::TitleMode, Some(Value::String(mode))) => match mode.as_str() {
-                    "None" => None,
-                    "Date" => Some(Value::Table(toml::map::Map::from_iter([(
-                        "kind".into(),
-                        Value::String("date".into()),
-                    )]))),
-                    "Literal" => Some(
-                        document
-                            .value(&["auto_title"])
-                            .filter(Value::is_str)
-                            .unwrap_or(Value::String(String::new())),
-                    ),
-                    _ => bail!("Unknown title mode."),
-                },
-                (_, value) => value,
-            };
-            document.set(&field.keys(), value)?;
+            match field.kind {
+                Kind::TitleMode => {
+                    if let Some(text) = document.value(&["auto_title"]).filter(Value::is_str) {
+                        document.set(&["custom_title"], Some(text))?;
+                    }
+                    let value = match value.as_ref().and_then(Value::as_str) {
+                        None | Some("None") => None,
+                        Some("Date") => Some(Value::Table(toml::map::Map::from_iter([(
+                            "kind".into(),
+                            Value::String("date".into()),
+                        )]))),
+                        Some("Custom text") => Some(
+                            document
+                                .value(&["custom_title"])
+                                .unwrap_or(Value::String(String::new())),
+                        ),
+                        _ => bail!("Unknown title mode."),
+                    };
+                    document.set(&["auto_title"], value)?;
+                }
+                Kind::TitleCustomText => {
+                    document.set(&["custom_title"], value.clone())?;
+                    if value.is_some()
+                        || document.value(&["auto_title"]).is_some_and(|v| v.is_str())
+                    {
+                        document.set(
+                            &["auto_title"],
+                            Some(value.unwrap_or(Value::String(String::new()))),
+                        )?;
+                    }
+                }
+                _ => document.set(&field.keys(), value)?,
+            }
             let settings = settings_value(&Settings::from_config_text(
                 &document.text(),
                 document.path(),
@@ -812,16 +847,18 @@ impl ConfigPopup {
             .tab_fields()
             .map(|field| {
                 let value = self.value(field);
-                let source =
-                    if matches!(field.kind, Kind::JournalProtection | Kind::JournalPassword) {
-                        "journal"
-                    } else if field.tab == Tab::Layout {
-                        "state"
-                    } else if self.raw_value(field).is_some() {
-                        "file"
-                    } else {
-                        "default"
-                    };
+                let source = if matches!(
+                    field.kind,
+                    Kind::JournalProtection | Kind::JournalPassword | Kind::MoveJournal
+                ) {
+                    "journal"
+                } else if field.tab == Tab::Layout {
+                    "state"
+                } else if self.raw_value(field).is_some() {
+                    "file"
+                } else {
+                    "default"
+                };
                 let differs = value != self.active_value(field);
                 let status = if field.keys() == ["journal_prompts"]
                     && self
@@ -1047,13 +1084,16 @@ fn field_value(field: &Field, values: &Value) -> Option<Value> {
     match field.kind {
         Kind::TitleMode => Some(Value::String(
             match value {
-                Some(Value::String(_)) => "Literal",
+                Some(Value::String(_)) => "Custom text",
                 Some(Value::Table(_)) => "Date",
                 _ => "None",
             }
             .into(),
         )),
-        Kind::TitleLiteral => value.filter(|value| value.is_str()).cloned(),
+        Kind::TitleCustomText => nested(values, &["auto_title"])
+            .filter(|value| value.is_str())
+            .or(value)
+            .cloned(),
         _ => value.cloned(),
     }
 }
@@ -1152,7 +1192,7 @@ fn parse_input(kind: &Kind, input: &str) -> Result<Option<Value>> {
             );
             Ok(Some(Value::String(input.into())))
         }
-        Kind::TitleLiteral => Ok(Some(Value::String(input.into()))),
+        Kind::TitleCustomText => Ok(Some(Value::String(input.into()))),
         Kind::Extension => {
             ensure!(
                 !input.contains(['/', '\\']),

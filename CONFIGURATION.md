@@ -46,6 +46,35 @@ storage paths, the File format preference, the app-state directory, and the jour
 Changing storage paths does not move or copy entries. Relative paths retain their
 existing meaning: they resolve from the application's launch directory.
 
+To relocate the open journal, use **Storage → Move journal**. Save or discard
+entry and configuration edits first. Enter the absolute path of a **new folder**
+whose parent already exists. Review the source and resulting storage path, then
+press **Y** to confirm; **Esc** edits the destination and **N** cancels.
+
+The journal closes before relocation. Its native data and any whole-journal
+encryption header are copied together and verified before the saved path changes.
+The storage keeps its current basename inside the new folder: for example, moving
+`/old/entries` to a new folder `/new/Personal` uses `/new/Personal/entries`.
+Encryption and passwords are preserved. Reopen the journal after the move;
+protected journals ask for their password again.
+
+The original data is retained in a private recovery folder beside its old location.
+The result panel shows both paths and any recovery warning. Keep that copy until
+you have checked the moved journal. Existing destinations are never overwritten,
+and unrelated regular files in the journal folder are preserved. The move refuses
+unsafe paths, unfinished encryption conversions and conflicting changes. Reopen
+without command-line storage overrides before using this action.
+
+Only the active backend storage moves. Configuration, themes, exports, app state,
+and other backend locations remain in place, so the journal stays in its existing
+selector collection. Moving an added journal's storage outside its managed profile
+also means **Delete** in the selector cannot archive it automatically; it refuses
+to leave external storage behind.
+
+The individual path rows select which storage to open after restarting; an empty
+location starts an empty, unprotected journal.
+Use **Move journal** when you want the current entries and protection to follow.
+
 In General, **Show entry time** toggles the time beside each entry's date, and
 **Time format** selects `24h` (for example, `30.10.2026 22:09`) or `12h`
 (`30.10.2026 10:09 pm`). Time is shown in 24-hour format by default. Save with
@@ -72,6 +101,19 @@ Priority is hidden by default. In Entries, enable **Show priority field** to sho
 in the entry dialog.
 This applies to the next dialog you open. Existing priority values are preserved,
 and the configured new-entry priority still applies when creating entries.
+
+In **Entries**, **New-entry title mode** cycles through **None**, **Date** and
+**Custom text**. None starts with a blank title field; Date fills it with today's
+date as `DD-MM-YYYY`; Custom text fills it with the text in the **Custom text**
+row. Editing that row selects Custom text mode. The text is remembered when you
+switch to None or Date, including after saving with **Ctrl-S** and restarting.
+These settings only prefill new entries: you can edit the suggested title, and
+existing entries keep their titles. An empty default is allowed, but you must
+enter a title before creating the entry.
+
+Pressing **d** on the mode resets it to None without forgetting your text.
+Pressing **d** on Custom text clears the remembered text and leaves the current
+mode selected. These changes also need Ctrl-S to save.
 
 In **Entries**, **Show mood** enables the optional Low, Average and High checkboxes
 and the `[-]`, `[~]` and `[+]` markers in the list. Use `Tab` to focus Mood,
@@ -174,11 +216,14 @@ show_entry_mood = true       # Optional Low / Average / High selector and list m
 journal_prompts = true       # Saved prompts for new entries with a mood; requires show_entry_mood.
 
 auto_title = { kind = "date" } # Pre-populates the title field when creating a new entry. Two forms are accepted:
-#   - Literal string: `auto_title = "Daily Note"` inserts the text as-is.
+#   - Custom text: `auto_title = "Daily Note"` inserts the text as-is.
 #   - Computed value: `auto_title = { kind = "date" }` inserts today's date as DD-MM-YYYY.
 # Omit the key entirely (default) to leave the title field empty.
 # Note: the string form is always literal. `auto_title = "date"` inserts the literal word "date",
 # not today's date — use the struct form `{ kind = "date" }` for computed values.
+custom_title = "Daily Note" # Remembers custom text while None or Date is selected; does not activate it.
+# If auto_title is a string, it takes precedence over custom_title. The config panel
+# updates both when editing Custom text and remembers auto_title when changing modes.
 
 scroll_per_page = 5  # Sets how many journals will be scrolled when using page up/down commands
 

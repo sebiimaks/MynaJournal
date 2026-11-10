@@ -94,6 +94,30 @@ fn new_journals_clone_preferences_and_isolate_all_storage_and_state() {
 }
 
 #[test]
+fn new_journals_inherit_remembered_custom_text_without_enabling_it() {
+    let (_directory, store) = fixture();
+    let base: Settings = toml::from_str("custom_title = 'Daily journal'\n").unwrap();
+    let work = store.create("Work", &base).unwrap();
+    let travel = store.create("Travel", &base).unwrap();
+    let mut work_settings = store.load_settings(&work).unwrap();
+    assert_eq!(work_settings.custom_title.as_deref(), Some("Daily journal"));
+    assert_eq!(work_settings.auto_title, None);
+    work_settings.custom_title = Some("Work note".into());
+    fs::write(&work.settings_path, work_settings.get_as_text().unwrap()).unwrap();
+    assert_eq!(
+        store.load_settings(&travel).unwrap().custom_title,
+        base.custom_title
+    );
+    assert_eq!(
+        store
+            .load_settings(&store.list().unwrap()[0])
+            .unwrap()
+            .custom_title,
+        None
+    );
+}
+
+#[test]
 fn reset_config_retains_profile_defaults_and_explicit_overrides_remain_explicit() {
     let (directory, store) = fixture();
     let journal = store.create("Work", &Settings::default()).unwrap();

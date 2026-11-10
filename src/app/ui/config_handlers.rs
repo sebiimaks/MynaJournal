@@ -35,6 +35,9 @@ impl UIComponents<'_> {
         action: ConfigAction,
         app: &mut App<D>,
     ) -> Result<()> {
+        if action == ConfigAction::MoveJournal {
+            return self.show_journal_move(app);
+        }
         let security_action = match action {
             ConfigAction::EnableJournalProtection => Some(JournalPasswordAction::Enable),
             ConfigAction::ChangeJournalPassword => Some(JournalPasswordAction::Change),
@@ -110,6 +113,7 @@ impl UIComponents<'_> {
             | ConfigAction::EnableJournalProtection
             | ConfigAction::ChangeJournalPassword
             | ConfigAction::DisableJournalProtection => {}
+            ConfigAction::MoveJournal => unreachable!("move handled above"),
         }
         Ok(())
     }

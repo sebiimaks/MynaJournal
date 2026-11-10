@@ -27,6 +27,27 @@ fn key(popup: &mut ConfigPopup, code: KeyCode) -> ConfigAction {
     popup.handle_input(&Input::new(code, KeyModifiers::NONE))
 }
 
+fn save_and_reopen_settings(popup: &mut ConfigPopup, directory: &tempfile::TempDir) {
+    assert_eq!(
+        popup.handle_input(&Input::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+        ConfigAction::SaveSettings
+    );
+    popup.settings_document.save().unwrap();
+    let settings_path = directory.path().join("config.toml");
+    let settings: Settings = toml::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+    popup.mark_settings_saved(&settings);
+    assert!(!popup.is_dirty());
+    *popup = ConfigPopup::new(
+        ConfigDocument::load(settings_path).unwrap(),
+        ThemeStore::new(Some(&directory.path().to_path_buf())).unwrap(),
+        &settings,
+        &Styles::default(),
+        Some("tui"),
+        37,
+    )
+    .unwrap();
+}
+
 #[test]
 fn journal_protection_actions_use_live_state_and_never_stage_a_configuration_flag() {
     let (_directory, mut popup) = popup("colored_tags = true\n", "");
@@ -86,6 +107,36 @@ fn select(popup: &mut ConfigPopup, tab: Tab, path: &[&str]) {
         .position(|field| field.keys() == path)
         .unwrap();
     popup.selected[popup.tab] = selected;
+}
+
+#[test]
+fn move_journal_is_an_explicit_action_and_path_settings_explain_no_migration() {
+    let (_, mut popup) = popup("auto_title = 'Daily'\ncustom_title = 'Daily'\n", "");
+    let original = popup.settings_document.text();
+    select(&mut popup, Tab::Storage, &[]);
+    assert_eq!(popup.current_field().label, "Move journal");
+    assert_eq!(key(&mut popup, KeyCode::Enter), ConfigAction::MoveJournal);
+    assert_eq!(
+        key(&mut popup, KeyCode::Char(' ')),
+        ConfigAction::MoveJournal
+    );
+    key(&mut popup, KeyCode::Char('d'));
+    assert_eq!(popup.settings_document.text(), original);
+    assert!(!popup.is_dirty());
+    for field in popup.tab_fields().filter(|field| {
+        field
+            .path
+            .first()
+            .is_some_and(|key| key.ends_with("_backend"))
+            && field
+                .path
+                .get(1)
+                .is_some_and(|key| key == "file_path" || key == "directory")
+    }) {
+        assert!(field.hint.contains("does not move or copy entries"));
+        assert!(field.hint.contains("unprotected journal"));
+        assert!(field.restart);
+    }
 }
 
 #[test]
@@ -274,8 +325,7 @@ fn invalid_field_keeps_text_and_previous_document_value() {
 #[test]
 fn text_editing_keeps_popup_shortcuts_literal_and_escape_cancels_only_field() {
     let (_, mut popup) = popup("", "");
-    select(&mut popup, Tab::Entries, &["auto_title"]);
-    popup.selected[popup.tab] += 1;
+    select(&mut popup, Tab::Entries, &["custom_title"]);
     key(&mut popup, KeyCode::Enter);
     for ch in "q!d".chars() {
         assert_eq!(key(&mut popup, KeyCode::Char(ch)), ConfigAction::Keep);
@@ -285,6 +335,260 @@ fn text_editing_keeps_popup_shortcuts_literal_and_escape_cancels_only_field() {
     assert!(popup.editor.is_none());
     assert!(!popup.is_dirty());
     assert!(!popup.confirm_close);
+}
+
+#[test]
+fn legacy_custom_titles_take_precedence_and_survive_mode_changes_after_reopening() {
+    for source in [
+        "auto_title = 'Daily journal'\n# keep this comment\ncolored_tags = true\n",
+        "auto_title = 'Daily journal'\ncustom_title = 'Stale text'\n# keep this comment\ncolored_tags = true\n",
+    ] {
+        let (directory, mut popup) = popup(source, "");
+        select(&mut popup, Tab::Entries, &["custom_title"]);
+        assert_eq!(popup.current_field().label, "Custom text");
+        assert!(matches!(popup.current_field().kind, Kind::TitleCustomText));
+        assert_eq!(
+            popup.value(popup.current_field()),
+            Some("Daily journal".into())
+        );
+        assert_eq!(
+            popup.raw_value(popup.current_field()),
+            Some("Daily journal".into())
+        );
+        assert_eq!(
+            popup.active_value(popup.current_field()),
+            Some("Daily journal".into())
+        );
+        assert!(!popup.is_dirty());
+        assert_eq!(popup.settings_document.text(), source);
+
+        for mode in ["None", "Date", "Custom text"] {
+            select(&mut popup, Tab::Entries, &["auto_title"]);
+            key(&mut popup, KeyCode::Enter);
+            assert_eq!(popup.value(popup.current_field()), Some(mode.into()));
+            assert_eq!(
+                popup.settings_document.value(&["custom_title"]),
+                Some("Daily journal".into())
+            );
+            save_and_reopen_settings(&mut popup, &directory);
+            select(&mut popup, Tab::Entries, &["auto_title"]);
+            assert_eq!(popup.value(popup.current_field()), Some(mode.into()));
+            assert_eq!(popup.active_value(popup.current_field()), Some(mode.into()));
+            select(&mut popup, Tab::Entries, &["custom_title"]);
+            assert_eq!(
+                popup.value(popup.current_field()),
+                Some("Daily journal".into())
+            );
+            assert_eq!(
+                popup.raw_value(popup.current_field()),
+                Some("Daily journal".into())
+            );
+            assert!(
+                popup
+                    .settings_document
+                    .text()
+                    .contains("# keep this comment")
+            );
+            assert_eq!(
+                popup.settings_document.value(&["colored_tags"]),
+                Some(Value::Boolean(true))
+            );
+        }
+        assert_eq!(
+            popup.settings_document.value(&["auto_title"]),
+            Some("Daily journal".into())
+        );
+    }
+}
+
+#[test]
+fn custom_title_settings_show_the_renamed_mode_file_source_and_creation_requirement() {
+    let (_, mut popup) = popup("auto_title = 'Daily'\n", "");
+    select(&mut popup, Tab::Entries, &["custom_title"]);
+    assert!(
+        popup
+            .current_field()
+            .hint
+            .contains("An empty default still requires a title when creating an entry.")
+    );
+    let mut terminal = Terminal::new(TestBackend::new(140, 45)).unwrap();
+    terminal
+        .draw(|frame| popup.render_widget(frame, frame.area(), &Styles::default()))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let rows: Vec<String> = buffer
+        .content
+        .chunks(usize::from(buffer.area.width))
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect();
+    assert!(
+        rows.iter()
+            .any(|row| { row.contains("New-entry title mode") && row.contains("Custom text") })
+    );
+    assert!(rows.iter().any(|row| {
+        row.contains("Custom text") && row.contains("Daily") && row.contains("file")
+    }));
+    let rendered = rows.join("\n");
+    assert!(!rendered.contains("Literal"));
+    assert!(!rendered.contains("Empty titles are allowed"));
+}
+
+#[test]
+fn editing_custom_text_selects_custom_mode_from_each_existing_config_shape() {
+    for source in [
+        "",
+        "auto_title = 'Old title'\n",
+        "auto_title = { kind = 'date' }\n",
+        "[auto_title]\nkind = 'date'\n",
+    ] {
+        let (directory, mut popup) = popup(source, "");
+        select(&mut popup, Tab::Entries, &["custom_title"]);
+        key(&mut popup, KeyCode::Enter);
+        popup.editor = Some(TextArea::new(vec!["My journal 界".into()]));
+        key(&mut popup, KeyCode::Enter);
+        assert!(popup.editor.is_none());
+        assert!(!popup.error, "{}", popup.status);
+        for path in ["auto_title", "custom_title"] {
+            assert_eq!(
+                popup.settings_document.value(&[path]),
+                Some("My journal 界".into())
+            );
+        }
+        save_and_reopen_settings(&mut popup, &directory);
+        select(&mut popup, Tab::Entries, &["auto_title"]);
+        assert_eq!(
+            popup.value(popup.current_field()),
+            Some("Custom text".into())
+        );
+        select(&mut popup, Tab::Entries, &["custom_title"]);
+        assert_eq!(
+            popup.value(popup.current_field()),
+            Some("My journal 界".into())
+        );
+    }
+}
+
+#[test]
+fn resetting_title_mode_preserves_custom_text_but_resetting_text_clears_it() {
+    let (directory, mut popup) = popup(
+        "auto_title = 'Daily journal'\ncustom_title = 'Stale text'\n",
+        "",
+    );
+    select(&mut popup, Tab::Entries, &["auto_title"]);
+    key(&mut popup, KeyCode::Char('d'));
+    assert!(popup.settings_document.value(&["auto_title"]).is_none());
+    assert_eq!(
+        popup.settings_document.value(&["custom_title"]),
+        Some("Daily journal".into())
+    );
+    save_and_reopen_settings(&mut popup, &directory);
+    select(&mut popup, Tab::Entries, &["auto_title"]);
+    key(&mut popup, KeyCode::Enter);
+    key(&mut popup, KeyCode::Enter);
+    assert_eq!(
+        popup.settings_document.value(&["auto_title"]),
+        Some("Daily journal".into())
+    );
+
+    select(&mut popup, Tab::Entries, &["custom_title"]);
+    key(&mut popup, KeyCode::Char('d'));
+    assert!(popup.settings_document.value(&["custom_title"]).is_none());
+    assert_eq!(
+        popup.settings_document.value(&["auto_title"]),
+        Some("".into())
+    );
+    save_and_reopen_settings(&mut popup, &directory);
+    select(&mut popup, Tab::Entries, &["auto_title"]);
+    assert_eq!(
+        popup.value(popup.current_field()),
+        Some("Custom text".into())
+    );
+    for mode in ["None", "Date", "Custom text"] {
+        key(&mut popup, KeyCode::Enter);
+        assert_eq!(popup.value(popup.current_field()), Some(mode.into()));
+    }
+    assert_eq!(
+        popup.settings_document.value(&["auto_title"]),
+        Some("".into())
+    );
+    assert_eq!(
+        popup.settings_document.value(&["custom_title"]),
+        Some("".into())
+    );
+}
+
+#[test]
+fn resetting_inactive_custom_text_does_not_change_the_selected_title_mode() {
+    for source in [
+        "custom_title = 'Remembered'\n",
+        "custom_title = 'Remembered'\nauto_title = { kind = 'date' }\n",
+    ] {
+        let (directory, mut popup) = popup(source, "");
+        let previous_mode = popup.settings_document.value(&["auto_title"]);
+        select(&mut popup, Tab::Entries, &["custom_title"]);
+        key(&mut popup, KeyCode::Char('d'));
+        assert!(popup.settings_document.value(&["custom_title"]).is_none());
+        assert_eq!(
+            popup.settings_document.value(&["auto_title"]),
+            previous_mode
+        );
+        save_and_reopen_settings(&mut popup, &directory);
+        select(&mut popup, Tab::Entries, &["custom_title"]);
+        assert!(popup.raw_value(popup.current_field()).is_none());
+        assert_eq!(
+            popup.settings_document.value(&["auto_title"]),
+            previous_mode
+        );
+    }
+}
+
+#[test]
+fn an_explicit_empty_custom_title_survives_reopening_and_mode_changes() {
+    let (directory, mut popup) = popup("custom_title = 'Old title'\n", "");
+    select(&mut popup, Tab::Entries, &["custom_title"]);
+    key(&mut popup, KeyCode::Enter);
+    popup.editor = Some(TextArea::default());
+    save_and_reopen_settings(&mut popup, &directory);
+    for mode in ["None", "Date", "Custom text"] {
+        select(&mut popup, Tab::Entries, &["auto_title"]);
+        key(&mut popup, KeyCode::Enter);
+        assert_eq!(popup.value(popup.current_field()), Some(mode.into()));
+        save_and_reopen_settings(&mut popup, &directory);
+        select(&mut popup, Tab::Entries, &["custom_title"]);
+        assert_eq!(popup.value(popup.current_field()), Some("".into()));
+    }
+    assert_eq!(
+        popup.settings_document.value(&["auto_title"]),
+        Some("".into())
+    );
+}
+
+#[test]
+fn cancelled_custom_text_edits_and_discarded_mode_changes_do_not_touch_disk() {
+    let source = "auto_title = 'Active title'\ncustom_title = 'Old title'\n";
+    let (directory, mut popup) = popup(source, "");
+    select(&mut popup, Tab::Entries, &["custom_title"]);
+    key(&mut popup, KeyCode::Enter);
+    popup.editor = Some(TextArea::new(vec!["Cancelled title".into()]));
+    key(&mut popup, KeyCode::Esc);
+    assert_eq!(popup.settings_document.text(), source);
+    assert!(!popup.is_dirty());
+
+    select(&mut popup, Tab::Entries, &["auto_title"]);
+    key(&mut popup, KeyCode::Enter);
+    assert!(popup.is_dirty());
+    select(&mut popup, Tab::Entries, &["custom_title"]);
+    assert_eq!(
+        popup.active_value(popup.current_field()),
+        Some("Active title".into())
+    );
+    key(&mut popup, KeyCode::Esc);
+    assert!(popup.confirm_close);
+    assert_eq!(key(&mut popup, KeyCode::Char('y')), ConfigAction::Close);
+    assert_eq!(
+        fs::read_to_string(directory.path().join("config.toml")).unwrap(),
+        source
+    );
 }
 
 #[test]
@@ -514,15 +818,18 @@ fn renderer_bounds_all_tabs_and_edit_states_on_small_terminals() {
 #[test]
 fn existing_control_characters_are_not_sent_to_the_field_editor() {
     let (_, mut popup) = popup("auto_title = \"unsafe\\r\\u001b[31m\"\n", "");
-    select(&mut popup, Tab::Entries, &["auto_title"]);
-    popup.selected[popup.tab] += 1;
+    select(&mut popup, Tab::Entries, &["custom_title"]);
     let before = popup.settings_document.text();
     key(&mut popup, KeyCode::Enter);
     assert!(popup.editor.is_none());
     assert!(popup.error);
     assert_eq!(popup.settings_document.text(), before);
     key(&mut popup, KeyCode::Char('d'));
-    assert!(popup.settings_document.value(&["auto_title"]).is_none());
+    assert_eq!(
+        popup.settings_document.value(&["auto_title"]),
+        Some("".into())
+    );
+    assert!(popup.settings_document.value(&["custom_title"]).is_none());
 }
 
 #[test]

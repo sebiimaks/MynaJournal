@@ -10,6 +10,7 @@ use settings::Settings;
 mod app;
 mod cli;
 mod console_backend;
+mod journal_move;
 mod journal_storage;
 #[cfg(test)]
 mod journal_tests;
@@ -36,8 +37,9 @@ async fn main() -> Result<()> {
     let mut settings = Settings::new(custom_config.clone()).await?;
     let settings_path = Settings::file_path(custom_config.clone())?;
     let launch_details = cli.launch_details();
-    let override_owner = cli
-        .storage_override_settings(&settings)?
+    let storage_overrides = cli.storage_override_settings(&settings)?;
+    let storage_overridden = storage_overrides.is_some();
+    let override_owner = storage_overrides
         .as_ref()
         .map(journals::journal_for_storage)
         .transpose()?
@@ -125,6 +127,7 @@ async fn main() -> Result<()> {
     let config_context = settings::ConfigContext {
         journal_name,
         return_to_journals: false,
+        storage_overridden,
         settings_path,
         themes_path: theme_store.directory().to_path_buf(),
         active_theme_id: loaded_theme.id,

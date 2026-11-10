@@ -37,6 +37,8 @@ pub use security::SecuritySettings;
 pub struct ConfigContext {
     pub journal_name: Option<String>,
     pub return_to_journals: bool,
+    /// Explicit launch paths must not be silently rewritten by a move.
+    pub storage_overridden: bool,
     pub settings_path: PathBuf,
     pub themes_path: PathBuf,
     pub active_theme_id: Option<String>,
@@ -80,6 +82,9 @@ pub struct Settings {
     pub journal_prompts: bool,
     #[serde(default)]
     pub auto_title: Option<AutoTitle>,
+    /// Remembered custom title when auto_title is disabled or uses the date.
+    #[serde(default)]
+    pub custom_title: Option<String>,
     #[serde(default)]
     pub scroll_per_page: Option<usize>,
     #[serde(default)]
@@ -123,6 +128,7 @@ impl Default for Settings {
             show_entry_mood: true,
             journal_prompts: true,
             auto_title: Default::default(),
+            custom_title: None,
             scroll_per_page: Default::default(),
             sync_os_clipboard: Default::default(),
             editor_word_wrap: default_editor_word_wrap(),
@@ -279,6 +285,7 @@ impl Settings {
             show_entry_mood: _,
             journal_prompts: _,
             auto_title: _,
+            custom_title: _,
             scroll_per_page: _,
             sync_os_clipboard: _,
             editor_word_wrap: _,
@@ -550,6 +557,24 @@ kind = "date"
         let settings: Settings = toml::from_str("").unwrap();
 
         assert_eq!(settings.auto_title, None);
+        assert_eq!(settings.custom_title, None);
+    }
+
+    #[test]
+    fn remembered_custom_title_round_trips_without_changing_auto_title() {
+        for mode in [
+            "",
+            "auto_title = 'Active title'\n",
+            "auto_title = { kind = 'date' }\n",
+        ] {
+            let text = format!("{mode}custom_title = 'Daily journal 界'\n");
+            let mut settings: Settings = toml::from_str(&text).unwrap();
+            let original_mode = settings.auto_title.clone();
+            settings.complete_missing_options().unwrap();
+            let restored: Settings = toml::from_str(&settings.get_as_text().unwrap()).unwrap();
+            assert_eq!(restored.auto_title, original_mode);
+            assert_eq!(restored.custom_title.as_deref(), Some("Daily journal 界"));
+        }
     }
 
     #[test]

@@ -92,6 +92,9 @@ impl UIComponents<'_> {
             }
             Ok(false) => {}
             Err(error) => {
+                let conversion_failed = converting
+                    || app.data_provide.journal_reload_required()
+                    || app.journal_is_protected() != was_protected;
                 if converting {
                     self.cancel_journal_consolidation(app);
                 }
@@ -109,7 +112,11 @@ impl UIComponents<'_> {
                     self.editor.set_current_entry(app.current_entry_id, app);
                 }
                 if let Some(Popup::JournalSecurity(popup)) = self.popup_stack.last_mut() {
-                    popup.show_error(error.to_string());
+                    if conversion_failed {
+                        popup.show_failure(format!("{error:#}"));
+                    } else {
+                        popup.show_error(error.to_string());
+                    }
                 } else {
                     return Err(error);
                 }
@@ -182,6 +189,91 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(text.contains("Content - NORMAL"));
+    }
+
+    #[cfg(feature = "file")]
+    #[tokio::test]
+    async fn blocked_file_conversion_shows_the_cause_and_closes_to_config_without_retrying() {
+        use crate::{
+            app::ui::{ConfigPopup, themes::ThemeStore},
+            settings::document::ConfigDocument,
+        };
+        use backend::{
+            EntryDraft, FileFormat,
+            journal::{JournalBackend, JournalProvider},
+        };
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("entries");
+        let provider = JournalProvider::open(JournalBackend::File(path.clone(), FileFormat::Plain))
+            .await
+            .unwrap();
+        let mut app = App::new(provider, crate::settings::Settings::default());
+        app.data_provide
+            .add_entry(EntryDraft::new(
+                chrono::Utc::now(),
+                "Existing entry".into(),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+        app.load_entries().await.unwrap();
+        let unrelated = path.join(".sync.ffs_db");
+        std::fs::write(&unrelated, "Keep this file").unwrap();
+        let mut ui = UIComponents::new(Styles::default());
+        let config = ConfigPopup::new(
+            ConfigDocument::load(directory.path().join("config.toml")).unwrap(),
+            ThemeStore::from_directory(directory.path().join("themes")).unwrap(),
+            &app.settings,
+            &Styles::default(),
+            None,
+            30,
+        )
+        .unwrap();
+        ui.popup_stack.push(Popup::Config(Box::new(config)));
+        ui.popup_stack
+            .push(Popup::JournalSecurity(Box::new(JournalSecurityPopup::new(
+                JournalPasswordAction::Enable,
+            ))));
+        ui.handle_journal_security_input(
+            &Input::new(KeyCode::Char('y'), KeyModifiers::NONE),
+            &mut app,
+        )
+        .await
+        .unwrap();
+        enter_text(&mut ui, &mut app, "journal secret").await;
+        enter_text(&mut ui, &mut app, "journal secret").await;
+        assert!(!app.journal_is_protected());
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| ui.render_popup(frame)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("Journal Protection Error"));
+        assert!(text.contains(".sync.ffs_db"), "{text}");
+        assert!(!text.contains("New Password") && !text.contains("journal secret"));
+        ui.handle_journal_security_input(
+            &Input::new(KeyCode::Char('y'), KeyModifiers::NONE),
+            &mut app,
+        )
+        .await
+        .unwrap();
+        ui.handle_journal_security_input(&Input::new(KeyCode::Enter, KeyModifiers::NONE), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(ui.popup_stack.len(), 1);
+        assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
+        assert!(!app.journal_is_protected());
+        assert_eq!(
+            std::fs::read_to_string(unrelated).unwrap(),
+            "Keep this file"
+        );
     }
 
     #[cfg(feature = "json")]
@@ -425,6 +517,18 @@ mod tests {
             ui.popup_stack.last(),
             Some(Popup::JournalSecurity(_))
         ));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| ui.render_popup(frame)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("Journal Protection Error"));
+        assert!(text.contains("Test Error"), "{text}");
         let Popup::Config(config) = &mut ui.popup_stack[0] else {
             panic!("Configuration draft was lost")
         };
@@ -436,6 +540,11 @@ mod tests {
             config.handle_input(&Input::new(KeyCode::Enter, KeyModifiers::NONE)),
             ConfigAction::DisableJournalProtection
         );
+        ui.handle_journal_security_input(&Input::new(KeyCode::Enter, KeyModifiers::NONE), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(ui.popup_stack.len(), 1);
+        assert!(matches!(ui.popup_stack.last(), Some(Popup::Config(_))));
         ui.popup_stack.clear();
         assert_editor_focused(&mut ui);
     }

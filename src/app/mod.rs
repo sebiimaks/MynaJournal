@@ -120,6 +120,7 @@ where
         self.settings.external_editor = saved.external_editor;
         self.settings.default_journal_priority = saved.default_journal_priority;
         self.settings.auto_title = saved.auto_title;
+        self.settings.custom_title = saved.custom_title;
         self.settings.scroll_per_page = saved.scroll_per_page;
         self.settings.sync_os_clipboard = saved.sync_os_clipboard;
         self.settings.editor_word_wrap = saved.editor_word_wrap;

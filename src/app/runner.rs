@@ -18,6 +18,7 @@ pub enum HandleInputReturnType {
     Handled,
     NotFound,
     ExitApp,
+    MoveJournal,
     Ignore,
 }
 
@@ -25,6 +26,12 @@ pub enum HandleInputReturnType {
 pub enum RunOutcome {
     JournalClosed,
     InputEnded,
+}
+
+#[derive(Debug)]
+enum SessionOutcome {
+    Finished(RunOutcome),
+    Move(Box<crate::journal_move::MoveRequest>),
 }
 
 pub async fn run<B: Backend>(
@@ -46,7 +53,8 @@ where
             UnlockOutcome::InputEnded => return Ok(RunOutcome::InputEnded),
         }
     }
-    run_intern(
+    let message_styles = styles.clone();
+    let outcome = run_intern(
         terminal,
         data_provider,
         settings,
@@ -54,7 +62,65 @@ where
         pending_cmd,
         config_context,
     )
-    .await
+    .await?;
+    match outcome {
+        SessionOutcome::Finished(outcome) => Ok(outcome),
+        SessionOutcome::Move(request) => {
+            terminal.draw(|frame| render_message_centered(frame, "Moving journal..."))?;
+            let result = crate::journal_move::execute(*request).await;
+            let (message, error) = match result {
+                Ok(report) => {
+                    let mut text = format!(
+                        "Journal moved.\n\nStorage: {}\n\nRecovery copy: {}\n\nReopen the journal to continue.",
+                        report.destination.display(),
+                        report.recovery_path.display(),
+                    );
+                    if let Some(warning) = report.warning {
+                        text.push_str(&format!("\n\n{warning}"));
+                    }
+                    (text, false)
+                }
+                Err(error) => (
+                    format!(
+                        "Move could not be completed.\n\n{error:#}\n\nReopen the journal to continue."
+                    ),
+                    true,
+                ),
+            };
+            show_move_result(terminal, &message_styles, message, error).await
+        }
+    }
+}
+
+async fn show_move_result<B: Backend>(
+    terminal: &mut Terminal<B>,
+    styles: &Styles,
+    message: String,
+    error: bool,
+) -> Result<RunOutcome>
+where
+    B::Error: Send + Sync + 'static,
+{
+    use super::ui::journal_move_popup::{MoveJournalAction, MoveJournalPopup};
+    crate::terminal_session::clear_fullscreen(terminal)?;
+    let mut popup = MoveJournalPopup::result(message, error);
+    terminal.draw(|frame| popup.render_widget(frame, frame.area(), styles))?;
+    let mut events = EventStream::new();
+    loop {
+        let Some(event) = events.next().await else {
+            return Ok(RunOutcome::InputEnded);
+        };
+        if let Event::Key(key) = event.context("Reading move result input")?
+            && key.kind == KeyEventKind::Press
+            && matches!(
+                popup.handle_input(&Input::from(&key)),
+                MoveJournalAction::Close
+            )
+        {
+            return Ok(RunOutcome::JournalClosed);
+        }
+        terminal.draw(|frame| popup.render_widget(frame, frame.area(), styles))?;
+    }
 }
 
 enum UnlockOutcome {
@@ -111,7 +177,7 @@ async fn run_intern<B, D>(
     styles: Styles,
     pending_cmd: Option<PendingCliCommand>,
     config_context: ConfigContext,
-) -> anyhow::Result<RunOutcome>
+) -> anyhow::Result<SessionOutcome>
 where
     B: Backend,
     B::Error: Send + Sync + 'static,
@@ -197,7 +263,17 @@ where
                             log::error!("Persisting app state failed: Error info {err}");
                         }
 
-                        return Ok(RunOutcome::JournalClosed);
+                        return Ok(SessionOutcome::Finished(RunOutcome::JournalClosed));
+                    }
+                    HandleInputReturnType::MoveJournal => {
+                        let request = ui_components
+                            .take_journal_move_request()
+                            .context("Move request is missing")?;
+                        app.persist_state()
+                            .context("Saving journal state before moving")?;
+                        app.data_provide.close_for_move().await?;
+                        // Returning drops the app, its secrets and storage leases before the move.
+                        return Ok(SessionOutcome::Move(Box::new(request)));
                     }
                     HandleInputReturnType::Ignore => {}
                 };
@@ -209,7 +285,7 @@ where
         }
     }
 
-    Ok(RunOutcome::InputEnded)
+    Ok(SessionOutcome::Finished(RunOutcome::InputEnded))
 }
 
 async fn exec_pending_cmd<B: Backend, D: DataProvider>(
@@ -549,6 +625,7 @@ mod tests {
         let context = ConfigContext {
             journal_name: None,
             return_to_journals: false,
+            storage_overridden: false,
             settings_path: dir.path().join("config.toml"),
             themes_path: dir.path().join("themes"),
             active_theme_id: Some("tui".into()),
@@ -612,6 +689,7 @@ mod tests {
         let context = ConfigContext {
             journal_name: Some("Personal".into()),
             return_to_journals: true,
+            storage_overridden: false,
             settings_path: temporary.path().join("config.toml"),
             themes_path: temporary.path().join("themes"),
             active_theme_id: None,

@@ -46,13 +46,14 @@ pub(super) enum Kind {
     Text { allow_empty: bool },
     Extension,
     TitleMode,
-    TitleLiteral,
+    TitleCustomText,
     Color { optional: bool },
     Modifiers,
     TagPalette,
     Divider,
     JournalProtection,
     JournalPassword,
+    MoveJournal,
 }
 
 #[derive(Debug, Clone)]
@@ -110,8 +111,8 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         Field::new(Entries, &["journal_prompts"], "Journal prompts", Bool, "Choose a random prompt for new entries with a mood. Show or hide the saved prompt with Ctrl-G. Requires Show mood; existing prompts are retained."),
         Field::new(Entries, &["show_entry_priority"], "Show priority field", Bool, "Show Priority in the entry dialog. Hiding it preserves existing priorities; the new-entry priority default still applies."),
         Field::new(Entries, &["default_journal_priority"], "New-entry priority", Number { min: 0, max: u32::MAX as u64 }, "Default priority for new entries; use default to leave it unset."),
-        Field::new(Entries, &["auto_title"], "New-entry title mode", TitleMode, "None, current date, or a literal title. Applies to new entries."),
-        Field::new(Entries, &["auto_title"], "Literal title", TitleLiteral, "Editing this value selects literal-title mode. Empty titles are allowed."),
+        Field::new(Entries, &["auto_title"], "New-entry title mode", TitleMode, "None starts blank; Date uses today; Custom text uses your saved text. Applies to new entries."),
+        Field::new(Entries, &["custom_title"], "Custom text", TitleCustomText, "An empty default still requires a title when creating an entry. Editing selects Custom text mode; other modes keep the text."),
         Field::new(Entries, &["export", "default_path"], "Export destination", path(), "Default file or directory for the next export dialog; use default to leave unset."),
         Field::new(Entries, &["export", "show_confirmation"], "Export confirmation", Bool, "Show a message after successful export."),
         Field::new(Editor, &["editor_word_wrap"], "Word wrap", Bool, "Wrap the journal visually without inserting newlines."),
@@ -166,7 +167,7 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
             &["json_backend", "file_path"],
             "JSON file",
             path(),
-            "JSON journal file. Restart required.",
+            "Select a storage location only; does not move or copy entries. An empty location starts an unprotected journal. Use Move journal to relocate existing data. Restart required.",
         )
         .restart(),
     );
@@ -177,7 +178,7 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
             &["sqlite_backend", "file_path"],
             "SQLite file",
             path(),
-            "SQLite journal database. Restart required.",
+            "Select a storage location only; does not move or copy entries. An empty location starts an unprotected journal. Use Move journal to relocate existing data. Restart required.",
         )
         .restart(),
     );
@@ -188,7 +189,7 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
             &["vjournal_backend", "directory"],
             "VJOURNAL directory",
             path(),
-            "Local VJOURNAL directory. Restart required.",
+            "Select a storage location only; does not move or copy entries. An empty location starts an unprotected journal. Use Move journal to relocate existing data. Restart required.",
         )
         .restart(),
     );
@@ -199,7 +200,7 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
             &["file_backend", "directory"],
             "File directory",
             path(),
-            "Local directory containing one plain-text or Markdown file per entry. Restart required.",
+            "Select a storage location only; does not move or copy entries. An empty location starts an unprotected journal. Use Move journal to relocate existing data. Restart required.",
         )
         .restart(),
         Field::new(
@@ -212,6 +213,8 @@ pub(super) fn fields(default_styles: &Value) -> Vec<Field> {
         .restart(),
     ]);
     fields.push(Field::new(Storage, &["app_state_dir"], "App-state directory", path(), "Directory for pane size, fullscreen and sorting state. Current-session saves keep their current destination. Restart required.").restart());
+
+    fields.push(Field::new(Storage, &[], "Move journal", MoveJournal, "Move the open journal to a new folder, including its encryption header. Verifies the copy before updating this journal's path and retains a recovery copy. Closes the journal."));
 
     for group in ["general", "journals_list", "editor"] {
         if let Some(table) = default_styles.get(group).and_then(Value::as_table) {

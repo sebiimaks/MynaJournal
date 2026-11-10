@@ -73,11 +73,25 @@ commands include it automatically, and moving a whole managed journal into
 Deleted Journals retains it. An encrypted backup still needs the journal password.
 Copying only a native JSON/database file or only the entry directory is insufficient.
 
+**Config → Storage → Move journal** relocates the native data and key header
+together, verifies them before updating the saved location, and retains the
+originals as a recovery copy. It closes the journal; reopening the destination
+requires the same password. Editing a storage path directly does not move the
+header or entries and does not enable protection at an empty destination.
+
 Conversion stages and verifies the native replacement before publication. An
 interrupted conversion is detected rather than opened as an ordinary store.
 Reopening attempts recovery; preserve all associated files if recovery reports
 damage. Mixed or unsupported external directory contents are rejected rather than
 silently removed. Older app versions cannot read protected journal records.
+
+If conversion reports unrelated files, close the journal and move the named
+non-entry files outside its storage folder, keeping them for later use. For
+example, `.sync.ffs_db` is not a journal entry. Leave the app's empty
+`.tui-journal.lock` file in place (the name uses a hyphen); it is supported during
+conversion. Reopen the journal and try protection again. A conversion error
+shows the blocking path and reason; use Up/Down to scroll and Enter/Esc to close
+the error instead of repeating password setup.
 
 Automatic system clipboard synchronization is disabled in protected journals.
 Explicit clipboard copy/cut and plaintext exports ask for confirmation. External

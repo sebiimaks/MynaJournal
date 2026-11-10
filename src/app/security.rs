@@ -168,7 +168,7 @@ impl<D: DataProvider> App<D> {
         if let Err(error) = result {
             if self.data_provide.journal_reload_required() {
                 self.invalidate_converted_entries();
-                anyhow::bail!("{error}. Close and reopen this journal before editing.");
+                return Err(error.context("Close and reopen this journal before editing."));
             }
             return Err(error);
         }

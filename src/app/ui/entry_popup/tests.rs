@@ -695,6 +695,34 @@ async fn failed_metadata_save_can_retry_without_losing_the_timestamp() {
 }
 
 #[tokio::test]
+async fn remembered_custom_text_does_not_override_title_mode_or_allow_empty_titles() {
+    let mut app = create_default_app();
+    app.settings = toml::from_str("custom_title = 'Remembered title'\n").unwrap();
+    let mut popup = EntryPopup::new_entry(&app.settings);
+    assert_eq!(popup.title_txt.lines(), [""]);
+    assert!(matches!(
+        popup.handle_confirm(&mut app).await.unwrap(),
+        EntryPopupInputReturn::KeepPopup
+    ));
+    assert!(!popup.title_err_msg.is_empty());
+    assert!(app.entries.is_empty());
+
+    app.settings.auto_title = toml::from_str::<Settings>("auto_title = { kind = 'date' }")
+        .unwrap()
+        .auto_title;
+    let before = Local::now().format("%d-%m-%Y").to_string();
+    let popup = EntryPopup::new_entry(&app.settings);
+    let after = Local::now().format("%d-%m-%Y").to_string();
+    assert!([before, after].contains(&popup.title_txt.lines()[0]));
+
+    app.settings.auto_title = toml::from_str::<Settings>("auto_title = 'Active title'")
+        .unwrap()
+        .auto_title;
+    let popup = EntryPopup::new_entry(&app.settings);
+    assert_eq!(popup.title_txt.lines(), ["Active title"]);
+}
+
+#[tokio::test]
 async fn new_entries_keep_auto_title_and_calendar_date_behavior() {
     let mut app = create_default_app();
     app.settings = toml::from_str("auto_title = 'Daily journal'\nshow_entry_time = false").unwrap();

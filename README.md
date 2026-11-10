@@ -308,6 +308,12 @@ arrow keys to select an option, `Enter` to edit, and `Ctrl-S` to save. Settings
 marked **restart required** apply on the next launch. See
 [Configuration](CONFIGURATION.md) for the full reference and example TOML.
 
+To change where a journal is stored, use **Storage → Move journal**. Choose a new
+destination folder and confirm the preview. The app verifies the data and encryption
+header before updating the path, keeps a recovery copy, and closes the journal for
+reopening. Storage path fields only select a location; they do not migrate existing
+entries or protection.
+
 Under **General**, use **Show entry time** to show or hide the time beside each
 entry's date. **Time format** offers `24h` (`30.10.2026 22:09`, the default) and
 `12h` (`30.10.2026 10:09 pm`). These display preferences apply after saving and
@@ -316,8 +322,12 @@ use your local timezone. With time enabled, entry dialogs show an editable
 
 Priority is hidden by default. Under **Entries**, enable **Show priority field**
 to show it in the entry dialog. Existing priorities and the configured default for new entries are
-preserved. Titles start blank by default; `auto_title = "Daily Note"` supplies
-literal text, while `auto_title = { kind = "date" }` supplies the current date.
+preserved. **New-entry title mode** offers **None** (start blank), **Date**
+(today's date), and **Custom text** (your saved text). Editing **Custom text**
+selects that mode; switching modes preserves the text for later use. Save with
+**Ctrl-S**. Entries still require a title before creation. Existing `auto_title`
+configurations remain supported: a string supplies custom text, while
+`auto_title = { kind = "date" }` supplies today's date.
 
 Under **Appearance**, select a theme and press `Enter` or `a` to activate it,
 `e` to edit it, or `n` to create a named copy. Only **Tui (default)** ships with
